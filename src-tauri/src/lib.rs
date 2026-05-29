@@ -59,6 +59,8 @@ pub fn run() {
             commands::get_dashboard_summary,
             commands::get_account_balance,
             commands::get_account_balances,
+            commands::get_setting,
+            commands::set_setting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sens");
@@ -177,5 +179,29 @@ mod tests {
         service::create_expense(&c, &a.id, &ec, 700, None, "2026-04-30").unwrap();
         let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
         assert_eq!(s.expense_cents, 500);
+    }
+
+    #[test]
+    fn settings_roundtrip() {
+        let c = open_in_memory().unwrap();
+        service::set_setting(&c, "dashboard_month", "2026-05").unwrap();
+        let v = service::get_setting(&c, "dashboard_month").unwrap();
+        assert_eq!(v, Some("2026-05".to_string()));
+    }
+
+    #[test]
+    fn settings_overwrite_updates_value() {
+        let c = open_in_memory().unwrap();
+        service::set_setting(&c, "dashboard_month", "2026-04").unwrap();
+        service::set_setting(&c, "dashboard_month", "2026-05").unwrap();
+        let v = service::get_setting(&c, "dashboard_month").unwrap();
+        assert_eq!(v, Some("2026-05".to_string()));
+    }
+
+    #[test]
+    fn settings_unknown_key_returns_none() {
+        let c = open_in_memory().unwrap();
+        let v = service::get_setting(&c, "nonexistent_key").unwrap();
+        assert_eq!(v, None);
     }
 }

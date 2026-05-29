@@ -130,6 +130,18 @@ pub fn delete_transaction(state: State<'_, DbState>, id: String) -> AppResult<()
     with_conn!(state, c => service::delete_transaction(&c, &id))
 }
 
+// ── App Settings ─────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_setting(state: State<'_, DbState>, key: String) -> AppResult<Option<String>> {
+    with_conn!(state, c => service::get_setting(&c, &key))
+}
+
+#[tauri::command]
+pub fn set_setting(state: State<'_, DbState>, key: String, value: String) -> AppResult<()> {
+    with_conn!(state, c => service::set_setting(&c, &key, &value))
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 #[tauri::command]

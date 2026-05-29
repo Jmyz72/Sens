@@ -449,6 +449,30 @@ pub fn recent_transactions(conn: &Connection, limit: i64) -> AppResult<Vec<Trans
     Ok(rows)
 }
 
+// ── App Settings ─────────────────────────────────────────────────────────────
+
+pub fn get_setting(conn: &Connection, key: &str) -> AppResult<Option<String>> {
+    let result = conn.query_row(
+        "SELECT value FROM app_settings WHERE key = ?1",
+        [key],
+        |r| r.get::<_, String>(0),
+    );
+    match result {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub fn set_setting(conn: &Connection, key: &str, value: &str, now: &str) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![key, value, now],
+    )?;
+    Ok(())
+}
+
 // ── Error mapping helpers ─────────────────────────────────────────────────────
 
 /// Map a SQLite UNIQUE violation to a friendly Conflict.

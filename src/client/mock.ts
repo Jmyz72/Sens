@@ -52,6 +52,7 @@ const categories: Category[] = CAT_SEED.map(([name, kind, emoji, color], i) => (
 
 const accounts: Account[] = [];
 const txns: Transaction[] = [];
+const settings = new Map<string, string>();
 
 function balanceOf(a: Account): number {
   let b = a.openingBalanceCents;
@@ -213,6 +214,13 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         recentTransactions: txns.slice().sort((x, y) => (y.transactionDate < x.transactionDate ? -1 : 1)).slice(0, 8),
       };
       return summary as T;
+    }
+    case "get_setting":
+      return (settings.get(String(a.key)) ?? null) as T;
+    case "set_setting": {
+      if (!String(a.key).trim()) fail("ValidationError", "Key cannot be empty");
+      settings.set(String(a.key), String(a.value));
+      return undefined as T;
     }
     default:
       return fail("DatabaseError", `Unknown command: ${command}`) as T;
