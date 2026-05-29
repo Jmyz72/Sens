@@ -1,6 +1,7 @@
 // Balance correction (reconciliation). Enter the account's real balance; the
 // backend edits the opening balance (no transactions) or records a signed
-// adjustment for the difference (transactions exist).
+// adjustment for the difference (transactions exist). For owe (liability)
+// accounts the field is "Amount owed" — a positive number stored as negative.
 
 import { useState } from "react";
 import type { Account } from "../types";
@@ -10,18 +11,26 @@ import { Btn, Field, Modal, Money, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { parseAmountToCents } from "../lib/format";
+import { balanceDisplay, toneColor } from "../lib/accounts";
 
 export function SetBalance({ account, hasTransactions, onClose, onDone }: {
   account: Account; hasTransactions: boolean; onClose: () => void; onDone: () => void;
 }) {
   const t = useTheme();
-  const [value, setValue] = useState((account.balanceCents / 100).toFixed(2));
+  const isOwe = account.group === "owe";
+  const cur = balanceDisplay(account.group, account.balanceCents);
+  const [value, setValue] = useState(
+    ((isOwe ? Math.abs(account.balanceCents) : account.balanceCents) / 100).toFixed(2),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const target = parseAmountToCents(value);
+  // own: allow a leading "-" (overdraft). owe: positive "amount owed", stored negative.
+  const parsed = parseAmountToCents(value);
   const negativeAllowed = /^-/.test(value.trim());
-  const targetCents = negativeAllowed && target != null ? -target : target;
+  const targetCents = isOwe
+    ? parsed != null ? -parsed : null
+    : negativeAllowed && parsed != null ? -parsed : parsed;
   const diff = targetCents != null ? targetCents - account.balanceCents : 0;
   const valid = value.trim() !== "" && targetCents != null;
 
@@ -44,15 +53,15 @@ export function SetBalance({ account, hasTransactions, onClose, onDone }: {
       </div>
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-          <span style={{ color: t.dim }}>{account.name} — current</span>
-          <Money cents={account.balanceCents} color={account.balanceCents < 0 ? t.negative : t.text} />
+          <span style={{ color: t.dim }}>{account.name} — current{cur.label ? ` (${cur.label.toLowerCase()})` : ""}</span>
+          <Money cents={cur.magnitude} color={toneColor(cur.tone, t)} />
         </div>
 
-        <Field label="Real balance (RM)">
+        <Field label={isOwe ? "Amount owed (RM)" : "Real balance (RM)"}>
           <div style={{ position: "relative" }}>
             <span style={{ position: "absolute", left: 14, top: 13, fontSize: 15, color: t.faint, fontFamily: t.mono }}>RM</span>
             <input className="sens-input" value={value} inputMode="decimal" autoFocus
-              onChange={(e) => setValue(e.target.value.replace(/[^0-9.-]/g, ""))}
+              onChange={(e) => setValue(e.target.value.replace(isOwe ? /[^0-9.]/g : /[^0-9.-]/g, ""))}
               style={{ ...inputStyle(t), height: 46, fontSize: 20, fontWeight: 700, fontFamily: t.mono, paddingLeft: 42 }} />
           </div>
         </Field>

@@ -4,6 +4,17 @@
 
 export type TransactionKind = "income" | "expense" | "transfer" | "adjustment";
 export type CategoryKind = "income" | "expense" | "transfer";
+export type AccountGroup = "own" | "owe";
+export type AccountTypeName = "fund" | "financial" | "receivable" | "payable" | "credit";
+
+export interface AccountSubtype {
+  key: string;
+  label: string;
+  type: AccountTypeName;
+  group: AccountGroup;
+  sortOrder: number;
+  isActive: boolean;
+}
 
 export interface AccountTemplate {
   key: string;
@@ -20,7 +31,8 @@ export interface Account {
   id: string;
   templateKey: string | null;
   name: string;
-  accountType: string;
+  accountType: AccountTypeName;
+  group: AccountGroup;
   subtype: string;
   openingBalanceCents: number;
   currency: string;
@@ -88,13 +100,16 @@ export interface CategoryBreakdown {
 export interface AccountBalance {
   accountId: string;
   name: string;
-  accountType: string;
+  accountType: AccountTypeName;
+  group: AccountGroup;
   balanceCents: number;
 }
 
 export interface DashboardSummary {
   month: string;
-  totalBalanceCents: number;
+  netWorthCents: number;
+  assetsCents: number;
+  liabilitiesCents: number;
   incomeCents: number;
   expenseCents: number;
   netCashflowCents: number;

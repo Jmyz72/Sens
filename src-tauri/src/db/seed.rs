@@ -7,8 +7,10 @@
 use crate::error::AppResult;
 use rusqlite::Connection;
 
-/// (key, name, group_name, default_subtype, sort_order). The account_type is
-/// derived from the group at account-creation time (see service layer).
+/// (key, name, group_name, default_subtype, sort_order). `group_name` only
+/// organises the provider picker in the UI; `default_subtype` is a suggested
+/// starting subtype. The authoritative type/group for an account come from the
+/// `account_subtypes` taxonomy (seeded by migration 002), not from the template.
 struct Tpl(&'static str, &'static str, &'static str, &'static str, i64);
 
 fn templates() -> Vec<Tpl> {
@@ -45,6 +47,7 @@ fn templates() -> Vec<Tpl> {
         ("paypal", "PayPal"), ("wise", "Wise"), ("revolut", "Revolut"),
         ("n26", "N26"), ("payoneer", "Payoneer"),
     ];
+    let crypto = [("luno", "Luno")];
 
     let mut out = Vec::new();
     let mut order = 0i64;
@@ -60,6 +63,7 @@ fn templates() -> Vec<Tpl> {
     push(&bnpl, "Buy now, pay later", "bnpl", &mut order);
     push(&investment, "Investment", "investment", &mut order);
     push(&fintech, "Global fintech", "ewallet", &mut order);
+    push(&crypto, "Crypto", "crypto", &mut order);
     out
 }
 

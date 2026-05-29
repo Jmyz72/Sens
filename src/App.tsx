@@ -78,6 +78,21 @@ export default function App() {
 
   useEffect(() => { reload(); }, [reload]);
 
+  // One-time notice after the v1.1 migration reclassified accounts into owe
+  // groups (credit/loans/borrowed). Suppressed forever after first display.
+  const oweNoticeChecked = useRef(false);
+  useEffect(() => {
+    if (loading || oweNoticeChecked.current) return;
+    oweNoticeChecked.current = true;
+    client.getSetting("owe_notice_shown").then((seen) => {
+      if (seen) return;
+      if (accounts.some((a) => a.group === "owe")) {
+        notify("Some accounts are now treated as debts — review their balances.", "info");
+      }
+      void client.setSetting("owe_notice_shown", "1");
+    }).catch(() => {});
+  }, [loading, accounts, notify]);
+
   const data = useMemo(() => ({ accounts, categories, loading, reload, version }), [accounts, categories, loading, reload, version]);
   const nav = NAV.find((n) => n.id === active)!;
   const go = (id: string) => { setActive(id as ScreenId); if (scroller.current) scroller.current.scrollTop = 0; };

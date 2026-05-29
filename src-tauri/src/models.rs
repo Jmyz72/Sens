@@ -14,6 +14,18 @@ pub const KIND_ADJUSTMENT: &str = "adjustment";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AccountSubtype {
+    pub key: String,
+    pub label: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub group: String,
+    pub sort_order: i64,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccountTemplate {
     pub key: String,
     pub name: String,
@@ -31,7 +43,8 @@ pub struct Account {
     pub id: String,
     pub template_key: Option<String>,
     pub name: String,
-    pub account_type: String,
+    pub account_type: String, // derived type: fund|financial|receivable|payable|credit
+    pub group: String,        // derived: own|owe
     pub subtype: String,
     pub opening_balance_cents: i64,
     pub currency: String,
@@ -136,6 +149,7 @@ pub struct AccountBalance {
     pub account_id: String,
     pub name: String,
     pub account_type: String,
+    pub group: String,
     pub balance_cents: i64,
 }
 
@@ -143,7 +157,9 @@ pub struct AccountBalance {
 #[serde(rename_all = "camelCase")]
 pub struct DashboardSummary {
     pub month: String,
-    pub total_balance_cents: i64,
+    pub net_worth_cents: i64,
+    pub assets_cents: i64,
+    pub liabilities_cents: i64,
     pub income_cents: i64,
     pub expense_cents: i64,
     pub net_cashflow_cents: i64,

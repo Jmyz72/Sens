@@ -38,8 +38,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_account_templates,
-            commands::create_account_from_template,
-            commands::create_custom_account,
+            commands::list_account_subtypes,
+            commands::create_account,
             commands::list_accounts,
             commands::update_account,
             commands::archive_account,
@@ -69,11 +69,12 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use crate::db::open_in_memory;
+    use crate::error::AppError;
     use crate::models::*;
     use crate::service;
 
     fn acct(conn: &rusqlite::Connection, name: &str, opening: i64) -> Account {
-        service::create_custom_account(conn, name, "bank", "savings", opening).unwrap()
+        service::create_account(conn, name, "savings", opening, None).unwrap()
     }
     fn expense_cat(conn: &rusqlite::Connection) -> String {
         service::list_categories(conn, Some("expense"), false).unwrap()[0].id.clone()
@@ -85,15 +86,16 @@ mod tests {
     #[test]
     fn seeds_templates_and_categories() {
         let c = open_in_memory().unwrap();
-        assert_eq!(service::list_account_templates(&c).unwrap().len(), 49);
+        assert_eq!(service::list_account_templates(&c).unwrap().len(), 50); // +Luno
         assert!(!service::list_categories(&c, Some("expense"), false).unwrap().is_empty());
     }
 
     #[test]
-    fn create_account_from_template_derives_type() {
+    fn create_account_derives_type_and_group() {
         let c = open_in_memory().unwrap();
-        let a = service::create_account_from_template(&c, "maybank", "My Maybank", 10000).unwrap();
-        assert_eq!(a.account_type, "bank");
+        let a = service::create_account(&c, "My Maybank", "savings", 10000, Some("maybank")).unwrap();
+        assert_eq!(a.account_type, "fund");
+        assert_eq!(a.group, "own");
         assert_eq!(a.balance_cents, 10000);
     }
 
@@ -167,7 +169,7 @@ mod tests {
         let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
         assert_eq!(s.income_cents, 1000); // adjustment not counted as income
         assert_eq!(s.expense_cents, 0);
-        assert_eq!(s.total_balance_cents, 99999); // but balance reflects it
+        assert_eq!(s.net_worth_cents, 99999); // but balance reflects it
     }
 
     #[test]
@@ -240,5 +242,30 @@ mod tests {
         // The kind filter must also work in combination with include_archived.
         let all_expense = service::list_categories(&c, Some("expense"), true).unwrap();
         assert!(all_expense.iter().any(|c| c.id == cat.id), "archived expense category should appear under kind filter with include_archived=true");
+    }
+
+    #[test]
+    fn lists_sixteen_subtypes() {
+        let c = open_in_memory().unwrap();
+        assert_eq!(service::list_account_subtypes(&c).unwrap().len(), 16);
+    }
+
+    #[test]
+    fn rejects_invalid_subtype() {
+        let c = open_in_memory().unwrap();
+        let err = service::create_account(&c, "Bad", "not-a-subtype", 0, None).unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[test]
+    fn owe_account_stores_signed_and_nets_worth() {
+        let c = open_in_memory().unwrap();
+        service::create_account(&c, "Cash", "cash", 30_000_00, None).unwrap();
+        let card = service::create_account(&c, "CIMB Card", "credit-card", -5_000_00, None).unwrap();
+        assert_eq!(card.group, "owe");
+        let d = service::get_dashboard_summary(&c, "2026-05").unwrap();
+        assert_eq!(d.assets_cents, 30_000_00);
+        assert_eq!(d.liabilities_cents, -5_000_00);
+        assert_eq!(d.net_worth_cents, 25_000_00);
     }
 }

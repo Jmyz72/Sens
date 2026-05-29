@@ -6,6 +6,7 @@
 import type {
   Account,
   AccountBalance,
+  AccountSubtype,
   AccountTemplate,
   Category,
   CategoryKind,
@@ -19,10 +20,9 @@ import { dispatch } from "./invoke";
 export const client = {
   // Accounts
   listAccountTemplates: () => dispatch<AccountTemplate[]>("list_account_templates"),
-  createAccountFromTemplate: (templateKey: string, name: string, openingBalanceCents: number) =>
-    dispatch<Account>("create_account_from_template", { templateKey, name, openingBalanceCents }),
-  createCustomAccount: (name: string, accountType: string, subtype: string, openingBalanceCents: number) =>
-    dispatch<Account>("create_custom_account", { name, accountType, subtype, openingBalanceCents }),
+  listAccountSubtypes: () => dispatch<AccountSubtype[]>("list_account_subtypes"),
+  createAccount: (name: string, subtype: string, openingBalanceCents: number, templateKey: string | null) =>
+    dispatch<Account>("create_account", { name, subtype, openingBalanceCents, templateKey }),
   listAccounts: (includeArchived = false) =>
     dispatch<Account[]>("list_accounts", { includeArchived }),
   updateAccount: (input: { id: string; name?: string; subtype?: string; openingBalanceCents?: number }) =>
