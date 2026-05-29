@@ -204,4 +204,11 @@ mod tests {
         let v = service::get_setting(&c, "nonexistent_key").unwrap();
         assert_eq!(v, None);
     }
+
+    #[test]
+    fn settings_key_is_trimmed() {
+        let c = open_in_memory().unwrap();
+        service::set_setting(&c, " theme ", "dark").unwrap();
+        assert_eq!(service::get_setting(&c, "theme").unwrap(), Some("dark".to_string()));
+    }
 }

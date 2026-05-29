@@ -290,13 +290,13 @@ pub fn delete_transaction(conn: &Connection, id: &str) -> AppResult<()> {
 // ── App Settings ─────────────────────────────────────────────────────────────
 
 pub fn get_setting(conn: &Connection, key: &str) -> AppResult<Option<String>> {
-    require_nonempty("Key", key)?;
-    repo::get_setting(conn, key)
+    let key = require_nonempty("Key", key)?;
+    repo::get_setting(conn, &key)
 }
 
 pub fn set_setting(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
-    require_nonempty("Key", key)?;
-    repo::set_setting(conn, key, value, &now())
+    let key = require_nonempty("Key", key)?;
+    repo::set_setting(conn, &key, value, &now())
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
