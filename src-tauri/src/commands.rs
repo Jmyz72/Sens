@@ -74,8 +74,8 @@ pub fn set_account_balance(state: State<'_, DbState>, account_id: String, real_b
 // ── Categories ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn list_categories(state: State<'_, DbState>, kind: Option<String>) -> AppResult<Vec<Category>> {
-    with_conn!(state, c => service::list_categories(&c, kind.as_deref()))
+pub fn list_categories(state: State<'_, DbState>, kind: Option<String>, include_archived: bool) -> AppResult<Vec<Category>> {
+    with_conn!(state, c => service::list_categories(&c, kind.as_deref(), include_archived))
 }
 
 #[tauri::command]

@@ -141,11 +141,11 @@ pub fn set_account_balance(conn: &Connection, account_id: &str, real_balance_cen
 
 // ── Categories ───────────────────────────────────────────────────────────────
 
-pub fn list_categories(conn: &Connection, kind: Option<&str>) -> AppResult<Vec<Category>> {
+pub fn list_categories(conn: &Connection, kind: Option<&str>, include_archived: bool) -> AppResult<Vec<Category>> {
     if let Some(k) = kind {
         validate_category_kind(k)?;
     }
-    repo::list_categories(conn, kind)
+    repo::list_categories(conn, kind, include_archived)
 }
 
 fn validate_category_kind(kind: &str) -> AppResult<()> {

@@ -76,17 +76,17 @@ mod tests {
         service::create_custom_account(conn, name, "bank", "savings", opening).unwrap()
     }
     fn expense_cat(conn: &rusqlite::Connection) -> String {
-        service::list_categories(conn, Some("expense")).unwrap()[0].id.clone()
+        service::list_categories(conn, Some("expense"), false).unwrap()[0].id.clone()
     }
     fn income_cat(conn: &rusqlite::Connection) -> String {
-        service::list_categories(conn, Some("income")).unwrap()[0].id.clone()
+        service::list_categories(conn, Some("income"), false).unwrap()[0].id.clone()
     }
 
     #[test]
     fn seeds_templates_and_categories() {
         let c = open_in_memory().unwrap();
         assert_eq!(service::list_account_templates(&c).unwrap().len(), 49);
-        assert!(!service::list_categories(&c, Some("expense")).unwrap().is_empty());
+        assert!(!service::list_categories(&c, Some("expense"), false).unwrap().is_empty());
     }
 
     #[test]
@@ -210,5 +210,25 @@ mod tests {
         let c = open_in_memory().unwrap();
         service::set_setting(&c, " theme ", "dark").unwrap();
         assert_eq!(service::get_setting(&c, "theme").unwrap(), Some("dark".to_string()));
+    }
+
+    #[test]
+    fn list_categories_can_include_archived() {
+        let c = open_in_memory().unwrap();
+        // Create a custom expense category and immediately archive it.
+        let cat = service::create_category(&c, "Old Food", "expense", "🍔", None).unwrap();
+        service::archive_category(&c, &cat.id).unwrap();
+
+        // Without include_archived the category must not appear.
+        let visible = service::list_categories(&c, None, false).unwrap();
+        assert!(!visible.iter().any(|c| c.id == cat.id), "archived category should be hidden by default");
+
+        // With include_archived it must appear.
+        let all = service::list_categories(&c, None, true).unwrap();
+        assert!(all.iter().any(|c| c.id == cat.id), "archived category should be visible when include_archived=true");
+
+        // The kind filter must also work in combination with include_archived.
+        let all_expense = service::list_categories(&c, Some("expense"), true).unwrap();
+        assert!(all_expense.iter().any(|c| c.id == cat.id), "archived expense category should appear under kind filter with include_archived=true");
     }
 }
