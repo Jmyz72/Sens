@@ -5,6 +5,18 @@ All notable changes to Sens are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-05-30
+
+### Fixed
+- **Orphaned-subtype accounts no longer vanish** — `get_account`, `list_accounts`,
+  and `account_balances` now `LEFT JOIN` the taxonomy with a `COALESCE` fallback
+  (`fund`/`own`), so an account whose subtype isn't in the table stays visible
+  instead of silently dropping from lists/balances and returning a misleading
+  "not found". (issue #2)
+- **"Correct balance" for liability accounts** — the "Amount owed" field now
+  accepts **0** (fully paid off), and an **"in credit" toggle** lets you reconcile
+  an overpaid/refunded account to a positive balance. (issue #2)
+
 ## [1.1.0] — 2026-05-30
 
 Account taxonomy: classification now drives behavior. Each account has a
@@ -72,5 +84,6 @@ Design: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.m
   TypeScript + Vite, integer-MYR-cents money, dark/light theming, and the
   Tauri/in-memory-mock dispatch seam for browser-only dev.
 
+[1.1.1]: https://github.com/Jmyz72/Sens/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Jmyz72/Sens/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Jmyz72/Sens/releases/tag/v1.0.0

@@ -85,7 +85,7 @@ function balanceOf(a: Account): number {
 }
 const hydrate = (a: Account): Account => {
   const s = subtypeOf(a.subtype);
-  return { ...a, accountType: s?.type ?? a.accountType, group: s?.group ?? a.group, balanceCents: balanceOf(a) };
+  return { ...a, accountType: s?.type ?? "fund", group: s?.group ?? "own", balanceCents: balanceOf(a) };
 };
 const hasTxns = (id: string) => txns.some((t) => t.accountId === id || t.toAccountId === id);
 
@@ -223,7 +223,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       return undefined as T;
     }
     case "get_account_balances":
-      return accounts.filter((x) => !x.isArchived).map((x) => { const s = subtypeOf(x.subtype); return { accountId: x.id, name: x.name, accountType: s?.type ?? x.accountType, group: s?.group ?? x.group, balanceCents: balanceOf(x) } as AccountBalance; }) as T;
+      return accounts.filter((x) => !x.isArchived).map((x) => { const s = subtypeOf(x.subtype); return { accountId: x.id, name: x.name, accountType: s?.type ?? "fund", group: s?.group ?? "own", balanceCents: balanceOf(x) } as AccountBalance; }) as T;
     case "get_account_balance": {
       const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
       return balanceOf(acc) as T;
@@ -251,7 +251,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         assetsCents, liabilitiesCents,
         incomeCents: income, expenseCents: expense, netCashflowCents: income - expense,
         spendingBreakdown: breakdown,
-        accountBalances: active.map((x) => { const s = subtypeOf(x.subtype); return { accountId: x.id, name: x.name, accountType: s?.type ?? x.accountType, group: s?.group ?? x.group, balanceCents: balanceOf(x) }; }),
+        accountBalances: active.map((x) => { const s = subtypeOf(x.subtype); return { accountId: x.id, name: x.name, accountType: s?.type ?? "fund", group: s?.group ?? "own", balanceCents: balanceOf(x) }; }),
         recentTransactions: txns.slice().sort((x, y) => (y.transactionDate < x.transactionDate ? -1 : 1)).slice(0, 8),
       };
       return summary as T;

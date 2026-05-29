@@ -133,8 +133,8 @@ pub fn insert_account(
 
 pub fn get_account(conn: &Connection, id: &str) -> AppResult<Account> {
     let sql = format!(
-        "SELECT a.*, s.type AS account_type, s.account_group AS \"group\", ({}) AS balance_cents \
-         FROM accounts a JOIN account_subtypes s ON s.key = a.subtype WHERE a.id = ?1",
+        "SELECT a.*, COALESCE(s.type, 'fund') AS account_type, COALESCE(s.account_group, 'own') AS \"group\", ({}) AS balance_cents \
+         FROM accounts a LEFT JOIN account_subtypes s ON s.key = a.subtype WHERE a.id = ?1",
         balance_expr("a")
     );
     conn.query_row(&sql, [id], map_account)
@@ -146,8 +146,8 @@ pub fn get_account(conn: &Connection, id: &str) -> AppResult<Account> {
 
 pub fn list_accounts(conn: &Connection, include_archived: bool) -> AppResult<Vec<Account>> {
     let sql = format!(
-        "SELECT a.*, s.type AS account_type, s.account_group AS \"group\", ({}) AS balance_cents \
-         FROM accounts a JOIN account_subtypes s ON s.key = a.subtype {} ORDER BY a.created_at",
+        "SELECT a.*, COALESCE(s.type, 'fund') AS account_type, COALESCE(s.account_group, 'own') AS \"group\", ({}) AS balance_cents \
+         FROM accounts a LEFT JOIN account_subtypes s ON s.key = a.subtype {} ORDER BY a.created_at",
         balance_expr("a"),
         if include_archived { "" } else { "WHERE a.is_archived = 0" }
     );
@@ -449,8 +449,8 @@ pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<
 
 pub fn account_balances(conn: &Connection) -> AppResult<Vec<AccountBalance>> {
     let sql = format!(
-        "SELECT a.id, a.name, s.type AS account_type, s.account_group AS \"group\", ({}) AS balance_cents \
-         FROM accounts a JOIN account_subtypes s ON s.key = a.subtype \
+        "SELECT a.id, a.name, COALESCE(s.type, 'fund') AS account_type, COALESCE(s.account_group, 'own') AS \"group\", ({}) AS balance_cents \
+         FROM accounts a LEFT JOIN account_subtypes s ON s.key = a.subtype \
          WHERE a.is_archived = 0 ORDER BY a.created_at",
         balance_expr("a")
     );
