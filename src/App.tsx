@@ -14,14 +14,16 @@ import { currentMonth, fmtMonth, shiftMonth } from "./lib/format";
 import { Dashboard } from "./screens/Dashboard";
 import { Accounts } from "./screens/Accounts";
 import { Transactions } from "./screens/Transactions";
+import { Settings } from "./screens/Settings";
 import { AddTransaction } from "./modals/AddTransaction";
 import { AddAccount } from "./modals/AddAccount";
 
-type ScreenId = "dashboard" | "accounts" | "transactions";
+type ScreenId = "dashboard" | "accounts" | "transactions" | "settings";
 const NAV: { id: ScreenId; label: string; icon: IconName; sub: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "home", sub: "Your money at a glance" },
   { id: "accounts", label: "Accounts", icon: "wallet", sub: "All balances in one place" },
   { id: "transactions", label: "Transactions", icon: "list", sub: "Every ringgit in and out" },
+  { id: "settings", label: "Settings", icon: "sliders", sub: "Preferences and about" },
 ];
 
 export default function App() {
@@ -29,6 +31,28 @@ export default function App() {
   const { mode, toggle } = useThemeMode();
   const [active, setActive] = useState<ScreenId>("dashboard");
   const [month, setMonth] = useState(currentMonth());
+
+  // On mount: if remember_month is on, restore the last viewed month.
+  useEffect(() => {
+    client.getSetting("remember_month").then((v) => {
+      if (v === "1") {
+        client.getSetting("dashboard_month").then((m) => {
+          if (m) setMonth(m);
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Persist the month whenever it changes (only if remember_month is on).
+  const handleSetMonth = useCallback((updater: (m: string) => string) => {
+    setMonth((prev) => {
+      const next = updater(prev);
+      client.getSetting("remember_month").then((v) => {
+        if (v === "1") client.setSetting("dashboard_month", next).catch(() => {});
+      }).catch(() => {});
+      return next;
+    });
+  }, []);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,9 +120,9 @@ export default function App() {
             <div style={{ flex: 1 }} />
             {active === "dashboard" && (
               <div style={{ display: "flex", alignItems: "center", gap: 2, background: t.panel, borderRadius: 8, border: `0.5px solid ${t.border}`, padding: 2 }}>
-                <button className="sens-icon-btn" onClick={() => setMonth((m) => shiftMonth(m, -1))} style={{ width: 28, height: 26, color: t.dim }}><Icon name="chevronLeft" size={15} /></button>
+                <button className="sens-icon-btn" onClick={() => handleSetMonth((m) => shiftMonth(m, -1))} style={{ width: 28, height: 26, color: t.dim }}><Icon name="chevronLeft" size={15} /></button>
                 <span style={{ fontSize: 12.5, fontWeight: 600, minWidth: 110, textAlign: "center" }}>{fmtMonth(month)}</span>
-                <button className="sens-icon-btn" onClick={() => setMonth((m) => shiftMonth(m, 1))} style={{ width: 28, height: 26, color: t.dim }}><Icon name="chevronRight" size={15} /></button>
+                <button className="sens-icon-btn" onClick={() => handleSetMonth((m) => shiftMonth(m, 1))} style={{ width: 28, height: 26, color: t.dim }}><Icon name="chevronRight" size={15} /></button>
               </div>
             )}
             <div style={{ position: "relative" }}>
@@ -123,6 +147,7 @@ export default function App() {
             {active === "dashboard" && <Dashboard month={month} go={go} />}
             {active === "accounts" && <Accounts />}
             {active === "transactions" && <Transactions />}
+            {active === "settings" && <Settings />}
           </div>
         </div>
 
