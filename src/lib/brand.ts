@@ -3,6 +3,9 @@
 // dark and light themes — GlyphTile renders the glyph at full tone on a
 // hexA(tone, 0.16) background, so near-black and near-white are avoided.
 // Values are intentionally plausible, not pixel-accurate, brand hues.
+// Note: a couple of entries (paypal, uob) are deep brand blues; those are used
+// only as tile-background tints via GlyphTile where the glyph uses the theme
+// text color — they are NOT used as direct text colors.
 
 export const BRAND_COLORS: Record<string, string> = {
   // ── Banks ──────────────────────────────────────────────────────────────
@@ -68,18 +71,20 @@ export const BRAND_COLORS: Record<string, string> = {
   "payoneer":           "#FF4800", // Payoneer orange
 };
 
-// A small fixed palette of pleasant, distinct mid-tones used for custom
-// (template-less) accounts. Picked to complement the app's dark/light palette
-// and avoid conflict with the semantic colors (income green, expense red, etc.).
+// A small fixed palette of mid-saturation jewel tones used for custom
+// (template-less) accounts. Each color targets ≥4.5:1 contrast on white
+// (light-theme legibility) while remaining distinct and readable as a glyph
+// color on dark panels. Near-black, near-white, and washed-out pastels are
+// avoided. Hues are evenly spread across the spectrum.
 const FALLBACK_PALETTE = [
-  "#5B8DEF", // soft blue
-  "#A78BFA", // lavender
-  "#34C4A4", // seafoam
-  "#E0A13C", // amber
-  "#E87BAC", // rose
-  "#64B5F6", // sky
-  "#81C784", // sage
-  "#FFB74D", // peach
+  "#0E7FC4", // cerulean blue
+  "#7C3AED", // violet
+  "#0D8A72", // teal
+  "#B45309", // amber-brown
+  "#BE185D", // magenta-rose
+  "#15803D", // forest green
+  "#C2410C", // burnt orange-red
+  "#475569", // slate
 ];
 
 /** Simple djb2-style hash → palette index. */

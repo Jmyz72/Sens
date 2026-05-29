@@ -9,7 +9,7 @@ import { Btn, Field, GlyphTile, Modal, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { parseAmountToCents } from "../lib/format";
-import { BRAND_COLORS } from "../lib/brand";
+import { templateTone } from "../lib/brand";
 
 const CUSTOM_TYPES = ["bank", "digital_bank", "ewallet", "bnpl", "investment", "custom"];
 
@@ -82,7 +82,7 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
                         <button key={tpl.key} className="sens-btn" onClick={() => { setPicked(tpl); if (!name) setName(tpl.name); }}
                           style={{ height: 40, justifyContent: "flex-start", gap: 9, padding: "0 10px", borderRadius: 9, fontSize: 12.5, fontWeight: 600,
                             color: t.text, background: on ? t.accentSoft : t.panel2, border: `0.5px solid ${on ? hexA(t.accent, 0.5) : t.border}` }}>
-                          <GlyphTile tone={BRAND_COLORS[tpl.key] ?? t.accent} size={24} emoji={tpl.name[0]} radius={7} />
+                          <GlyphTile tone={templateTone(tpl.key, t.accent)} size={24} emoji={tpl.name[0]} radius={7} />
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tpl.name}</span>
                         </button>
                       );
