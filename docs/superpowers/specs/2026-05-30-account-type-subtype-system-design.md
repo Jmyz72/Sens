@@ -1,6 +1,6 @@
 # Sens v1.1 — Account Type & Subtype System (Design)
 
-**Status:** Approved for planning
+**Status:** Implemented (merged in PR #1). Follow-ups tracked in issue #2.
 **Date:** 2026-05-30
 **Supersedes:** the "Current account-type caveat" in v1 (account_type/subtype were labels only)
 **Builds on:** `2026-05-30-sens-desktop-finance-tracker-design.md`
