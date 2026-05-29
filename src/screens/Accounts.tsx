@@ -3,7 +3,7 @@
 // archive/restore). Archived accounts are excluded from the total.
 
 import { useEffect, useState } from "react";
-import type { Account, Transaction } from "../types";
+import type { Account, AccountTypeName, Transaction } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { Btn, Card, Empty, GlyphTile, Money } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -13,16 +13,13 @@ import { useAppData } from "../store";
 import { SetBalance } from "../modals/SetBalance";
 import { EditAccount } from "../modals/EditAccount";
 import { accountTone } from "../lib/brand";
+import { balanceDisplay, toneColor, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
 import { useToast } from "../components/Toast";
 import { computeRunningBalances } from "../lib/kinds";
 
 const ACTIVITY_DISPLAY_LIMIT = 8;
 const ACTIVITY_FETCH_LIMIT = 500;
 
-const TYPE_LABEL: Record<string, string> = {
-  bank: "Banks", digital_bank: "Digital banks", ewallet: "E-wallets",
-  bnpl: "Buy now, pay later", investment: "Investments", global_fintech: "Global fintech", custom: "Other",
-};
 
 export function Accounts() {
   const t = useTheme();
@@ -38,14 +35,17 @@ export function Accounts() {
   useEffect(() => { client.listAccounts(true).then(setAll).catch(() => {}); }, [version]);
 
   const visible = all.filter((a) => showArchived || !a.isArchived);
-  const total = all.filter((a) => !a.isArchived).reduce((s, a) => s + a.balanceCents, 0);
+  const active = all.filter((a) => !a.isArchived);
+  const assets = active.filter((a) => a.group === "own").reduce((s, a) => s + a.balanceCents, 0);
+  const liabilities = active.filter((a) => a.group === "owe").reduce((s, a) => s + a.balanceCents, 0);
+  const netWorth = assets + liabilities;
 
-  const groups = new Map<string, Account[]>();
+  const groups = new Map<AccountTypeName, Account[]>();
   visible.forEach((a) => {
-    const key = TYPE_LABEL[a.accountType] ?? "Other";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(a);
+    if (!groups.has(a.accountType)) groups.set(a.accountType, []);
+    groups.get(a.accountType)!.push(a);
   });
+  const orderedGroups = TYPE_ORDER.filter((ty) => groups.has(ty)).map((ty) => [ty, groups.get(ty)!] as const);
 
   async function toggle(id: string) {
     if (open === id) { setOpen(null); return; }
@@ -66,8 +66,11 @@ export function Accounts() {
       <Card>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <div style={{ fontSize: 12, color: t.dim, marginBottom: 5 }}>Total balance</div>
-            <Money cents={total} size={28} weight={700} color={total < 0 ? t.negative : t.text} />
+            <div style={{ fontSize: 12, color: t.dim, marginBottom: 5 }}>Net worth</div>
+            <Money cents={netWorth} size={28} weight={700} color={netWorth < 0 ? t.negative : t.text} />
+            <div style={{ fontSize: 12, color: t.dim, marginTop: 6 }}>
+              Assets <Money cents={assets} size={12} color={t.dim} /> &nbsp;·&nbsp; Owe <Money cents={Math.abs(liabilities)} size={12} color={t.dim} />
+            </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="outline" size="md" onClick={() => setShowArchived((s) => !s)}>{showArchived ? "Hide archived" : "Show archived"}</Btn>
@@ -77,12 +80,12 @@ export function Accounts() {
 
       {visible.length === 0 && <Card><Empty icon="wallet" title="No accounts yet" hint="Create one from the Add menu." /></Card>}
 
-      {[...groups.entries()].map(([label, accs]) => {
+      {orderedGroups.map(([ty, accs]) => {
         const subtotal = accs.filter((a) => !a.isArchived).reduce((s, a) => s + a.balanceCents, 0);
         return (
-          <div key={label}>
+          <div key={ty}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 4px 10px" }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: t.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: t.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>{TYPE_LABEL[ty]}</span>
               <Money cents={subtotal} size={13} color={subtotal < 0 ? t.negative : t.dim} />
             </div>
             <Card pad={0} style={{ overflow: "hidden" }}>
@@ -98,9 +101,17 @@ export function Accounts() {
                           {a.name}
                           {a.isArchived && <span style={{ fontSize: 10, fontWeight: 700, color: t.faint, border: `0.5px solid ${t.border}`, borderRadius: 4, padding: "1px 5px", textTransform: "uppercase" }}>Archived</span>}
                         </div>
-                        <div style={{ fontSize: 11.5, color: t.faint, textTransform: "capitalize" }}>{a.subtype}</div>
+                        <div style={{ fontSize: 11.5, color: t.faint, textTransform: "capitalize" }}>{a.subtype.replace(/-/g, " ")}</div>
                       </div>
-                      <Money cents={a.balanceCents} size={15} color={a.balanceCents < 0 ? t.negative : t.text} />
+                      {(() => {
+                        const v = balanceDisplay(a.group, a.balanceCents);
+                        return (
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                            {v.label && <span style={{ fontSize: 10, color: t.faint }}>{v.label}</span>}
+                            <Money cents={v.magnitude} size={15} color={toneColor(v.tone, t)} />
+                          </div>
+                        );
+                      })()}
                       <Icon name="chevronDown" size={15} color={t.faint} style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                     </div>
                     {isOpen && (() => {
