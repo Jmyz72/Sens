@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { useTheme, useThemeMode } from "../theme/ThemeProvider";
-import { hexA } from "../theme/tokens";
+import { hexA, ThemeMode } from "../theme/tokens";
 import { Card, SectionTitle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
@@ -143,13 +143,12 @@ export function Settings() {
       .catch(() => setLoaded(true));
   }, []);
 
-  async function handleRememberToggle(val: boolean) {
+  function handleRememberToggle(val: boolean) {
     setRememberMonth(val);
-    await client.setSetting("remember_month", val ? "1" : "0");
+    client.setSetting("remember_month", val ? "1" : "0").catch(() => {});
   }
 
-  type ThemeOpt = "dark" | "light";
-  const themeOptions: { value: ThemeOpt; label: string; icon: React.ReactNode }[] = [
+  const themeOptions: { value: ThemeMode; label: string; icon: React.ReactNode }[] = [
     {
       value: "dark",
       label: "Dark",
@@ -162,7 +161,7 @@ export function Settings() {
     },
   ];
 
-  function handleThemeChange(val: ThemeOpt) {
+  function handleThemeChange(val: ThemeMode) {
     if (val !== mode) toggle();
   }
 
