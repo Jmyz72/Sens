@@ -138,7 +138,16 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       return hydrate(acc) as T;
     }
     case "list_categories":
-      return categories.filter((c) => !c.isArchived && (!a.kind || c.kind === a.kind)) as T;
+      return categories.filter((c) => (a.includeArchived || !c.isArchived) && (!a.kind || c.kind === a.kind)) as T;
+    case "update_category": {
+      const cat = categories.find((x) => x.id === a.input.id) ?? fail("NotFound", "Category not found");
+      if (a.input.name != null) cat.name = String(a.input.name).trim();
+      if (a.input.emoji != null) cat.emoji = a.input.emoji;
+      if ("color" in a.input) cat.color = a.input.color ?? null;
+      if (a.input.sortOrder != null) cat.sortOrder = a.input.sortOrder;
+      cat.updatedAt = now();
+      return cat as T;
+    }
     case "create_category": {
       const cat: Category = { id: uid(), name: String(a.name).trim(), kind: a.kind, emoji: a.emoji, color: a.color ?? null, sortOrder: 100, isSystem: false, isArchived: false, createdAt: now(), updatedAt: now() };
       categories.push(cat);

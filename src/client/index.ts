@@ -33,9 +33,11 @@ export const client = {
     dispatch<Account>("set_account_balance", { accountId, realBalanceCents }),
 
   // Categories
-  listCategories: (kind?: CategoryKind) => dispatch<Category[]>("list_categories", { kind: kind ?? null }),
+  listCategories: (kind?: CategoryKind, includeArchived = false) => dispatch<Category[]>("list_categories", { kind: kind ?? null, includeArchived }),
   createCategory: (name: string, kind: CategoryKind, emoji: string, color?: string) =>
     dispatch<Category>("create_category", { name, kind, emoji, color: color ?? null }),
+  updateCategory: (input: { id: string; name?: string; emoji?: string; color?: string; sortOrder?: number }) =>
+    dispatch<Category>("update_category", { input }),
   archiveCategory: (id: string) => dispatch<Category>("archive_category", { id }),
   restoreCategory: (id: string) => dispatch<Category>("restore_category", { id }),
 
