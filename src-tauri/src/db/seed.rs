@@ -7,8 +7,10 @@
 use crate::error::AppResult;
 use rusqlite::Connection;
 
-/// (key, name, group_name, default_subtype, sort_order). The account_type is
-/// derived from the group at account-creation time (see service layer).
+/// (key, name, group_name, default_subtype, sort_order). `group_name` only
+/// organises the provider picker in the UI; `default_subtype` is a suggested
+/// starting subtype. The authoritative type/group for an account come from the
+/// `account_subtypes` taxonomy (seeded by migration 002), not from the template.
 struct Tpl(&'static str, &'static str, &'static str, &'static str, i64);
 
 fn templates() -> Vec<Tpl> {

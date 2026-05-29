@@ -1,6 +1,7 @@
 //! Service layer: business rules and data correctness. Validates inputs,
-//! enforces MYR-only and archived-account rules, derives account types from
-//! templates, runs balance correction, and assembles dashboard summaries.
+//! enforces MYR-only and archived-account rules, validates subtypes against
+//! the `account_subtypes` taxonomy, runs balance correction, and assembles
+//! dashboard summaries.
 
 use crate::error::{AppError, AppResult};
 use crate::models::*;
