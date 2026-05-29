@@ -1,0 +1,76 @@
+# Changelog
+
+All notable changes to Sens are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.1.0] — 2026-05-30
+
+Account taxonomy: classification now drives behavior. Each account has a
+`subtype` that maps to a `type` (fund / financial / receivable / payable /
+credit) and a `group` (own / owe), and the group drives net worth across
+balances, the dashboard, and account lists.
+
+Design: `docs/superpowers/specs/2026-05-30-account-type-subtype-system-design.md`
+· Merged in PR #1 · Follow-ups tracked in issue #2.
+
+### Added
+- **`account_subtypes` taxonomy** (16 subtypes → 5 types → 2 groups), the
+  canonical reference table created and seeded by migration 002; `type`/`group`
+  are derived on read.
+- **Signed liabilities & net worth** — `owe`-group accounts carry negative
+  balances; the dashboard reports net worth = assets + liabilities, plus assets
+  and owe totals. The balance engine is unchanged.
+- **Unified `create_account(name, subtype, openingBalanceCents, templateKey?)`**
+  command and **`list_account_subtypes`**.
+- **Provider/classification decoupling** — templates are branding only; the user
+  picks type → subtype independently. New Crypto provider group + Luno.
+- **Owe-aware UI** — type-first AddAccount/EditAccount, Accounts grouped by type,
+  "You owe" / "In credit" display (`balanceDisplay` in `src/lib/accounts.ts`),
+  and an owe-aware "Correct balance" flow ("Amount owed").
+- **One-time notice** shown after migration if any account was reclassified as a
+  debt.
+
+### Changed
+- Dashboard `total_balance_cents` → `net_worth_cents` (+ `assets_cents`,
+  `liabilities_cents`).
+- `account_type`/`group` are now derived (via JOIN on `account_subtypes`) rather
+  than stored ad hoc.
+
+### Removed
+- `create_account_from_template` and `create_custom_account` (replaced by the
+  unified `create_account`).
+- The `accounts.account_type` column (dropped in migration 002; existing rows
+  are remapped to the new subtype keys, reclassify-only with no balance sign
+  flip).
+
+### Deferred (not in this release)
+- Per-subtype behavior: credit limits & utilization, installment/payoff
+  schedules, interest, investment cost-vs-value.
+
+## [1.0.0] — 2026-05-30
+
+Initial release — a local-first desktop personal-finance tracker for Malaysian
+Ringgit (MYR), manual entry only (no sync, no bank connections, no
+multi-currency).
+
+Design: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.md`
+
+### Added
+- **Accounts** from a built-in provider template catalog (banks, digital banks,
+  e-wallets, BNPL, investment, global fintech) or custom; archive/restore.
+- **Transactions** — income, expense, transfer, and signed adjustment kinds;
+  balances computed on read as opening + signed history (never stored).
+- **Balance correction** — edits the opening balance (no history) or records a
+  dated adjustment (with history).
+- **Categories** — seeded income/expense/transfer defaults; system categories
+  cannot be archived.
+- **Dashboard** — month-scoped totals and spending breakdown (transfers and
+  adjustments excluded from income/expense/cashflow).
+- **Foundation** — Tauri v2 + Rust + SQLite (rusqlite, bundled), React 19 +
+  TypeScript + Vite, integer-MYR-cents money, dark/light theming, and the
+  Tauri/in-memory-mock dispatch seam for browser-only dev.
+
+[1.1.0]: https://github.com/Jmyz72/Sens/releases/tag/v1.1.0
+[1.0.0]: https://github.com/Jmyz72/Sens/releases/tag/v1.0.0
