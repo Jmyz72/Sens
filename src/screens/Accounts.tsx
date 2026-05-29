@@ -12,6 +12,7 @@ import { client } from "../client";
 import { useAppData } from "../store";
 import { SetBalance } from "../modals/SetBalance";
 import { EditAccount } from "../modals/EditAccount";
+import { accountTone } from "../lib/brand";
 
 const TYPE_LABEL: Record<string, string> = {
   bank: "Banks", digital_bank: "Digital banks", ewallet: "E-wallets",
@@ -85,7 +86,7 @@ export function Accounts() {
                 return (
                   <div key={a.id} style={{ borderTop: i ? `0.5px solid ${t.divider}` : "none", opacity: a.isArchived ? 0.55 : 1 }}>
                     <div className="sens-row click" onClick={() => toggle(a.id)} style={{ display: "flex", alignItems: "center", gap: 13, padding: "0 18px", height: 62 }}>
-                      <GlyphTile tone={t.accent} size={36} emoji={a.name[0]} radius={10} />
+                      <GlyphTile tone={accountTone({ templateKey: a.templateKey, fallbackSeed: a.id }, t.accent)} size={36} emoji={a.name[0]} radius={10} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
                           {a.name}

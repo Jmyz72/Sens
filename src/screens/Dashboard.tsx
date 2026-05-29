@@ -10,6 +10,7 @@ import { Card, Empty, Money, SectionTitle } from "../components/ui";
 import { TxnRow } from "../components/TxnRow";
 import { client } from "../client";
 import { useAppData } from "../store";
+import { accountTone } from "../lib/brand";
 
 export function Dashboard({ month, go }: { month: string; go: (screen: string) => void }) {
   const t = useTheme();
@@ -75,13 +76,16 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string) =
             <Empty icon="wallet" title="No accounts" />
           ) : (
             <div style={{ display: "flex", flexDirection: "column" }}>
-              {data.accountBalances.map((a) => (
+              {data.accountBalances.map((a) => {
+                const tone = accountTone({ fallbackSeed: a.accountId }, t.accent);
+                return (
                 <div key={a.accountId} className="sens-row" style={{ display: "flex", alignItems: "center", gap: 11, padding: "0 8px", margin: "0 -8px", height: 44, borderRadius: 9 }}>
-                  <div style={{ width: 30, height: 30, borderRadius: 9, background: hexA(t.accent, 0.16), color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700 }}>{a.name[0]}</div>
+                  <div style={{ width: 30, height: 30, borderRadius: 9, background: hexA(tone, 0.16), color: tone, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700 }}>{a.name[0]}</div>
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span>
                   <Money cents={a.balanceCents} size={13} color={a.balanceCents < 0 ? t.negative : t.text} />
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </Card>
