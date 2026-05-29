@@ -106,8 +106,12 @@ CREATE TABLE account_subtypes (
 
 - **Drop the `account_type` column** (`ALTER TABLE accounts DROP COLUMN account_type`;
   SQLite ≥ 3.35, satisfied by bundled rusqlite).
-- **`subtype`** becomes the single classifier, FK into the taxonomy:
-  `subtype TEXT NOT NULL REFERENCES account_subtypes(key) ON DELETE RESTRICT`.
+- **`subtype`** becomes the single classifier. Validity is enforced in the **service
+  layer** (checked against `account_subtypes` on create/update), not a DB foreign key:
+  adding an FK to the existing table needs a full rebuild (SQLite can't `ALTER ADD
+  CONSTRAINT`, and a rebuild requires `foreign_keys=OFF`, which the in-transaction
+  migration runner can't toggle). Integrity is equivalent because all writes go through
+  the service. The column stays `subtype TEXT NOT NULL`.
 - **`opening_balance_cents`** is now **signed**: for `owe` accounts it is stored negative.
   No CHECK forbids negatives (none today), so no constraint change.
 
