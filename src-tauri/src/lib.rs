@@ -268,4 +268,25 @@ mod tests {
         assert_eq!(d.liabilities_cents, -5_000_00);
         assert_eq!(d.net_worth_cents, 25_000_00);
     }
+
+    #[test]
+    fn account_with_unknown_subtype_still_lists() {
+        // An account whose subtype isn't in the taxonomy (e.g. a future rename or
+        // a direct DB edit) must stay visible via the LEFT JOIN + COALESCE fallback,
+        // not silently vanish. Insert one directly to bypass service validation.
+        let c = open_in_memory().unwrap();
+        c.execute(
+            "INSERT INTO accounts (id, template_key, name, subtype, opening_balance_cents, currency, is_archived, created_at, updated_at)
+             VALUES ('orphan', NULL, 'Mystery', 'gone-subtype', 100, 'MYR', 0, 't', 't')",
+            [],
+        )
+        .unwrap();
+        let all = service::list_accounts(&c, true).unwrap();
+        let a = all.iter().find(|x| x.id == "orphan").expect("orphan account should still appear");
+        assert_eq!(a.account_type, "fund"); // COALESCE fallback type
+        assert_eq!(a.group, "own"); // COALESCE fallback group
+        // get_account must resolve (not a misleading NotFound) and net worth includes it.
+        assert_eq!(service::get_account_balance(&c, "orphan").unwrap(), 100);
+        assert_eq!(service::get_dashboard_summary(&c, "2026-05").unwrap().net_worth_cents, 100);
+    }
 }
