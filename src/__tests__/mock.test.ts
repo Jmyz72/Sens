@@ -14,11 +14,11 @@ import type { Account, AccountBalance, DashboardSummary, Transaction } from "../
 
 // Helper to create a fresh custom account with zero opening balance
 async function freshAccount(name = "Test Account", opening = 0): Promise<Account> {
-  return mockInvoke<Account>("create_custom_account", {
+  return mockInvoke<Account>("create_account", {
     name,
-    accountType: "bank",
     subtype: "savings",
     openingBalanceCents: opening,
+    templateKey: null,
   });
 }
 
@@ -32,9 +32,9 @@ async function firstCategoryId(kind: "income" | "expense"): Promise<string> {
   return cats[0].id;
 }
 
-// ── create_custom_account + list_accounts ────────────────────────────────────
+// ── create_account + list_accounts ───────────────────────────────────────────
 
-describe("create_custom_account + list_accounts", () => {
+describe("create_account + list_accounts", () => {
   it("a freshly created account appears in list_accounts", async () => {
     const uniqueName = `ListTest-${Date.now()}-${Math.random()}`;
     const created = await freshAccount(uniqueName, 50000);
@@ -53,11 +53,11 @@ describe("create_custom_account + list_accounts", () => {
 
   it("creating an account with empty name throws ValidationError", async () => {
     await expect(
-      mockInvoke("create_custom_account", {
+      mockInvoke("create_account", {
         name: "   ",
-        accountType: "bank",
         subtype: "savings",
         openingBalanceCents: 0,
+        templateKey: null,
       }),
     ).rejects.toMatchObject({ code: "ValidationError" });
   });
@@ -268,7 +268,7 @@ describe("set_account_balance", () => {
 // ── get_dashboard_summary: adjustments excluded from income/expense ───────────
 
 describe("get_dashboard_summary: adjustments excluded from income/expense", () => {
-  it("an adjustment does NOT change incomeCents/expenseCents but DOES change totalBalanceCents", async () => {
+  it("an adjustment does NOT change incomeCents/expenseCents but DOES change netWorthCents", async () => {
     const month = "2026-06";
     const acc = await freshAccount(`DashAdjTest-${Date.now()}`, 10000);
 
@@ -297,9 +297,9 @@ describe("get_dashboard_summary: adjustments excluded from income/expense", () =
     expect(after.incomeCents).toBe(before.incomeCents + 1000);
     // The adjustment should NOT change expenseCents
     expect(after.expenseCents).toBe(before.expenseCents);
-    // The adjustment DOES affect the total balance (it changed the account's balance by +2000)
-    // totalBalanceCents reflects all accounts' current balances
-    expect(after.totalBalanceCents).toBeGreaterThan(before.totalBalanceCents);
+    // The adjustment DOES affect the net worth (it changed the account's balance by +2000)
+    // netWorthCents reflects all accounts' current balances
+    expect(after.netWorthCents).toBeGreaterThan(before.netWorthCents);
   });
 });
 
