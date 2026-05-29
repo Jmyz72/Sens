@@ -6,8 +6,10 @@
 import type {
   Account,
   AccountBalance,
+  AccountGroup,
   AccountSubtype,
   AccountTemplate,
+  AccountTypeName,
   Category,
   CategoryBreakdown,
   DashboardSummary,
@@ -22,7 +24,7 @@ const now = () => new Date().toISOString();
 const today = () => new Date().toISOString().slice(0, 10);
 
 // ── taxonomy ──
-const SUBTYPES: AccountSubtype[] = [
+const SUBTYPE_ROWS: [string, string, AccountTypeName, AccountGroup][] = [
   ["cash","Cash","fund","own"],["ewallet","E-wallet","fund","own"],
   ["savings","Savings account","fund","own"],["current","Current / Checking","fund","own"],
   ["fixed-deposit","Fixed deposit","financial","own"],["investment","Investment / Brokerage","financial","own"],
@@ -31,7 +33,10 @@ const SUBTYPES: AccountSubtype[] = [
   ["credit-card","Credit card","credit","owe"],["bnpl","BNPL","credit","owe"],
   ["personal-loan","Personal loan","credit","owe"],["mortgage","Mortgage","credit","owe"],
   ["car-loan","Car / Hire-purchase loan","credit","owe"],["other-debt","Other debt","credit","owe"],
-].map(([key, label, type, group], i) => ({ key, label, type, group, sortOrder: i, isActive: true } as AccountSubtype));
+];
+const SUBTYPES: AccountSubtype[] = SUBTYPE_ROWS.map(([key, label, type, group], i) => ({
+  key, label, type, group, sortOrder: i, isActive: true,
+}));
 const subtypeOf = (key: string) => SUBTYPES.find((s) => s.key === key);
 
 // ── seed templates ──
@@ -128,7 +133,12 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "update_account": {
       const acc = accounts.find((x) => x.id === a.input.id) ?? fail("NotFound", "Account not found");
       if (a.input.name != null) acc.name = String(a.input.name).trim();
-      if (a.input.subtype != null) acc.subtype = a.input.subtype;
+      if (a.input.subtype != null) {
+        const s = subtypeOf(a.input.subtype) ?? fail("ValidationError", `Invalid subtype: ${a.input.subtype}`);
+        acc.subtype = s.key;
+        acc.accountType = s.type;
+        acc.group = s.group;
+      }
       if (a.input.openingBalanceCents != null) acc.openingBalanceCents = a.input.openingBalanceCents;
       acc.updatedAt = now();
       return hydrate(acc) as T;
