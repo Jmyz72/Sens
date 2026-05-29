@@ -117,8 +117,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       return SUBTYPES as T;
     case "create_account": {
       if (!String(a.name).trim()) fail("ValidationError", "Account name cannot be empty");
-      const s = subtypeOf(a.subtype);
-      if (!s) fail("ValidationError", `Invalid subtype: ${a.subtype}`);
+      const s = subtypeOf(a.subtype) ?? fail("ValidationError", `Invalid subtype: ${a.subtype}`);
       if (a.templateKey != null && !templates.find((x) => x.key === a.templateKey)) fail("NotFound", "Account template not found");
       const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
       accounts.push(acc);
