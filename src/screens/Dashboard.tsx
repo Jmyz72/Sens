@@ -19,9 +19,15 @@ function DashboardSkeleton() {
   const t = useTheme();
   return (
     <div className="sens-screen" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Net worth hero */}
+      <Card>
+        <Skeleton width="28%" height={11} radius={5} style={{ marginBottom: 14 }} />
+        <Skeleton width="45%" height={28} radius={6} />
+        <Skeleton width="55%" height={10} radius={4} style={{ marginTop: 10 }} />
+      </Card>
       {/* KPI row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
-        {[0, 1, 2, 3].map((i) => (
+        {[0, 1, 2].map((i) => (
           <Card key={i}>
             <Skeleton width="55%" height={11} radius={5} style={{ marginBottom: 14 }} />
             <Skeleton width="72%" height={24} radius={6} />
