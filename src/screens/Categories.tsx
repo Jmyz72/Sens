@@ -365,10 +365,10 @@ function CategoryRow({
       {/* Actions */}
       <div style={{ display: "flex", gap: 4 }}>
         <Btn variant="outline" size="sm" icon="pencil" onClick={onEdit}>Edit</Btn>
-        {c.isArchived
+        {!c.isSystem && (c.isArchived
           ? <Btn variant="outline" size="sm" icon="restore" onClick={onRestore}>Restore</Btn>
           : <Btn variant="outline" size="sm" icon="archive" onClick={onArchive}>Archive</Btn>
-        }
+        )}
       </div>
     </div>
   );

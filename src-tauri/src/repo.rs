@@ -185,27 +185,19 @@ fn map_category(r: &Row) -> rusqlite::Result<Category> {
 }
 
 pub fn list_categories(conn: &Connection, kind: Option<&str>, include_archived: bool) -> AppResult<Vec<Category>> {
-    let archived_clause = if include_archived { "" } else { "is_archived = 0" };
-    let (sql, has) = match kind {
-        Some(_) => {
-            let where_clause = if include_archived {
-                "WHERE kind = ?1".to_string()
-            } else {
-                "WHERE is_archived = 0 AND kind = ?1".to_string()
-            };
-            (format!("SELECT * FROM categories {} ORDER BY sort_order, name", where_clause), true)
-        }
-        None => {
-            let where_clause = if include_archived {
-                String::new()
-            } else {
-                format!("WHERE {}", archived_clause)
-            };
-            (format!("SELECT * FROM categories {} ORDER BY sort_order, name", where_clause), false)
-        }
+    let archived_filter = if include_archived { "" } else { "AND is_archived = 0" };
+    let (sql, has_kind) = match kind {
+        Some(_) => (
+            format!("SELECT * FROM categories WHERE kind = ?1 {} ORDER BY sort_order, name", archived_filter),
+            true,
+        ),
+        None => (
+            format!("SELECT * FROM categories WHERE 1=1 {} ORDER BY sort_order, name", archived_filter),
+            false,
+        ),
     };
     let mut stmt = conn.prepare(&sql)?;
-    let rows = if has {
+    let rows = if has_kind {
         stmt.query_map([kind.unwrap()], map_category)?.collect::<Result<Vec<_>, _>>()?
     } else {
         stmt.query_map([], map_category)?.collect::<Result<Vec<_>, _>>()?

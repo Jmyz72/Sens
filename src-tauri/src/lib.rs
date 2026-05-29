@@ -213,6 +213,16 @@ mod tests {
     }
 
     #[test]
+    fn cannot_archive_system_category() {
+        let c = open_in_memory().unwrap();
+        // All seeded categories are is_system=1; pick the first one.
+        let sys = service::list_categories(&c, None, false).unwrap().into_iter().next().unwrap();
+        assert!(sys.is_system, "expected a system category");
+        let result = service::archive_category(&c, &sys.id);
+        assert!(result.is_err(), "archiving a system category should fail");
+    }
+
+    #[test]
     fn list_categories_can_include_archived() {
         let c = open_in_memory().unwrap();
         // Create a custom expense category and immediately archive it.

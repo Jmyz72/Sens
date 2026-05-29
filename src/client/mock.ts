@@ -156,6 +156,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "archive_category":
     case "restore_category": {
       const c = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
+      if (command === "archive_category" && c.isSystem) fail("Conflict", "System categories cannot be archived");
       c.isArchived = command === "archive_category";
       return c as T;
     }
