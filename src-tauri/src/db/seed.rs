@@ -45,6 +45,7 @@ fn templates() -> Vec<Tpl> {
         ("paypal", "PayPal"), ("wise", "Wise"), ("revolut", "Revolut"),
         ("n26", "N26"), ("payoneer", "Payoneer"),
     ];
+    let crypto = [("luno", "Luno")];
 
     let mut out = Vec::new();
     let mut order = 0i64;
@@ -60,6 +61,7 @@ fn templates() -> Vec<Tpl> {
     push(&bnpl, "Buy now, pay later", "bnpl", &mut order);
     push(&investment, "Investment", "investment", &mut order);
     push(&fintech, "Global fintech", "ewallet", &mut order);
+    push(&crypto, "Crypto", "crypto", &mut order);
     out
 }
 

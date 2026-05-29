@@ -26,24 +26,19 @@ pub fn list_account_templates(state: State<'_, DbState>) -> AppResult<Vec<Accoun
 }
 
 #[tauri::command]
-pub fn create_account_from_template(
-    state: State<'_, DbState>,
-    template_key: String,
-    name: String,
-    opening_balance_cents: i64,
-) -> AppResult<Account> {
-    with_conn!(state, c => service::create_account_from_template(&c, &template_key, &name, opening_balance_cents))
+pub fn list_account_subtypes(state: State<'_, DbState>) -> AppResult<Vec<AccountSubtype>> {
+    with_conn!(state, c => service::list_account_subtypes(&c))
 }
 
 #[tauri::command]
-pub fn create_custom_account(
+pub fn create_account(
     state: State<'_, DbState>,
     name: String,
-    account_type: String,
     subtype: String,
     opening_balance_cents: i64,
+    template_key: Option<String>,
 ) -> AppResult<Account> {
-    with_conn!(state, c => service::create_custom_account(&c, &name, &account_type, &subtype, opening_balance_cents))
+    with_conn!(state, c => service::create_account(&c, &name, &subtype, opening_balance_cents, template_key.as_deref()))
 }
 
 #[tauri::command]

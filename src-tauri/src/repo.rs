@@ -66,6 +66,34 @@ pub fn get_template(conn: &Connection, key: &str) -> AppResult<AccountTemplate> 
     })
 }
 
+pub fn list_account_subtypes(conn: &Connection) -> AppResult<Vec<AccountSubtype>> {
+    let mut stmt = conn.prepare(
+        "SELECT key, label, type, account_group, sort_order, is_active
+         FROM account_subtypes WHERE is_active = 1 ORDER BY sort_order",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(AccountSubtype {
+                key: r.get(0)?,
+                label: r.get(1)?,
+                type_: r.get(2)?,
+                group: r.get(3)?,
+                sort_order: r.get(4)?,
+                is_active: r.get::<_, i64>(5)? != 0,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn subtype_exists(conn: &Connection, key: &str) -> AppResult<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM account_subtypes WHERE key = ?1)",
+        [key],
+        |r| r.get(0),
+    )?)
+}
+
 // ── Accounts ─────────────────────────────────────────────────────────────────
 
 fn map_account(r: &Row) -> rusqlite::Result<Account> {
@@ -73,7 +101,8 @@ fn map_account(r: &Row) -> rusqlite::Result<Account> {
         id: r.get("id")?,
         template_key: r.get("template_key")?,
         name: r.get("name")?,
-        account_type: r.get("account_type")?,
+        account_type: r.get("account_type")?, // aliased from s.type
+        group: r.get("group")?,               // aliased from s.account_group
         subtype: r.get("subtype")?,
         opening_balance_cents: r.get("opening_balance_cents")?,
         currency: r.get("currency")?,
@@ -89,23 +118,23 @@ pub fn insert_account(
     id: &str,
     template_key: Option<&str>,
     name: &str,
-    account_type: &str,
     subtype: &str,
     opening_balance_cents: i64,
     now: &str,
 ) -> AppResult<Account> {
     conn.execute(
         "INSERT INTO accounts
-           (id, template_key, name, account_type, subtype, opening_balance_cents, currency, is_archived, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'MYR', 0, ?7, ?7)",
-        params![id, template_key, name, account_type, subtype, opening_balance_cents, now],
+           (id, template_key, name, subtype, opening_balance_cents, currency, is_archived, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'MYR', 0, ?6, ?6)",
+        params![id, template_key, name, subtype, opening_balance_cents, now],
     )?;
     get_account(conn, id)
 }
 
 pub fn get_account(conn: &Connection, id: &str) -> AppResult<Account> {
     let sql = format!(
-        "SELECT a.*, ({}) AS balance_cents FROM accounts a WHERE a.id = ?1",
+        "SELECT a.*, s.type AS account_type, s.account_group AS \"group\", ({}) AS balance_cents \
+         FROM accounts a JOIN account_subtypes s ON s.key = a.subtype WHERE a.id = ?1",
         balance_expr("a")
     );
     conn.query_row(&sql, [id], map_account)
@@ -117,14 +146,13 @@ pub fn get_account(conn: &Connection, id: &str) -> AppResult<Account> {
 
 pub fn list_accounts(conn: &Connection, include_archived: bool) -> AppResult<Vec<Account>> {
     let sql = format!(
-        "SELECT a.*, ({}) AS balance_cents FROM accounts a {} ORDER BY a.created_at",
+        "SELECT a.*, s.type AS account_type, s.account_group AS \"group\", ({}) AS balance_cents \
+         FROM accounts a JOIN account_subtypes s ON s.key = a.subtype {} ORDER BY a.created_at",
         balance_expr("a"),
         if include_archived { "" } else { "WHERE a.is_archived = 0" }
     );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt
-        .query_map([], map_account)?
-        .collect::<Result<Vec<_>, _>>()?;
+    let rows = stmt.query_map([], map_account)?.collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }
 
@@ -421,8 +449,9 @@ pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<
 
 pub fn account_balances(conn: &Connection) -> AppResult<Vec<AccountBalance>> {
     let sql = format!(
-        "SELECT a.id, a.name, a.account_type, ({}) AS balance_cents
-         FROM accounts a WHERE a.is_archived = 0 ORDER BY a.created_at",
+        "SELECT a.id, a.name, s.type AS account_type, s.account_group AS \"group\", ({}) AS balance_cents \
+         FROM accounts a JOIN account_subtypes s ON s.key = a.subtype \
+         WHERE a.is_archived = 0 ORDER BY a.created_at",
         balance_expr("a")
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -432,15 +461,12 @@ pub fn account_balances(conn: &Connection) -> AppResult<Vec<AccountBalance>> {
                 account_id: r.get(0)?,
                 name: r.get(1)?,
                 account_type: r.get(2)?,
-                balance_cents: r.get(3)?,
+                group: r.get(3)?,
+                balance_cents: r.get(4)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
-}
-
-pub fn total_balance(conn: &Connection) -> AppResult<i64> {
-    Ok(account_balances(conn)?.iter().map(|a| a.balance_cents).sum())
 }
 
 pub fn recent_transactions(conn: &Connection, limit: i64) -> AppResult<Vec<Transaction>> {

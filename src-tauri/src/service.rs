@@ -19,19 +19,6 @@ fn require_nonempty(label: &str, s: &str) -> AppResult<String> {
     Ok(t.to_string())
 }
 
-/// Map a template group display name to a stable account_type.
-fn account_type_for_group(group: &str) -> &'static str {
-    match group {
-        "Banks" => "bank",
-        "Digital banks" => "digital_bank",
-        "E-wallets" => "ewallet",
-        "Buy now, pay later" => "bnpl",
-        "Investment" => "investment",
-        "Global fintech" => "global_fintech",
-        _ => "custom",
-    }
-}
-
 fn ensure_active_account(conn: &Connection, id: &str, role: &str) -> AppResult<()> {
     let a = repo::get_account(conn, id)?;
     if a.is_archived {
@@ -46,38 +33,26 @@ pub fn list_account_templates(conn: &Connection) -> AppResult<Vec<AccountTemplat
     repo::list_templates(conn)
 }
 
-pub fn create_account_from_template(
-    conn: &Connection,
-    template_key: &str,
-    name: &str,
-    opening_balance_cents: i64,
-) -> AppResult<Account> {
-    let name = require_nonempty("Account name", name)?;
-    let tpl = repo::get_template(conn, template_key)?;
-    let account_type = account_type_for_group(&tpl.group_name);
-    repo::insert_account(
-        conn,
-        &new_id(),
-        Some(template_key),
-        &name,
-        account_type,
-        &tpl.default_subtype,
-        opening_balance_cents,
-        &now(),
-    )
+pub fn list_account_subtypes(conn: &Connection) -> AppResult<Vec<AccountSubtype>> {
+    repo::list_account_subtypes(conn)
 }
 
-pub fn create_custom_account(
+pub fn create_account(
     conn: &Connection,
     name: &str,
-    account_type: &str,
     subtype: &str,
     opening_balance_cents: i64,
+    template_key: Option<&str>,
 ) -> AppResult<Account> {
     let name = require_nonempty("Account name", name)?;
-    let account_type = require_nonempty("Account type", account_type)?;
     let subtype = require_nonempty("Subtype", subtype)?;
-    repo::insert_account(conn, &new_id(), None, &name, &account_type, &subtype, opening_balance_cents, &now())
+    if !repo::subtype_exists(conn, &subtype)? {
+        return Err(AppError::Validation(format!("Invalid subtype: {subtype}")));
+    }
+    if let Some(key) = template_key {
+        repo::get_template(conn, key)?; // existence (NotFound if bogus)
+    }
+    repo::insert_account(conn, &new_id(), template_key, &name, &subtype, opening_balance_cents, &now())
 }
 
 pub fn list_accounts(conn: &Connection, include_archived: bool) -> AppResult<Vec<Account>> {
@@ -90,6 +65,11 @@ pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult
         Some(n) => Some(require_nonempty("Account name", n)?),
         None => None,
     };
+    if let Some(s) = &input.subtype {
+        if !repo::subtype_exists(conn, s)? {
+            return Err(AppError::Validation(format!("Invalid subtype: {s}")));
+        }
+    }
     repo::update_account_fields(
         conn,
         &input.id,
@@ -319,14 +299,20 @@ pub fn get_dashboard_summary(conn: &Connection, month: &str) -> AppResult<Dashbo
     let (from, to) = month_range(month)?;
     let income = repo::sum_kind_in_range(conn, KIND_INCOME, &from, &to)?;
     let expense = repo::sum_kind_in_range(conn, KIND_EXPENSE, &from, &to)?;
+    let balances = repo::account_balances(conn)?;
+    let assets_cents: i64 = balances.iter().filter(|b| b.group == "own").map(|b| b.balance_cents).sum();
+    let liabilities_cents: i64 = balances.iter().filter(|b| b.group == "owe").map(|b| b.balance_cents).sum();
+    let net_worth_cents = assets_cents + liabilities_cents;
     Ok(DashboardSummary {
         month: month.to_string(),
-        total_balance_cents: repo::total_balance(conn)?,
+        net_worth_cents,
+        assets_cents,
+        liabilities_cents,
         income_cents: income,
         expense_cents: expense,
         net_cashflow_cents: income - expense,
         spending_breakdown: repo::spending_breakdown(conn, &from, &to)?,
-        account_balances: repo::account_balances(conn)?,
+        account_balances: balances,
         recent_transactions: repo::recent_transactions(conn, 8)?,
     })
 }
