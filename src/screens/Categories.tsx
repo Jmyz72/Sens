@@ -10,6 +10,7 @@ import { Btn, Card, Empty, Field, GlyphTile, Modal, inputStyle } from "../compon
 import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { useAppData } from "../store";
+import { useToast } from "../components/Toast";
 
 // ── Preset colour palette (data constant, acceptable hardcoded hex) ─────────
 
@@ -201,6 +202,7 @@ function CategoryForm({ initial, defaultKind = "expense", onClose, onDone }: Cat
 export function Categories() {
   const t = useTheme();
   const { reload, version } = useAppData();
+  const { notify } = useToast();
   const [all, setAll] = useState<Category[]>([]);
   const [showArchived, setShowArchived] = useState(false);
   const [creating, setCreating] = useState<CategoryKind | null>(null);
@@ -213,13 +215,21 @@ export function Categories() {
   const visible = all.filter((c) => showArchived || !c.isArchived);
 
   async function archive(c: Category) {
-    await client.archiveCategory(c.id);
-    await reload();
+    try {
+      await client.archiveCategory(c.id);
+      await reload();
+    } catch (e) {
+      notify((e as { message?: string })?.message ?? "Failed to archive category", "error");
+    }
   }
 
   async function restore(c: Category) {
-    await client.restoreCategory(c.id);
-    await reload();
+    try {
+      await client.restoreCategory(c.id);
+      await reload();
+    } catch (e) {
+      notify((e as { message?: string })?.message ?? "Failed to restore category", "error");
+    }
   }
 
   async function afterMutation() {

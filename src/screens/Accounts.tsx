@@ -13,6 +13,7 @@ import { useAppData } from "../store";
 import { SetBalance } from "../modals/SetBalance";
 import { EditAccount } from "../modals/EditAccount";
 import { accountTone } from "../lib/brand";
+import { useToast } from "../components/Toast";
 
 const TYPE_LABEL: Record<string, string> = {
   bank: "Banks", digital_bank: "Digital banks", ewallet: "E-wallets",
@@ -22,6 +23,7 @@ const TYPE_LABEL: Record<string, string> = {
 export function Accounts() {
   const t = useTheme();
   const { accounts, categories, reload, version } = useAppData();
+  const { notify } = useToast();
   const [showArchived, setShowArchived] = useState(false);
   const [all, setAll] = useState<Account[]>(accounts);
   const [open, setOpen] = useState<string | null>(null);
@@ -103,8 +105,8 @@ export function Accounts() {
                           <Btn variant="outline" size="sm" icon="scale" onClick={() => setCorrecting(a)}>Correct balance</Btn>
                           <Btn variant="outline" size="sm" icon="pencil" onClick={() => setEditing(a)}>Edit</Btn>
                           {a.isArchived
-                            ? <Btn variant="outline" size="sm" icon="restore" onClick={() => client.restoreAccount(a.id).then(() => afterMutation(a.id))}>Restore</Btn>
-                            : <Btn variant="outline" size="sm" icon="archive" onClick={() => client.archiveAccount(a.id).then(() => afterMutation(a.id))}>Archive</Btn>}
+                            ? <Btn variant="outline" size="sm" icon="restore" onClick={() => client.restoreAccount(a.id).then(() => afterMutation(a.id)).catch((e: unknown) => notify((e as { message?: string })?.message ?? "Failed to restore account", "error"))}>Restore</Btn>
+                            : <Btn variant="outline" size="sm" icon="archive" onClick={() => client.archiveAccount(a.id).then(() => afterMutation(a.id)).catch((e: unknown) => notify((e as { message?: string })?.message ?? "Failed to archive account", "error"))}>Archive</Btn>}
                         </div>
                         <div style={{ fontSize: 11, fontWeight: 600, color: t.faint, textTransform: "uppercase", letterSpacing: 0.4, paddingBottom: 4 }}>Recent activity</div>
                         {acts.length === 0

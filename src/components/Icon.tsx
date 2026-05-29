@@ -7,7 +7,8 @@ export type IconName =
   | "home" | "wallet" | "list" | "sparkle" | "search" | "bell" | "plus" | "minus"
   | "dots" | "arrowUp" | "arrowDown" | "chevronLeft" | "chevronRight" | "chevronDown"
   | "in" | "out" | "swap" | "sliders" | "sun" | "moon" | "pencil" | "archive"
-  | "restore" | "trash" | "check" | "close" | "scale" | "filter";
+  | "restore" | "trash" | "check" | "close" | "scale" | "filter"
+  | "alertCircle" | "info";
 
 export function Icon({
   name, size = 18, stroke = 1.7, color = "currentColor", style = {},
@@ -43,6 +44,8 @@ export function Icon({
     close: <path {...P} d="M7 7l10 10M17 7L7 17" />,
     scale: <>{<path {...P} d="M12 4v16M7 7h10" />}<path {...P} d="M7 7l-3 6a3 3 0 0 0 6 0zM17 7l-3 6a3 3 0 0 0 6 0z" /></>,
     filter: <path {...P} d="M4 6h16l-6 7v5l-4 2v-7z" />,
+    alertCircle: <>{<circle {...P} cx="12" cy="12" r="9" />}<path {...P} d="M12 8v5" />{dot(12, 15.5, 1.1)}</>,
+    info: <>{<circle {...P} cx="12" cy="12" r="9" />}<path {...P} d="M12 16v-5" />{dot(12, 8.5, 1.1)}</>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: "block", flexShrink: 0, ...style }}>

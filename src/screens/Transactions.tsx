@@ -58,7 +58,7 @@ export function Transactions() {
   }
 
   return (
-    <div className="sens-screen" style={{ display: "grid", gridTemplateColumns: sel ? "1fr 320px" : "1fr", gap: 14, alignItems: "start" }}>
+    <div className="sens-screen" style={{ display: "grid", gridTemplateColumns: sel ? "1fr minmax(0, 300px)" : "1fr", gap: 14, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, height: 34, padding: "0 12px", background: t.panel, border: `0.5px solid ${t.border}`, borderRadius: 9, flex: 1, minWidth: 200 }}>

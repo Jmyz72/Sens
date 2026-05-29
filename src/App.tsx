@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme, useThemeMode } from "./theme/ThemeProvider";
 import { hexA } from "./theme/tokens";
+import { useToast } from "./components/Toast";
 import { Icon, type IconName } from "./components/Icon";
 import { Btn } from "./components/ui";
 import { AppDataCtx } from "./store";
@@ -31,6 +32,7 @@ const NAV: { id: ScreenId; label: string; icon: IconName; sub: string }[] = [
 export default function App() {
   const t = useTheme();
   const { mode, toggle } = useThemeMode();
+  const { notify } = useToast();
   const [active, setActive] = useState<ScreenId>("dashboard");
   const [month, setMonth] = useState(currentMonth());
 
@@ -65,10 +67,14 @@ export default function App() {
   const scroller = useRef<HTMLDivElement>(null);
 
   const reload = useCallback(async () => {
-    const [a, c] = await Promise.all([client.listAccounts(false), client.listCategories()]);
-    setAccounts(a); setCategories(c); setLoading(false);
-    setVersion((v) => v + 1);
-  }, []);
+    try {
+      const [a, c] = await Promise.all([client.listAccounts(false), client.listCategories()]);
+      setAccounts(a); setCategories(c); setLoading(false);
+      setVersion((v) => v + 1);
+    } catch (e) {
+      notify((e as { message?: string })?.message ?? "Failed to reload data", "error");
+    }
+  }, [notify]);
 
   useEffect(() => { reload(); }, [reload]);
 

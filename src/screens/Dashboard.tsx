@@ -8,9 +8,75 @@ import { useTheme } from "../theme/ThemeProvider";
 import { hexA } from "../theme/tokens";
 import { Card, Empty, Money, SectionTitle } from "../components/ui";
 import { TxnRow } from "../components/TxnRow";
+import { Skeleton } from "../components/Skeleton";
 import { client } from "../client";
 import { useAppData } from "../store";
 import { accountTone } from "../lib/brand";
+
+function DashboardSkeleton() {
+  const t = useTheme();
+  return (
+    <div className="sens-screen" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* KPI row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
+        {[0, 1, 2, 3].map((i) => (
+          <Card key={i}>
+            <Skeleton width="55%" height={11} radius={5} style={{ marginBottom: 14 }} />
+            <Skeleton width="72%" height={24} radius={6} />
+          </Card>
+        ))}
+      </div>
+      {/* Two-column row */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 14, alignItems: "start" }}>
+        <Card>
+          <Skeleton width="40%" height={13} radius={5} style={{ marginBottom: 18 }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i}>
+                <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 7 }}>
+                  <Skeleton width={20} height={20} radius={5} />
+                  <Skeleton width="50%" height={11} radius={5} />
+                  <Skeleton width={52} height={11} radius={5} style={{ marginLeft: "auto" }} />
+                </div>
+                <Skeleton height={6} radius={4} />
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card>
+          <Skeleton width="40%" height={13} radius={5} style={{ marginBottom: 18 }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 11, height: 44 }}>
+                <Skeleton width={30} height={30} radius={9} />
+                <Skeleton width="55%" height={11} radius={5} />
+                <Skeleton width={52} height={11} radius={5} style={{ marginLeft: "auto" }} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+      {/* Recent transactions card */}
+      <Card>
+        <Skeleton width="35%" height={13} radius={5} style={{ marginBottom: 18 }} />
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 11, height: 48 }}>
+            <Skeleton width={32} height={32} radius={9} />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+              <Skeleton width="52%" height={11} radius={5} />
+              <Skeleton width="30%" height={9} radius={4} />
+            </div>
+            <Skeleton width={60} height={11} radius={5} />
+          </div>
+        ))}
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: `0.5px solid ${t.divider}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Skeleton width={140} height={11} radius={5} />
+          <Skeleton width={60} height={11} radius={5} />
+        </div>
+      </Card>
+    </div>
+  );
+}
 
 export function Dashboard({ month, go }: { month: string; go: (screen: string) => void }) {
   const t = useTheme();
@@ -19,7 +85,7 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string) =
 
   useEffect(() => { client.getDashboardSummary(month).then(setData).catch(() => {}); }, [month, version]);
 
-  if (!data) return null;
+  if (!data) return <DashboardSkeleton />;
   const empty = accounts.length === 0;
 
   const kpis = [
@@ -36,7 +102,7 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string) =
         <Card><Empty icon="wallet" title="Welcome to Sens" hint="Add your first account to start tracking your money." /></Card>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
         {kpis.map((k) => (
           <Card key={k.label}>
             <div style={{ fontSize: 11, fontWeight: 600, color: t.dim, textTransform: "uppercase", letterSpacing: 0.4 }}>{k.label}</div>

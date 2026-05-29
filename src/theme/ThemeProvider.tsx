@@ -68,5 +68,7 @@ function baseCss(t: Theme): string {
     .sens-pop{animation:sensPop .18s cubic-bezier(.2,.8,.3,1);}
     @keyframes sensPop{from{opacity:.6;transform:scale(.98) translateY(5px);}to{opacity:1;transform:scale(1) translateY(0);}}
     .sens-bar{transition:width .5s cubic-bezier(.2,.7,.3,1);}
+    @keyframes sensShimmer{from{background-position:200% center;}to{background-position:-200% center;}}
+    .sens-shimmer{background-size:300% 100%;animation:sensShimmer 2s linear infinite;}
   `;
 }
