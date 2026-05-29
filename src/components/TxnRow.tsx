@@ -8,8 +8,8 @@ import { GlyphTile, Money } from "./ui";
 import { KIND_META, kindColor, signedFor } from "../lib/kinds";
 import { fmtDate } from "../lib/format";
 
-export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick, showDate = true }: {
-  tx: Transaction; accounts: Account[]; categories: Category[]; perspectiveAccountId?: string; onClick?: () => void; showDate?: boolean;
+export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick, showDate = true, balanceAfterCents }: {
+  tx: Transaction; accounts: Account[]; categories: Category[]; perspectiveAccountId?: string; onClick?: () => void; showDate?: boolean; balanceAfterCents?: number;
 }) {
   const t = useTheme();
   const cat = tx.categoryId ? categories.find((c) => c.id === tx.categoryId) : undefined;
@@ -43,7 +43,15 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
           {subtitle}{showDate ? ` · ${fmtDate(tx.transactionDate)}` : ""}
         </div>
       </div>
-      <Money cents={signed ? signedCents : tx.amountCents} signed={signed} color={tx.kind === "transfer" && !signed ? color : undefined} size={13} />
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+        <Money cents={signed ? signedCents : tx.amountCents} signed={signed} color={tx.kind === "transfer" && !signed ? color : undefined} size={13} />
+        {balanceAfterCents !== undefined && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 9.5, fontWeight: 600, color: t.faint, textTransform: "uppercase", letterSpacing: 0.4, lineHeight: 1 }}>BAL</span>
+            <Money cents={balanceAfterCents} size={11} weight={500} color={t.dim} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -56,6 +56,7 @@ export const client = {
   // Dashboard
   getDashboardSummary: (month: string) => dispatch<DashboardSummary>("get_dashboard_summary", { month }),
   getAccountBalances: () => dispatch<AccountBalance[]>("get_account_balances"),
+  getAccountBalance: (accountId: string) => dispatch<number>("get_account_balance", { accountId }),
 
   // Settings
   getSetting: (key: string) => dispatch<string | null>("get_setting", { key }),

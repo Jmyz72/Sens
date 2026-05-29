@@ -14,6 +14,10 @@ import { SetBalance } from "../modals/SetBalance";
 import { EditAccount } from "../modals/EditAccount";
 import { accountTone } from "../lib/brand";
 import { useToast } from "../components/Toast";
+import { computeRunningBalances } from "../lib/kinds";
+
+const ACTIVITY_DISPLAY_LIMIT = 8;
+const ACTIVITY_FETCH_LIMIT = 500;
 
 const TYPE_LABEL: Record<string, string> = {
   bank: "Banks", digital_bank: "Digital banks", ewallet: "E-wallets",
@@ -47,12 +51,12 @@ export function Accounts() {
     if (open === id) { setOpen(null); return; }
     setOpen(id);
     if (!activity[id]) {
-      const txns = await client.listTransactions({ accountId: id, limit: 5 });
+      const txns = await client.listTransactions({ accountId: id, limit: ACTIVITY_FETCH_LIMIT });
       setActivity((m) => ({ ...m, [id]: txns }));
     }
   }
   const refreshActivity = async (id: string) => {
-    const txns = await client.listTransactions({ accountId: id, limit: 5 });
+    const txns = await client.listTransactions({ accountId: id, limit: ACTIVITY_FETCH_LIMIT });
     setActivity((m) => ({ ...m, [id]: txns }));
   };
   const afterMutation = async (id?: string) => { await reload(); if (id) await refreshActivity(id); };
@@ -99,21 +103,44 @@ export function Accounts() {
                       <Money cents={a.balanceCents} size={15} color={a.balanceCents < 0 ? t.negative : t.text} />
                       <Icon name="chevronDown" size={15} color={t.faint} style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                     </div>
-                    {isOpen && (
-                      <div className="sens-pop" style={{ background: t.panel2, padding: "8px 18px 16px" }}>
-                        <div style={{ display: "flex", gap: 8, padding: "4px 0 12px" }}>
-                          <Btn variant="outline" size="sm" icon="scale" onClick={() => setCorrecting(a)}>Correct balance</Btn>
-                          <Btn variant="outline" size="sm" icon="pencil" onClick={() => setEditing(a)}>Edit</Btn>
-                          {a.isArchived
-                            ? <Btn variant="outline" size="sm" icon="restore" onClick={() => client.restoreAccount(a.id).then(() => afterMutation(a.id)).catch((e: unknown) => notify((e as { message?: string })?.message ?? "Failed to restore account", "error"))}>Restore</Btn>
-                            : <Btn variant="outline" size="sm" icon="archive" onClick={() => client.archiveAccount(a.id).then(() => afterMutation(a.id)).catch((e: unknown) => notify((e as { message?: string })?.message ?? "Failed to archive account", "error"))}>Archive</Btn>}
+                    {isOpen && (() => {
+                      // Compute running balances over the full fetched history (ascending order),
+                      // then display only the most recent ACTIVITY_DISPLAY_LIMIT rows (newest-first).
+                      const runningBalances = acts.length > 0
+                        ? computeRunningBalances(acts, a.id, a.openingBalanceCents)
+                        : new Map<string, number>();
+                      const displayActs = acts.slice(0, ACTIVITY_DISPLAY_LIMIT);
+                      const hiddenCount = acts.length - displayActs.length;
+                      return (
+                        <div className="sens-pop" style={{ background: t.panel2, padding: "8px 18px 16px" }}>
+                          <div style={{ display: "flex", gap: 8, padding: "4px 0 12px" }}>
+                            <Btn variant="outline" size="sm" icon="scale" onClick={() => setCorrecting(a)}>Correct balance</Btn>
+                            <Btn variant="outline" size="sm" icon="pencil" onClick={() => setEditing(a)}>Edit</Btn>
+                            {a.isArchived
+                              ? <Btn variant="outline" size="sm" icon="restore" onClick={() => client.restoreAccount(a.id).then(() => afterMutation(a.id)).catch((e: unknown) => notify((e as { message?: string })?.message ?? "Failed to restore account", "error"))}>Restore</Btn>
+                              : <Btn variant="outline" size="sm" icon="archive" onClick={() => client.archiveAccount(a.id).then(() => afterMutation(a.id)).catch((e: unknown) => notify((e as { message?: string })?.message ?? "Failed to archive account", "error"))}>Archive</Btn>}
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: t.faint, textTransform: "uppercase", letterSpacing: 0.4, paddingBottom: 4 }}>Recent activity</div>
+                          {acts.length === 0
+                            ? <div style={{ fontSize: 12.5, color: t.faint, padding: "6px 0" }}>No transactions on this account yet.</div>
+                            : displayActs.map((tx) => (
+                                <TxnRow
+                                  key={tx.id}
+                                  tx={tx}
+                                  accounts={all}
+                                  categories={categories}
+                                  perspectiveAccountId={a.id}
+                                  balanceAfterCents={runningBalances.get(tx.id)}
+                                />
+                              ))}
+                          {hiddenCount > 0 && (
+                            <div style={{ fontSize: 11.5, color: t.faint, paddingTop: 6, textAlign: "center" }}>
+                              +{hiddenCount} older transaction{hiddenCount !== 1 ? "s" : ""}
+                            </div>
+                          )}
                         </div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: t.faint, textTransform: "uppercase", letterSpacing: 0.4, paddingBottom: 4 }}>Recent activity</div>
-                        {acts.length === 0
-                          ? <div style={{ fontSize: 12.5, color: t.faint, padding: "6px 0" }}>No transactions on this account yet.</div>
-                          : acts.map((tx) => <TxnRow key={tx.id} tx={tx} accounts={all} categories={categories} perspectiveAccountId={a.id} />)}
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 );
               })}

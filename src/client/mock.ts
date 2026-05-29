@@ -202,6 +202,10 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     }
     case "get_account_balances":
       return accounts.filter((x) => !x.isArchived).map((x) => ({ accountId: x.id, name: x.name, accountType: x.accountType, balanceCents: balanceOf(x) } as AccountBalance)) as T;
+    case "get_account_balance": {
+      const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
+      return balanceOf(acc) as T;
+    }
     case "get_dashboard_summary": {
       const [y, m] = String(a.month).split("-").map(Number);
       const from = `${y}-${String(m).padStart(2, "0")}-01`;

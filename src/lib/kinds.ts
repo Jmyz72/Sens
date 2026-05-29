@@ -3,7 +3,7 @@
 // per-kind icon. `colorKey` resolves to a theme token (dark/light variants).
 
 import type { Theme } from "../theme/tokens";
-import type { TransactionKind } from "../types";
+import type { Transaction, TransactionKind } from "../types";
 import type { IconName } from "../components/Icon";
 
 export interface KindMeta {
@@ -32,4 +32,35 @@ export function signedFor(kind: TransactionKind, amountCents: number, isDestinat
   if (kind === "adjustment") return amountCents; // already signed
   // transfer
   return isDestination ? amountCents : -amountCents;
+}
+
+/**
+ * Compute a map of transaction id → "balance after this transaction" for a
+ * given account. Accumulation follows the spec:
+ *   - Sort ascending by (transactionDate, createdAt) as stable tiebreaker.
+ *   - Start from the account's openingBalanceCents.
+ *   - Add each transaction's per-account signed delta.
+ *
+ * Only transactions that actually touch `accountId` are included (the caller
+ * is responsible for pre-filtering the list to that account).
+ */
+export function computeRunningBalances(
+  txns: Transaction[],
+  accountId: string,
+  openingBalanceCents: number,
+): Map<string, number> {
+  const sorted = [...txns].sort((a, b) => {
+    const ka = a.transactionDate + "\x00" + a.createdAt;
+    const kb = b.transactionDate + "\x00" + b.createdAt;
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
+
+  const map = new Map<string, number>();
+  let running = openingBalanceCents;
+  for (const tx of sorted) {
+    const isDest = tx.toAccountId === accountId;
+    running += signedFor(tx.kind, tx.amountCents, isDest);
+    map.set(tx.id, running);
+  }
+  return map;
 }

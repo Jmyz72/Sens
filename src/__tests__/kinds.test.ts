@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { KIND_META, kindColor, signedFor } from "../lib/kinds";
+import { KIND_META, kindColor, signedFor, computeRunningBalances } from "../lib/kinds";
 import { THEMES } from "../theme/tokens";
+import type { Transaction } from "../types";
 
 // ── signedFor ─────────────────────────────────────────────────────────────────
 
@@ -104,5 +105,87 @@ describe("KIND_META", () => {
       expect(typeof meta.icon).toBe("string");
       expect(typeof meta.colorKey).toBe("string");
     }
+  });
+});
+
+// ── computeRunningBalances ────────────────────────────────────────────────────
+
+const mkTx = (overrides: Partial<Transaction> & { id: string }): Transaction => ({
+  kind: "expense",
+  accountId: "acc1",
+  toAccountId: null,
+  categoryId: null,
+  amountCents: 1000,
+  description: null,
+  transactionDate: "2026-01-01",
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
+  ...overrides,
+});
+
+describe("computeRunningBalances", () => {
+  it("empty transaction list returns empty map", () => {
+    const result = computeRunningBalances([], "acc1", 50000);
+    expect(result.size).toBe(0);
+  });
+
+  it("single income transaction: balance = opening + amount", () => {
+    const tx = mkTx({ id: "t1", kind: "income", amountCents: 5000, accountId: "acc1" });
+    const result = computeRunningBalances([tx], "acc1", 10000);
+    expect(result.get("t1")).toBe(15000);
+  });
+
+  it("single expense transaction: balance = opening - amount", () => {
+    const tx = mkTx({ id: "t1", kind: "expense", amountCents: 3000, accountId: "acc1" });
+    const result = computeRunningBalances([tx], "acc1", 10000);
+    expect(result.get("t1")).toBe(7000);
+  });
+
+  it("transfer as source: balance decreases", () => {
+    const tx = mkTx({ id: "t1", kind: "transfer", amountCents: 2000, accountId: "acc1", toAccountId: "acc2" });
+    const result = computeRunningBalances([tx], "acc1", 10000);
+    expect(result.get("t1")).toBe(8000);
+  });
+
+  it("transfer as destination: balance increases", () => {
+    const tx = mkTx({ id: "t1", kind: "transfer", amountCents: 2000, accountId: "acc2", toAccountId: "acc1" });
+    const result = computeRunningBalances([tx], "acc1", 10000);
+    expect(result.get("t1")).toBe(12000);
+  });
+
+  it("positive adjustment: balance increases", () => {
+    const tx = mkTx({ id: "t1", kind: "adjustment", amountCents: 500, accountId: "acc1" });
+    const result = computeRunningBalances([tx], "acc1", 10000);
+    expect(result.get("t1")).toBe(10500);
+  });
+
+  it("negative adjustment: balance decreases", () => {
+    const tx = mkTx({ id: "t1", kind: "adjustment", amountCents: -500, accountId: "acc1" });
+    const result = computeRunningBalances([tx], "acc1", 10000);
+    expect(result.get("t1")).toBe(9500);
+  });
+
+  it("accumulates multiple transactions in ascending date order regardless of input order", () => {
+    // Input is newest-first (as returned by listTransactions), but accumulation must be oldest-first.
+    const t3 = mkTx({ id: "t3", kind: "expense", amountCents: 300, transactionDate: "2026-01-03", createdAt: "2026-01-03T00:00:00Z" });
+    const t1 = mkTx({ id: "t1", kind: "income", amountCents: 1000, transactionDate: "2026-01-01", createdAt: "2026-01-01T00:00:00Z" });
+    const t2 = mkTx({ id: "t2", kind: "expense", amountCents: 200, transactionDate: "2026-01-02", createdAt: "2026-01-02T00:00:00Z" });
+    const result = computeRunningBalances([t3, t1, t2], "acc1", 0);
+    // After t1: 0 + 1000 = 1000
+    expect(result.get("t1")).toBe(1000);
+    // After t2: 1000 - 200 = 800
+    expect(result.get("t2")).toBe(800);
+    // After t3: 800 - 300 = 500
+    expect(result.get("t3")).toBe(500);
+  });
+
+  it("uses createdAt as stable tiebreaker when transactionDate is identical", () => {
+    const t1 = mkTx({ id: "t1", kind: "income", amountCents: 1000, transactionDate: "2026-01-01", createdAt: "2026-01-01T08:00:00Z" });
+    const t2 = mkTx({ id: "t2", kind: "expense", amountCents: 400, transactionDate: "2026-01-01", createdAt: "2026-01-01T10:00:00Z" });
+    const result = computeRunningBalances([t2, t1], "acc1", 500);
+    // t1 first (earlier createdAt): 500 + 1000 = 1500
+    expect(result.get("t1")).toBe(1500);
+    // t2 second: 1500 - 400 = 1100
+    expect(result.get("t2")).toBe(1100);
   });
 });
