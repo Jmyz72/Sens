@@ -12,15 +12,22 @@ import { Skeleton } from "../components/Skeleton";
 import { client } from "../client";
 import { useAppData } from "../store";
 import { accountTone } from "../lib/brand";
+import { balanceDisplay, toneColor } from "../lib/accounts";
 import { useToast } from "../components/Toast";
 
 function DashboardSkeleton() {
   const t = useTheme();
   return (
     <div className="sens-screen" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Net worth hero */}
+      <Card>
+        <Skeleton width="28%" height={11} radius={5} style={{ marginBottom: 14 }} />
+        <Skeleton width="45%" height={28} radius={6} />
+        <Skeleton width="55%" height={10} radius={4} style={{ marginTop: 10 }} />
+      </Card>
       {/* KPI row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
-        {[0, 1, 2, 3].map((i) => (
+        {[0, 1, 2].map((i) => (
           <Card key={i}>
             <Skeleton width="55%" height={11} radius={5} style={{ marginBottom: 14 }} />
             <Skeleton width="72%" height={24} radius={6} />
@@ -95,7 +102,6 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string) =
   const empty = accounts.length === 0;
 
   const kpis = [
-    { label: "Total Balance", cents: data.totalBalanceCents, color: t.text, signed: false },
     { label: "Income", cents: data.incomeCents, color: t.income, signed: false },
     { label: "Expenses", cents: data.expenseCents, color: t.expense, signed: false },
     { label: "Net Cashflow", cents: data.netCashflowCents, color: data.netCashflowCents >= 0 ? t.income : t.expense, signed: true },
@@ -107,6 +113,17 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string) =
       {empty && (
         <Card><Empty icon="wallet" title="Welcome to Sens" hint="Add your first account to start tracking your money." /></Card>
       )}
+
+      <Card>
+        <div style={{ fontSize: 11, fontWeight: 600, color: t.dim, textTransform: "uppercase", letterSpacing: 0.4 }}>Net worth</div>
+        <div style={{ marginTop: 10 }}>
+          <Money cents={data.netWorthCents} color={data.netWorthCents < 0 ? t.negative : t.text} size={28} weight={700} showCents={false} />
+        </div>
+        <div style={{ fontSize: 12.5, color: t.dim, marginTop: 8, display: "flex", gap: 16 }}>
+          <span>Assets <Money cents={data.assetsCents} size={12.5} color={t.dim} /></span>
+          <span>Owe <Money cents={Math.abs(data.liabilitiesCents)} size={12.5} color={t.dim} /></span>
+        </div>
+      </Card>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
         {kpis.map((k) => (
@@ -154,7 +171,10 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string) =
                 <div key={a.accountId} className="sens-row" style={{ display: "flex", alignItems: "center", gap: 11, padding: "0 8px", margin: "0 -8px", height: 44, borderRadius: 9 }}>
                   <div style={{ width: 30, height: 30, borderRadius: 9, background: hexA(tone, 0.16), color: tone, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700 }}>{a.name[0]}</div>
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span>
-                  <Money cents={a.balanceCents} size={13} color={a.balanceCents < 0 ? t.negative : t.text} />
+                  {(() => {
+                    const v = balanceDisplay(a.group, a.balanceCents);
+                    return <Money cents={v.magnitude} size={13} color={toneColor(v.tone, t)} />;
+                  })()}
                 </div>
               );
               })}

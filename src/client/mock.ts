@@ -6,19 +6,38 @@
 import type {
   Account,
   AccountBalance,
+  AccountGroup,
+  AccountSubtype,
   AccountTemplate,
+  AccountTypeName,
   Category,
   CategoryBreakdown,
   DashboardSummary,
   Transaction,
 } from "../types";
 
-const fail = (code: string, message: string) => {
+const fail = (code: string, message: string): never => {
   throw { code, message };
 };
 const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 const today = () => new Date().toISOString().slice(0, 10);
+
+// ── taxonomy ──
+const SUBTYPE_ROWS: [string, string, AccountTypeName, AccountGroup][] = [
+  ["cash","Cash","fund","own"],["ewallet","E-wallet","fund","own"],
+  ["savings","Savings account","fund","own"],["current","Current / Checking","fund","own"],
+  ["fixed-deposit","Fixed deposit","financial","own"],["investment","Investment / Brokerage","financial","own"],
+  ["unit-trust","Unit trust / ASNB","financial","own"],["crypto","Crypto","financial","own"],
+  ["lent","Lent to someone (IOU)","receivable","own"],["borrowed","Borrowed from someone","payable","owe"],
+  ["credit-card","Credit card","credit","owe"],["bnpl","BNPL","credit","owe"],
+  ["personal-loan","Personal loan","credit","owe"],["mortgage","Mortgage","credit","owe"],
+  ["car-loan","Car / Hire-purchase loan","credit","owe"],["other-debt","Other debt","credit","owe"],
+];
+const SUBTYPES: AccountSubtype[] = SUBTYPE_ROWS.map(([key, label, type, group], i) => ({
+  key, label, type, group, sortOrder: i, isActive: true,
+}));
+const subtypeOf = (key: string) => SUBTYPES.find((s) => s.key === key);
 
 // ── seed templates ──
 const TPL_GROUPS: [string, string, [string, string][]][] = [
@@ -28,11 +47,8 @@ const TPL_GROUPS: [string, string, [string, string][]][] = [
   ["Buy now, pay later", "bnpl", [["atome", "Atome"], ["shopee-paylater", "Shopee PayLater"], ["grab-paylater", "Grab PayLater"]]],
   ["Investment", "investment", [["asnb", "ASNB"], ["stashaway", "StashAway"], ["versa", "Versa"], ["wahed", "Wahed"], ["moomoo", "Moomoo"]]],
   ["Global fintech", "ewallet", [["paypal", "PayPal"], ["wise", "Wise"], ["revolut", "Revolut"], ["payoneer", "Payoneer"]]],
+  ["Crypto", "crypto", [["luno", "Luno"]]],
 ];
-const GROUP_TYPE: Record<string, string> = {
-  Banks: "bank", "Digital banks": "digital_bank", "E-wallets": "ewallet",
-  "Buy now, pay later": "bnpl", Investment: "investment", "Global fintech": "global_fintech",
-};
 
 const templates: AccountTemplate[] = [];
 TPL_GROUPS.forEach(([group, sub, list]) =>
@@ -67,14 +83,18 @@ function balanceOf(a: Account): number {
   }
   return b;
 }
-const hydrate = (a: Account): Account => ({ ...a, balanceCents: balanceOf(a) });
+const hydrate = (a: Account): Account => {
+  const s = subtypeOf(a.subtype);
+  return { ...a, accountType: s?.type ?? a.accountType, group: s?.group ?? a.group, balanceCents: balanceOf(a) };
+};
 const hasTxns = (id: string) => txns.some((t) => t.accountId === id || t.toAccountId === id);
 
 function seedDemo() {
   if (accounts.length) return;
   const mk = (key: string, name: string, opening: number) => {
     const t = templates.find((x) => x.key === key)!;
-    accounts.push({ id: uid(), templateKey: key, name, accountType: GROUP_TYPE[t.groupName], subtype: t.defaultSubtype, openingBalanceCents: opening, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
+    const s = subtypeOf(t.defaultSubtype)!;
+    accounts.push({ id: uid(), templateKey: key, name, accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: opening, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
   };
   mk("maybank", "Maybank Savings", 842000);
   mk("tng-ewallet", "Touch 'n Go", 12750);
@@ -98,16 +118,13 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
   switch (command) {
     case "list_account_templates":
       return templates as T;
-    case "create_account_from_template": {
-      const t = templates.find((x) => x.key === a.templateKey) ?? fail("NotFound", "Template not found");
+    case "list_account_subtypes":
+      return SUBTYPES as T;
+    case "create_account": {
       if (!String(a.name).trim()) fail("ValidationError", "Account name cannot be empty");
-      const acc: Account = { id: uid(), templateKey: t.key, name: String(a.name).trim(), accountType: GROUP_TYPE[t.groupName], subtype: t.defaultSubtype, openingBalanceCents: a.openingBalanceCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
-      accounts.push(acc);
-      return hydrate(acc) as T;
-    }
-    case "create_custom_account": {
-      if (!String(a.name).trim()) fail("ValidationError", "Account name cannot be empty");
-      const acc: Account = { id: uid(), templateKey: null, name: String(a.name).trim(), accountType: a.accountType, subtype: a.subtype, openingBalanceCents: a.openingBalanceCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
+      const s = subtypeOf(a.subtype) ?? fail("ValidationError", `Invalid subtype: ${a.subtype}`);
+      if (a.templateKey != null && !templates.find((x) => x.key === a.templateKey)) fail("NotFound", "Account template not found");
+      const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
       accounts.push(acc);
       return hydrate(acc) as T;
     }
@@ -116,7 +133,12 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "update_account": {
       const acc = accounts.find((x) => x.id === a.input.id) ?? fail("NotFound", "Account not found");
       if (a.input.name != null) acc.name = String(a.input.name).trim();
-      if (a.input.subtype != null) acc.subtype = a.input.subtype;
+      if (a.input.subtype != null) {
+        const s = subtypeOf(a.input.subtype) ?? fail("ValidationError", `Invalid subtype: ${a.input.subtype}`);
+        acc.subtype = s.key;
+        acc.accountType = s.type;
+        acc.group = s.group;
+      }
       if (a.input.openingBalanceCents != null) acc.openingBalanceCents = a.input.openingBalanceCents;
       acc.updatedAt = now();
       return hydrate(acc) as T;
@@ -201,7 +223,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       return undefined as T;
     }
     case "get_account_balances":
-      return accounts.filter((x) => !x.isArchived).map((x) => ({ accountId: x.id, name: x.name, accountType: x.accountType, balanceCents: balanceOf(x) } as AccountBalance)) as T;
+      return accounts.filter((x) => !x.isArchived).map((x) => { const s = subtypeOf(x.subtype); return { accountId: x.id, name: x.name, accountType: s?.type ?? x.accountType, group: s?.group ?? x.group, balanceCents: balanceOf(x) } as AccountBalance; }) as T;
     case "get_account_balance": {
       const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
       return balanceOf(acc) as T;
@@ -220,11 +242,16 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         return { categoryId: cid, categoryName: c.name, emoji: c.emoji, color: c.color, totalCents: total };
       }).sort((x, y) => y.totalCents - x.totalCents);
       const active = accounts.filter((x) => !x.isArchived);
+      const withGroup = active.map((x) => ({ x, s: subtypeOf(x.subtype), bal: balanceOf(x) }));
+      const assetsCents = withGroup.filter((r) => (r.s?.group ?? "own") === "own").reduce((sum, r) => sum + r.bal, 0);
+      const liabilitiesCents = withGroup.filter((r) => (r.s?.group ?? "own") === "owe").reduce((sum, r) => sum + r.bal, 0);
       const summary: DashboardSummary = {
-        month: a.month, totalBalanceCents: active.reduce((s, x) => s + balanceOf(x), 0),
+        month: a.month,
+        netWorthCents: assetsCents + liabilitiesCents,
+        assetsCents, liabilitiesCents,
         incomeCents: income, expenseCents: expense, netCashflowCents: income - expense,
         spendingBreakdown: breakdown,
-        accountBalances: active.map((x) => ({ accountId: x.id, name: x.name, accountType: x.accountType, balanceCents: balanceOf(x) })),
+        accountBalances: active.map((x) => { const s = subtypeOf(x.subtype); return { accountId: x.id, name: x.name, accountType: s?.type ?? x.accountType, group: s?.group ?? x.group, balanceCents: balanceOf(x) }; }),
         recentTransactions: txns.slice().sort((x, y) => (y.transactionDate < x.transactionDate ? -1 : 1)).slice(0, 8),
       };
       return summary as T;

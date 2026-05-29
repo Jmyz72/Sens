@@ -3,7 +3,54 @@
 //! CHECK constraints, and indexes per the design spec's Database Design.
 
 /// Ordered list of `(version, sql)`. Append-only — never edit a shipped one.
-pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001)];
+pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002)];
+
+const MIGRATION_002: &str = r#"
+CREATE TABLE account_subtypes (
+  key           TEXT PRIMARY KEY,
+  label         TEXT NOT NULL,
+  type          TEXT NOT NULL CHECK (type IN ('fund','financial','receivable','payable','credit')),
+  account_group TEXT NOT NULL CHECK (account_group IN ('own','owe')),
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  is_active     INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1))
+);
+
+INSERT INTO account_subtypes (key, label, type, account_group, sort_order) VALUES
+  ('cash',          'Cash',                     'fund',       'own', 0),
+  ('ewallet',       'E-wallet',                 'fund',       'own', 1),
+  ('savings',       'Savings account',          'fund',       'own', 2),
+  ('current',       'Current / Checking',       'fund',       'own', 3),
+  ('fixed-deposit', 'Fixed deposit',            'financial',  'own', 4),
+  ('investment',    'Investment / Brokerage',   'financial',  'own', 5),
+  ('unit-trust',    'Unit trust / ASNB',        'financial',  'own', 6),
+  ('crypto',        'Crypto',                   'financial',  'own', 7),
+  ('lent',          'Lent to someone (IOU)',    'receivable', 'own', 8),
+  ('borrowed',      'Borrowed from someone',    'payable',    'owe', 9),
+  ('credit-card',   'Credit card',              'credit',     'owe', 10),
+  ('bnpl',          'BNPL',                     'credit',     'owe', 11),
+  ('personal-loan', 'Personal loan',            'credit',     'owe', 12),
+  ('mortgage',      'Mortgage',                 'credit',     'owe', 13),
+  ('car-loan',      'Car / Hire-purchase loan', 'credit',     'owe', 14),
+  ('other-debt',    'Other debt',               'credit',     'owe', 15);
+
+UPDATE accounts SET subtype = CASE
+  WHEN subtype IN ('cash','ewallet','savings','current','fixed-deposit','investment',
+                   'unit-trust','crypto','lent','borrowed','credit-card','bnpl',
+                   'personal-loan','mortgage','car-loan','other-debt') THEN subtype
+  WHEN account_type IN ('bank','digital_bank') THEN 'savings'
+  WHEN account_type = 'ewallet'        THEN 'ewallet'
+  WHEN account_type = 'global_fintech' THEN 'ewallet'
+  WHEN account_type = 'bnpl'           THEN 'bnpl'
+  WHEN account_type = 'investment'     THEN 'investment'
+  ELSE 'cash'
+END;
+
+INSERT OR IGNORE INTO account_templates
+  (key, name, group_name, default_subtype, icon_asset, brand_color, sort_order, is_active)
+  VALUES ('luno', 'Luno', 'Crypto', 'crypto', 'luno', NULL, 49, 1);
+
+ALTER TABLE accounts DROP COLUMN account_type;
+"#;
 
 const MIGRATION_001: &str = r#"
 CREATE TABLE account_templates (
