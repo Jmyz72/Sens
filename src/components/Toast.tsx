@@ -3,7 +3,7 @@
 // expense/negative token; info uses accent. Auto-dismiss after 4 s.
 // No external dependencies.
 
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { hexA } from "../theme/tokens";
 import { useTheme } from "../theme/ThemeProvider";
 import { Icon } from "./Icon";
@@ -38,8 +38,23 @@ const DURATION_MS = 4000;
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const counterRef = useRef(0);
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Clear all pending timers on provider unmount
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach((handle) => clearTimeout(handle));
+      timersRef.current.clear();
+    };
+  }, []);
 
   const dismiss = useCallback((id: number) => {
+    // Clear the auto-dismiss timer if it hasn't fired yet
+    const handle = timersRef.current.get(id);
+    if (handle !== undefined) {
+      clearTimeout(handle);
+      timersRef.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -51,7 +66,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         // cap to MAX_TOASTS — drop oldest if needed
         return next.length > MAX_TOASTS ? next.slice(next.length - MAX_TOASTS) : next;
       });
-      setTimeout(() => dismiss(id), DURATION_MS);
+      const handle = setTimeout(() => {
+        timersRef.current.delete(id);
+        dismiss(id);
+      }, DURATION_MS);
+      timersRef.current.set(id, handle);
     },
     [dismiss],
   );

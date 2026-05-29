@@ -12,6 +12,7 @@ import { Skeleton } from "../components/Skeleton";
 import { client } from "../client";
 import { useAppData } from "../store";
 import { accountTone } from "../lib/brand";
+import { useToast } from "../components/Toast";
 
 function DashboardSkeleton() {
   const t = useTheme();
@@ -82,8 +83,13 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string) =
   const t = useTheme();
   const { accounts, categories, version } = useAppData();
   const [data, setData] = useState<DashboardSummary | null>(null);
+  const { notify } = useToast();
 
-  useEffect(() => { client.getDashboardSummary(month).then(setData).catch(() => {}); }, [month, version]);
+  useEffect(() => {
+    client.getDashboardSummary(month).then(setData).catch((err: unknown) => {
+      notify((err instanceof Error ? err.message : null) ?? "Could not load dashboard", "error");
+    });
+  }, [month, version, notify]);
 
   if (!data) return <DashboardSkeleton />;
   const empty = accounts.length === 0;

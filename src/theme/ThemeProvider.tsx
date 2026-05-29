@@ -70,5 +70,6 @@ function baseCss(t: Theme): string {
     .sens-bar{transition:width .5s cubic-bezier(.2,.7,.3,1);}
     @keyframes sensShimmer{from{background-position:200% center;}to{background-position:-200% center;}}
     .sens-shimmer{background-size:300% 100%;animation:sensShimmer 2s linear infinite;}
+    @media (prefers-reduced-motion: reduce){.sens-shimmer{animation:none;}.sens-screen{animation:none;}.sens-pop{animation:none;}}
   `;
 }
