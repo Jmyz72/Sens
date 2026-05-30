@@ -16,28 +16,31 @@ import { AddTransaction } from "../modals/AddTransaction";
 
 const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "adjustment"];
 
-export function Transactions() {
+export function Transactions({ initialAccountId }: { initialAccountId?: string | null }) {
   const t = useTheme();
   const { accounts, categories, reload, version } = useAppData();
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [query, setQuery] = useState("");
   const [kinds, setKinds] = useState<Set<TransactionKind>>(new Set());
+  const [acctFilter, setAcctFilter] = useState<string | null>(initialAccountId ?? null);
   const [selId, setSelId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
 
   useEffect(() => { client.listTransactions({ limit: 500 }).then(setTxns).catch(() => {}); }, [version]);
+  useEffect(() => { setAcctFilter(initialAccountId ?? null); }, [initialAccountId]);
 
   const toggleKind = (k: TransactionKind) => setKinds((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return txns.filter((tx) => {
+      if (acctFilter && tx.accountId !== acctFilter && tx.toAccountId !== acctFilter) return false;
       if (kinds.size && !kinds.has(tx.kind)) return false;
       if (!q) return true;
       const cat = categories.find((c) => c.id === tx.categoryId)?.name ?? "";
       return (tx.description ?? "").toLowerCase().includes(q) || cat.toLowerCase().includes(q) || accountName(accounts, tx.accountId).toLowerCase().includes(q);
     });
-  }, [txns, kinds, query, categories, accounts]);
+  }, [txns, kinds, query, categories, accounts, acctFilter]);
 
   const totalIn = filtered.filter((x) => x.kind === "income").reduce((s, x) => s + x.amountCents, 0);
   const totalOut = filtered.filter((x) => x.kind === "expense").reduce((s, x) => s + x.amountCents, 0);
@@ -73,6 +76,7 @@ export function Transactions() {
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {acctFilter && <Pill on onClick={() => setAcctFilter(null)}>Account: {accountName(accounts, acctFilter)} ✕</Pill>}
           {KIND_FILTERS.map((k) => <Pill key={k} on={kinds.has(k)} dot={kindColor(t, k)} onClick={() => toggleKind(k)}>{KIND_META[k].label}</Pill>)}
           {kinds.size > 0 && <Pill onClick={() => setKinds(new Set())}>Clear</Pill>}
         </div>
