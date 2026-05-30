@@ -32,8 +32,9 @@ Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
 ### 🟡 v0.4.0 — Subcategories
 Two-level categories with a master–detail Categories screen, a subcategory-aware
 transaction picker, and dashboard spend roll-up into the parent.
-— branch: `feat/subcategories` (spec + code land on `main` when this merges as
-`docs/superpowers/specs/2026-05-31-categories-subcategories-redesign-design.md`)
+**Merged to `main` (PR #6); awaiting the `v0.4.0` release tag** — run
+`npm run release -- minor` to ship it.
+— spec: `docs/superpowers/specs/2026-05-31-categories-subcategories-redesign-design.md`
 
 ## Planned — the climb to 1.0
 

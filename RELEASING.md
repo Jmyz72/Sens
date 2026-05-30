@@ -6,9 +6,13 @@ releases are cut from `main` by pushing a `vX.Y.Z` tag.
 
 ## Versioning
 
-- **patch** — bug fixes only (e.g. 1.1.1 → 1.1.2)
-- **minor** — backward-compatible features (e.g. 1.1.x → 1.2.0)
-- **major** — breaking data-model / command changes (e.g. 1.x → 2.0.0)
+Sens is **pre-1.0**: `1.0.0` is reserved for the feature-complete milestone (see
+`ROADMAP.md`). While on `0.x`, the **minor** carries features and the **patch**
+carries fixes.
+
+- **patch** — bug fixes only (e.g. 0.3.1 → 0.3.2)
+- **minor** — backward-compatible features; one roadmap phase = one minor (e.g. 0.3.x → 0.4.0)
+- **major** — reserved: `0.x → 1.0.0` marks feature-complete; breaking changes thereafter
 
 The three version files (`package.json`, `src-tauri/Cargo.toml`,
 `src-tauri/tauri.conf.json`) are kept identical by the release script. **Never edit
