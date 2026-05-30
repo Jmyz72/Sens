@@ -511,7 +511,7 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str, now: &str) -> AppR
 fn map_unique(e: rusqlite::Error) -> AppError {
     let msg = e.to_string();
     if msg.contains("UNIQUE") {
-        AppError::Conflict("A category with this name and kind already exists".into())
+        AppError::Conflict("A category with this name already exists at this level".into())
     } else {
         e.into()
     }
