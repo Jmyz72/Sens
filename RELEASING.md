@@ -34,8 +34,8 @@ them by hand.**
    git push --follow-tags
    ```
 6. Watch the **Release** workflow in the GitHub Actions tab. When it finishes, confirm
-   the GitHub Release for the tag has the macOS (Apple Silicon + Intel), Windows, and
-   Linux artifacts attached.
+   the GitHub Release for the tag has the macOS (Apple Silicon), Windows, and Linux
+   artifacts attached.
 
 ## Notes
 
