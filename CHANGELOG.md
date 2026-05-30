@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and managing its subcategories. The transaction Category picker now groups
   subcategories indented under their parent.
 
-## [1.2.1] — 2026-05-31
+## [0.3.1] — 2026-05-31
 
 ### Changed
 - **Redesigned the New Account modal** as a two-step, provider-first flow: pick a
@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/lib/providers.ts` — frontend provider catalog mirroring the Rust seed, now
   used by the browser mock (which previously listed fewer providers).
 
-## [1.2.0] — 2026-05-30
+## [0.3.0] — 2026-05-30
 
 ### Changed
 - **Redesigned the Accounts screen** — the net-worth header now shows a monthly
@@ -49,16 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The top-bar **Add** button now creates a transaction directly; **adding an account moved to the Accounts screen** (an "Add account" button there).
 - Removed the account-count row from the sidebar net-worth panel.
 
-## [1.1.4] — 2026-05-30
+## [0.2.4] — 2026-05-30
 
 ### Added
 - **Advanced sidebar shell** — the app sidebar now shows net worth, assets,
   debts, active account count, grouped navigation, and a clearer local workspace
   footer while keeping the top bar compact.
 
-## [1.1.3] — 2026-05-30
+## [0.2.3] — 2026-05-30
 
-## [1.1.2] — 2026-05-30
+## [0.2.2] — 2026-05-30
 
 ### Added
 - **Release tooling & CI** — `npm run release -- <major|minor|patch>` bumps all three
@@ -67,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and build unsigned macOS/Windows/Linux binaries on a `v*` tag (`release.yml`). See
   `RELEASING.md`.
 
-## [1.1.1] — 2026-05-30
+## [0.2.1] — 2026-05-30
 
 ### Fixed
 - **Orphaned-subtype accounts no longer vanish** — `get_account`, `list_accounts`,
@@ -79,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accepts **0** (fully paid off), and an **"in credit" toggle** lets you reconcile
   an overpaid/refunded account to a positive balance. (issue #2)
 
-## [1.1.0] — 2026-05-30
+## [0.2.0] — 2026-05-30
 
 Account taxonomy: classification now drives behavior. Each account has a
 `subtype` that maps to a `type` (fund / financial / receivable / payable /
@@ -123,7 +123,7 @@ Design: `docs/superpowers/specs/2026-05-30-account-type-subtype-system-design.md
 - Per-subtype behavior: credit limits & utilization, installment/payoff
   schedules, interest, investment cost-vs-value.
 
-## [1.0.0] — 2026-05-30
+## [0.1.0] — 2026-05-30
 
 Initial release — a local-first desktop personal-finance tracker for Malaysian
 Ringgit (MYR), manual entry only (no sync, no bank connections, no
@@ -146,6 +146,12 @@ Design: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.m
   TypeScript + Vite, integer-MYR-cents money, dark/light theming, and the
   Tauri/in-memory-mock dispatch seam for browser-only dev.
 
-[1.1.1]: https://github.com/Jmyz72/Sens/releases/tag/v1.1.1
-[1.1.0]: https://github.com/Jmyz72/Sens/releases/tag/v1.1.0
-[1.0.0]: https://github.com/Jmyz72/Sens/releases/tag/v1.0.0
+[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.3.1
+[0.3.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.3.0
+[0.2.4]: https://github.com/Jmyz72/Sens/releases/tag/v0.2.4
+[0.2.3]: https://github.com/Jmyz72/Sens/releases/tag/v0.2.3
+[0.2.2]: https://github.com/Jmyz72/Sens/releases/tag/v0.2.2
+[0.2.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.2.1
+[0.2.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.2.0
+[0.1.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.1.0
