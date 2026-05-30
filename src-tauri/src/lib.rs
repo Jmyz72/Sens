@@ -321,6 +321,25 @@ mod tests {
     }
 
     #[test]
+    fn spending_breakdown_rolls_subcategories_into_parent() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Checking", 0);
+        let food = service::create_category(&c, "Food P6", "expense", "🍔", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
+        // one expense on the PARENT, one on the SUB — both should land in the parent bucket
+        service::create_expense(&c, &a.id, &food.id, 1000, None, "2026-05-10").unwrap();
+        service::create_expense(&c, &a.id, &coffee.id, 500, None, "2026-05-11").unwrap();
+
+        let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
+        let row = s.spending_breakdown.iter().find(|b| b.category_id == food.id).unwrap();
+        assert_eq!(row.total_cents, 1500, "parent + sub spend rolled up");
+        assert!(
+            !s.spending_breakdown.iter().any(|b| b.category_id == coffee.id),
+            "subcategory must not appear as its own bar"
+        );
+    }
+
+    #[test]
     fn account_with_unknown_subtype_still_lists() {
         // An account whose subtype isn't in the taxonomy (e.g. a future rename or
         // a direct DB edit) must stay visible via the LEFT JOIN + COALESCE fallback,

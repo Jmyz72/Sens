@@ -439,10 +439,12 @@ pub fn sum_kind_in_range(conn: &Connection, kind: &str, from: &str, to: &str) ->
 
 pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<Vec<CategoryBreakdown>> {
     let mut stmt = conn.prepare(
-        "SELECT c.id, c.name, c.emoji, c.color, SUM(t.amount_cents) AS total
-         FROM transactions t JOIN categories c ON c.id = t.category_id
+        "SELECT COALESCE(c.parent_id, c.id) AS group_id, pc.name, pc.emoji, pc.color, SUM(t.amount_cents) AS total
+         FROM transactions t
+         JOIN categories c  ON c.id = t.category_id
+         JOIN categories pc ON pc.id = COALESCE(c.parent_id, c.id)
          WHERE t.kind = 'expense' AND t.transaction_date >= ?1 AND t.transaction_date < ?2
-         GROUP BY c.id ORDER BY total DESC",
+         GROUP BY group_id ORDER BY total DESC",
     )?;
     let rows = stmt
         .query_map(params![from, to], |r| {
