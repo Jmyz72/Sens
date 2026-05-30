@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Jmyz72/Sens/security/advisories/new
+    about: Please report security vulnerabilities privately via GitHub Security Advisories, not as a public issue.
+  - name: Question or discussion
+    url: https://github.com/Jmyz72/Sens/discussions
+    about: Have a question or idea to discuss? Start a discussion instead of opening an issue.
