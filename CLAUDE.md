@@ -17,6 +17,16 @@ Rust is not on the default PATH — prefix Rust/Tauri commands with `export PATH
 - `cd src-tauri && cargo test --lib` — Rust service/repo tests (in `src-tauri/src/lib.rs` `#[cfg(test)]`). Run one: `cargo test --lib settings_roundtrip`.
 - `cd src-tauri && cargo build` — compile the desktop binary (validates Tauri command registration + config).
 
+## Releasing
+
+Releases follow `RELEASING.md` and **GitHub Flow** (SemVer, `main` always releasable).
+Use `npm run release -- <major|minor|patch>` to cut a release — it bumps all three
+version files (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`) plus
+`Cargo.lock`, rolls the CHANGELOG `[Unreleased]` section, commits, and tags. **Never
+hand-edit the version files.** Pushing the resulting `v*` tag (`git push --follow-tags`)
+triggers `.github/workflows/release.yml`, which builds unsigned mac/Windows/Linux
+binaries and publishes a GitHub Release. `.github/workflows/ci.yml` gates every PR.
+
 ## Architecture
 
 Strict layering, UI never touches SQL:
