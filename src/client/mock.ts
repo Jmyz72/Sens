@@ -165,15 +165,33 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       return cat as T;
     }
     case "create_category": {
-      const cat: Category = { id: uid(), name: String(a.name).trim(), kind: a.kind, emoji: a.emoji, color: a.color ?? null, parentId: a.parentId ?? null, sortOrder: 100, isSystem: false, isArchived: false, createdAt: now(), updatedAt: now() };
+      const name = String(a.name).trim();
+      let kind = a.kind;
+      if (a.parentId != null) {
+        const parent = categories.find((x) => x.id === a.parentId) ?? fail("NotFound", "Category not found");
+        if (parent.parentId != null) fail("ValidationError", "Subcategories can only be nested one level deep");
+        kind = parent.kind;
+      }
+      // Case-sensitive to match the SQLite unique indexes (binary collation).
+      const clash = categories.find((x) =>
+        x.name === name &&
+        (a.parentId != null ? x.parentId === a.parentId : x.parentId == null && x.kind === kind),
+      );
+      if (clash) fail("Conflict", "A category with this name already exists at this level");
+      const cat: Category = { id: uid(), name, kind, emoji: a.emoji, color: a.color ?? null, parentId: a.parentId ?? null, sortOrder: 100, isSystem: false, isArchived: false, createdAt: now(), updatedAt: now() };
       categories.push(cat);
       return cat as T;
     }
     case "archive_category":
     case "restore_category": {
       const c = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
-      if (command === "archive_category" && c.isSystem) fail("Conflict", "System categories cannot be archived");
-      c.isArchived = command === "archive_category";
+      const archiving = command === "archive_category";
+      if (archiving && c.isSystem) fail("Conflict", "System categories cannot be archived");
+      c.isArchived = archiving;
+      c.updatedAt = now();
+      if (c.parentId == null) {
+        categories.forEach((x) => { if (x.parentId === c.id) { x.isArchived = archiving; x.updatedAt = now(); } });
+      }
       return c as T;
     }
     case "create_income_transaction":
@@ -229,8 +247,12 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       const inRange = (t: Transaction) => t.transactionDate >= from && t.transactionDate < to;
       const income = txns.filter((t) => t.kind === "income" && inRange(t)).reduce((s, t) => s + t.amountCents, 0);
       const expense = txns.filter((t) => t.kind === "expense" && inRange(t)).reduce((s, t) => s + t.amountCents, 0);
+      const parentOf = (cid: string) => categories.find((x) => x.id === cid)?.parentId ?? cid;
       const byCat = new Map<string, number>();
-      txns.filter((t) => t.kind === "expense" && inRange(t)).forEach((t) => byCat.set(t.categoryId!, (byCat.get(t.categoryId!) ?? 0) + t.amountCents));
+      txns.filter((t) => t.kind === "expense" && inRange(t)).forEach((t) => {
+        const pid = parentOf(t.categoryId!);
+        byCat.set(pid, (byCat.get(pid) ?? 0) + t.amountCents);
+      });
       const breakdown: CategoryBreakdown[] = [...byCat.entries()].map(([cid, total]) => {
         const c = categories.find((x) => x.id === cid)!;
         return { categoryId: cid, categoryName: c.name, emoji: c.emoji, color: c.color, totalCents: total };
