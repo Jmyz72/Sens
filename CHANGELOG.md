@@ -5,6 +5,15 @@ All notable changes to Sens are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Release tooling & CI** — `npm run release -- <major|minor|patch>` bumps all three
+  version files (`package.json`, `Cargo.toml`, `tauri.conf.json`) plus `Cargo.lock`,
+  rolls this changelog, commits, and tags. GitHub Actions now gate every PR (`ci.yml`)
+  and build unsigned macOS/Windows/Linux binaries on a `v*` tag (`release.yml`). See
+  `RELEASING.md`.
+
 ## [1.1.1] — 2026-05-30
 
 ### Fixed
