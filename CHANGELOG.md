@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] — 2026-05-30
+
 ### Added
 - **Advanced sidebar shell** — the app sidebar now shows net worth, assets,
   debts, active account count, grouped navigation, and a clearer local workspace
