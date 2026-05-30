@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Two-level **subcategories**: categories can now have subcategories via a new
+  `parent_id`. A subcategory inherits its parent's kind; nesting is capped at one
+  level. Transactions can be logged against a parent **or** a subcategory, and the
+  Dashboard spending breakdown rolls subcategory spend up into the parent.
+  Archiving a parent cascades to its subcategories.
+- Redesigned the **Categories** screen as a master–detail layout: a left rail of
+  top-level categories grouped by kind, and a detail pane for editing a category
+  and managing its subcategories. The transaction Category picker now groups
+  subcategories indented under their parent.
+
 ## [1.2.1] — 2026-05-31
 
 ### Changed
