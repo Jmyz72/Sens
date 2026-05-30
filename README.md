@@ -66,7 +66,28 @@ React UI (src/screens, src/modals, src/components)
             → SQLite (src-tauri/src/db/)
 ```
 
+## Download & install
+
+Grab the latest build for your platform from the [**Releases**](https://github.com/Jmyz72/Sens/releases) page.
+
+### macOS
+
+Sens is **not notarized** by Apple (it's a free, open-source hobby project), so the first launch is blocked by Gatekeeper. After dragging **Sens.app** into **Applications**, do one of:
+
+- **Right-click** (or Control-click) Sens.app → **Open** → **Open** in the dialog, or
+- if you instead see **_"Sens is damaged and can't be opened"_**, that's just the macOS download-quarantine flag. Clear it once in Terminal:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Sens.app
+  ```
+
+  then open the app normally. (Adjust the path if you kept Sens.app somewhere other than `/Applications`.)
+
+> This is expected for un-notarized apps and only needs doing once per download. Your data still stays entirely local.
+
 ## Getting started
+
+> _Building from source. For a ready-to-run app, see [Download & install](#download--install) above._
 
 ### Prerequisites
 

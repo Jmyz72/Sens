@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- macOS release builds are now ad-hoc signed (`APPLE_SIGNING_IDENTITY: "-"`) so the
+  bundle's resources are sealed. This replaces the misleading _"Sens is damaged and
+  can't be opened"_ Gatekeeper error with the normal _"unidentified developer"_ prompt
+  that right-click → Open can bypass. Builds remain un-notarized.
+
+### Documentation
+- README now has a **Download & install** section with macOS first-launch
+  instructions, including the `xattr -dr com.apple.quarantine` workaround for the
+  "damaged" error.
+- Release notes (`release.yml`) now spell out the macOS first-launch steps for
+  downloaders.
+
 ## [0.4.0] — 2026-05-31
 
 ### Added
