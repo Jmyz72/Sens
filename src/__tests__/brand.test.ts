@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BRAND_COLORS, accountTone, templateTone } from "../lib/brand";
+import { BRAND_COLORS, accountTone } from "../lib/brand";
 
 // ── BRAND_COLORS ──────────────────────────────────────────────────────────────
 
@@ -31,26 +31,6 @@ describe("BRAND_COLORS", () => {
     for (const [key, color] of Object.entries(BRAND_COLORS)) {
       expect(color, `BRAND_COLORS['${key}'] should be a hex color`).toMatch(/^#[0-9A-Fa-f]{6}$/);
     }
-  });
-});
-
-// ── templateTone ──────────────────────────────────────────────────────────────
-
-describe("templateTone", () => {
-  it("returns the brand color for a known key", () => {
-    expect(templateTone("maybank", "#fallback")).toBe(BRAND_COLORS["maybank"]);
-  });
-
-  it("returns the brand color for 'grabpay'", () => {
-    expect(templateTone("grabpay", "#fallback")).toBe(BRAND_COLORS["grabpay"]);
-  });
-
-  it("returns accentFallback for an unknown key", () => {
-    expect(templateTone("unknown-key", "#acc")).toBe("#acc");
-  });
-
-  it("returns accentFallback for another unknown key", () => {
-    expect(templateTone("not-a-bank", "#123456")).toBe("#123456");
   });
 });
 

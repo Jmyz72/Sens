@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Redesigned the New Account modal** as a two-step, provider-first flow: pick a
+  provider (or "Custom account") from a searchable logo grid, then choose the
+  account type + subtype, name, and balance. The provider is branding only and
+  never determines the account type. Subtype selection moved from dropdowns to a
+  visual type-card picker + chips.
+
+### Added
+- Provider logos: a new `ProviderLogo` tile renders a real bundled logo on a white
+  plate where one is available, falling back to a brand-tinted monogram otherwise.
+  Used in the New Account modal and on the Accounts list rows. (Bundled logos
+  currently cover major global brands; more can be added by dropping a file into
+  `src/assets/logos/`.)
+- `src/lib/providers.ts` — frontend provider catalog mirroring the Rust seed, now
+  used by the browser mock (which previously listed fewer providers).
+
 ## [1.2.0] — 2026-05-30
 
 ### Changed
