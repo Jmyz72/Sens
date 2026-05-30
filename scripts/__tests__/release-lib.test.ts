@@ -21,13 +21,18 @@ describe("isGreater", () => {
   it("true when next > current", () => expect(isGreater("1.2.0", "1.1.1")).toBe(true));
   it("false when equal", () => expect(isGreater("1.1.1", "1.1.1")).toBe(false));
   it("false when next < current", () => expect(isGreater("1.0.9", "1.1.0")).toBe(false));
+  it("throws on malformed input", () => expect(() => isGreater("bad", "1.0.0")).toThrow());
 });
 
 describe("setPackageJsonVersion", () => {
   it("replaces only the version field", () => {
     const src = `{\n  "name": "sens",\n  "version": "1.1.1",\n  "type": "module"\n}`;
-    expect(setPackageJsonVersion(src, "1.2.0")).toContain(`"version": "1.2.0"`);
+    const out = setPackageJsonVersion(src, "1.2.0");
+    expect(out).toContain(`"version": "1.2.0"`);
+    expect(out).not.toContain(`"version": "1.1.1"`);
   });
+  it("throws when there is no version field", () =>
+    expect(() => setPackageJsonVersion(`{\n  "name": "sens"\n}`, "1.2.0")).toThrow());
 });
 
 describe("setCargoTomlVersion", () => {
@@ -37,12 +42,16 @@ describe("setCargoTomlVersion", () => {
     expect(out).toContain(`version = "1.2.0"`);
     expect(out).toContain(`tauri = { version = "2" }`);
   });
+  it("throws when there is no [package] version", () =>
+    expect(() => setCargoTomlVersion(`[dependencies]\ntauri = "2"\n`, "1.2.0")).toThrow());
 });
 
 describe("setTauriConfVersion", () => {
   it("replaces the top-level version", () => {
     const src = `{\n  "productName": "Sens",\n  "version": "1.1.1",\n  "identifier": "com.sens.app"\n}`;
-    expect(setTauriConfVersion(src, "1.2.0")).toContain(`"version": "1.2.0"`);
+    const out = setTauriConfVersion(src, "1.2.0");
+    expect(out).toContain(`"version": "1.2.0"`);
+    expect(out).not.toContain(`"version": "1.1.1"`);
   });
 });
 
@@ -55,5 +64,11 @@ describe("rollChangelog", () => {
   });
   it("throws when there is no Unreleased section", () => {
     expect(() => rollChangelog("# Changelog\n", "1.2.0", "2026-06-01")).toThrow();
+  });
+  it("keeps clean single blank lines when Unreleased is empty", () => {
+    const real = `# Changelog\n\n## [Unreleased]\n\n## [1.1.1] — 2026-05-30\n`;
+    const out = rollChangelog(real, "1.2.0", "2026-06-01");
+    expect(out).toBe(`# Changelog\n\n## [Unreleased]\n\n## [1.2.0] — 2026-06-01\n\n## [1.1.1] — 2026-05-30\n`);
+    expect(out).not.toContain("\n\n\n");
   });
 });

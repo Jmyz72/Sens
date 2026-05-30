@@ -20,8 +20,13 @@ export function bumpVersion(current, level) {
 }
 
 export function isGreater(next, current) {
-  const a = current.split(".").map(Number);
-  const b = next.split(".").map(Number);
+  const parse = (v) => {
+    const parts = v.split(".").map(Number);
+    if (parts.length !== 3 || parts.some(Number.isNaN)) throw new Error(`Invalid version: ${v}`);
+    return parts;
+  };
+  const a = parse(current);
+  const b = parse(next);
   for (let i = 0; i < 3; i++) {
     if (b[i] > a[i]) return true;
     if (b[i] < a[i]) return false;
@@ -31,7 +36,9 @@ export function isGreater(next, current) {
 
 // Replaces the FIRST `"version": "..."` — the top-level field in package.json / tauri.conf.json.
 function setJsonVersion(text, version) {
-  return text.replace(/("version"\s*:\s*")[^"]+(")/, `$1${version}$2`);
+  const out = text.replace(/("version"\s*:\s*")[^"]+(")/, `$1${version}$2`);
+  if (out === text) throw new Error('setJsonVersion: no "version" field found');
+  return out;
 }
 
 export function setPackageJsonVersion(text, version) {
@@ -42,10 +49,15 @@ export function setTauriConfVersion(text, version) {
   return setJsonVersion(text, version);
 }
 
-// Replaces the FIRST line-start `version = "..."` — the [package] version in Cargo.toml.
-// Dependency versions are inline (` version = "..." `) and never start at column 0, so they are safe.
+// Replaces the version inside [package] only — not a [workspace] root version
+// nor inline dependency versions (e.g. `tauri = { version = "2" }`).
 export function setCargoTomlVersion(text, version) {
-  return text.replace(/^version\s*=\s*"[^"]+"/m, `version = "${version}"`);
+  const out = text.replace(
+    /(^\[package\][^\[]*?^version\s*=\s*)"[^"]+"/ms,
+    `$1"${version}"`,
+  );
+  if (out === text) throw new Error("setCargoTomlVersion: no [package] version found");
+  return out;
 }
 
 // Renames the top `## [Unreleased]` heading's content into a dated version section,
