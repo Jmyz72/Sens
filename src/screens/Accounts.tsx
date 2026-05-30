@@ -20,7 +20,7 @@ import { EditAccount } from "../modals/EditAccount";
 import { accountTone } from "../lib/brand";
 import { balanceDisplay, toneColor, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
 import { useToast } from "../components/Toast";
-import { computeRunningBalances } from "../lib/kinds";
+import { computeRunningBalances, txnSortKey } from "../lib/kinds";
 import { fmtDate, fmtMoney, todayISO } from "../lib/format";
 import {
   accountTxns, balanceSeries, computeAccountStats, netWorthStats, periodFromDate,
@@ -28,7 +28,6 @@ import {
 } from "../lib/accountStats";
 
 const ACTIVITY_DISPLAY_LIMIT = 8;
-const TXN_FETCH_LIMIT = 5000;
 const PERIODS: ChartPeriod[] = ["1M", "3M", "6M", "1Y", "All"];
 
 function Delta({ cents, t, size = 11 }: { cents: number; t: Theme; size?: number }) {
@@ -56,8 +55,20 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
 
   useEffect(() => { client.listAccounts(true).then(setAll).catch(() => {}); }, [version]);
   useEffect(() => {
-    client.listTransactions({ limit: TXN_FETCH_LIMIT }).then(setAllTxns)
-      .catch((e: unknown) => notify((e as { message?: string })?.message ?? "Failed to load activity", "error"));
+    const PAGE = 1000; // backend clamps limit to 1000; page through to load full history
+    (async () => {
+      try {
+        const out: Transaction[] = [];
+        for (let offset = 0; ; offset += PAGE) {
+          const batch = await client.listTransactions({ limit: PAGE, offset });
+          out.push(...batch);
+          if (batch.length < PAGE) break;
+        }
+        setAllTxns(out);
+      } catch (e: unknown) {
+        notify((e as { message?: string })?.message ?? "Failed to load activity", "error");
+      }
+    })();
   }, [version, notify]);
 
   const { stats, txnsByAccount } = useMemo(() => {
@@ -164,7 +175,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
                     {/* expanded panel */}
                     {isOpen && (() => {
                       const running = txns.length > 0 ? computeRunningBalances(txns, a.id, a.openingBalanceCents) : new Map<string, number>();
-                      const recent = [...txns].sort((x, y) => (x.transactionDate < y.transactionDate ? 1 : x.transactionDate > y.transactionDate ? -1 : 0)).slice(0, ACTIVITY_DISPLAY_LIMIT);
+                      const recent = [...txns].sort((x, y) => { const kx = txnSortKey(x), ky = txnSortKey(y); return ky < kx ? -1 : ky > kx ? 1 : 0; }).slice(0, ACTIVITY_DISPLAY_LIMIT);
                       const hidden = txns.length - recent.length;
                       const chart = balanceSeries(a, txns, periodFromDate(period, today), 64);
                       return (
