@@ -69,6 +69,9 @@ export const BRAND_COLORS: Record<string, string> = {
   "revolut":            "#5B5EA6", // Revolut indigo (their gradient start)
   "n26":                "#1ABCAC", // N26 teal
   "payoneer":           "#FF4800", // Payoneer orange
+
+  // ── Crypto ────────────────────────────────────────────────────────────
+  "luno":               "#F7931A", // Luno amber (Bitcoin-orange family)
 };
 
 // A small fixed palette of mid-saturation jewel tones used for custom

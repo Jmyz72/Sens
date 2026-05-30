@@ -13,7 +13,12 @@ describe("provider catalog", () => {
     }
   });
 
-  it("every group carries a defaultSubtype", () => {
-    for (const g of PROVIDER_GROUPS) expect(g.defaultSubtype.length).toBeGreaterThan(0);
+  it("every group's defaultSubtype is a real subtype key", () => {
+    const VALID_SUBTYPES = new Set([
+      "cash", "ewallet", "savings", "current", "fixed-deposit", "investment",
+      "unit-trust", "crypto", "lent", "borrowed", "credit-card", "bnpl",
+      "personal-loan", "mortgage", "car-loan", "other-debt",
+    ]);
+    for (const g of PROVIDER_GROUPS) expect(VALID_SUBTYPES.has(g.defaultSubtype)).toBe(true);
   });
 });
