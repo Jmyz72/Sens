@@ -4,7 +4,7 @@
 // For owe-group subtypes the balance field is "Amount owed" and is stored negative.
 
 import { useEffect, useMemo, useState } from "react";
-import type { AccountSubtype, AccountTemplate } from "../types";
+import type { AccountSubtype, AccountTemplate, AccountTypeName } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { hexA } from "../theme/tokens";
 import { Btn, Field, Modal, inputStyle } from "../components/ui";
@@ -14,7 +14,7 @@ import { client } from "../client";
 import { parseAmountToCents } from "../lib/format";
 import { TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
 
-const TYPE_EMOJI: Record<string, string> = {
+const TYPE_EMOJI: Record<AccountTypeName, string> = {
   fund: "💵", financial: "📈", receivable: "🤝", payable: "📄", credit: "💳",
 };
 
@@ -60,8 +60,10 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
   }, [subtypesForType, subtype]);
 
   function chooseProvider(tpl: AccountTemplate) {
+    // Pre-fill the name from the provider, but never clobber a name the user typed.
+    // Re-fill when it's empty or still the previous provider's auto-filled value.
+    if (!name || name === provider?.name) setName(tpl.name);
     setProvider(tpl);
-    if (!name) setName(tpl.name); // provider pre-fills the name; user can edit
     setStep(2);
   }
   function chooseCustom() {
@@ -134,7 +136,7 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", background: t.panel2, border: `0.5px solid ${t.border}`, borderRadius: 11 }}>
             <ProviderLogo templateKey={provider?.key ?? null} name={provider?.name ?? "?"} size={34} radius={9} />
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{provider?.name ?? "No provider"}</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{provider?.name ?? "Custom account"}</span>
             <button className="sens-btn sens-btn-ghost" onClick={() => setStep(1)}
               style={{ marginLeft: "auto", height: 26, padding: "0 8px", borderRadius: 7, fontSize: 11.5, fontWeight: 600, color: t.accent }}>
               Change provider
