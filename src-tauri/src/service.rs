@@ -140,7 +140,7 @@ pub fn create_category(conn: &Connection, name: &str, kind: &str, emoji: &str, c
     let name = require_nonempty("Category name", name)?;
     validate_category_kind(kind)?;
     let emoji = require_nonempty("Emoji", emoji)?;
-    repo::insert_category(conn, &new_id(), &name, kind, &emoji, color, &now())
+    repo::insert_category(conn, &new_id(), &name, kind, &emoji, color, None, &now())
 }
 
 pub fn update_category(conn: &Connection, input: UpdateCategoryInput) -> AppResult<Category> {

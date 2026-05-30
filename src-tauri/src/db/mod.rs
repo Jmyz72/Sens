@@ -137,4 +137,30 @@ mod migration_tests {
         // account_type column is gone.
         assert!(conn.prepare("SELECT account_type FROM accounts").is_err());
     }
+
+    #[test]
+    fn migration_003_adds_parent_id_and_partial_indexes() {
+        let conn = super::open_in_memory().unwrap();
+        // parent_id column exists on categories
+        let has_parent: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('categories') WHERE name = 'parent_id'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_parent, 1, "categories.parent_id should exist");
+
+        let idx = |name: &str| -> i64 {
+            conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+                [name],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(idx("idx_categories_top_kind_name"), 1, "top-level partial index");
+        assert_eq!(idx("idx_categories_sub_parent_name"), 1, "sibling partial index");
+        assert_eq!(idx("idx_categories_kind_name"), 0, "old global index should be dropped");
+    }
 }

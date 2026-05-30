@@ -48,6 +48,7 @@ export interface Category {
   kind: CategoryKind;
   emoji: string;
   color: string | null;
+  parentId: string | null;
   sortOrder: number;
   isSystem: boolean;
   isArchived: boolean;

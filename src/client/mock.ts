@@ -57,7 +57,7 @@ const CAT_SEED: [string, Category["kind"], string, string][] = [
   ["Transfer", "transfer", "🔄", "#9aa4b2"],
 ];
 const categories: Category[] = CAT_SEED.map(([name, kind, emoji, color], i) => ({
-  id: uid(), name, kind, emoji, color, sortOrder: i, isSystem: true, isArchived: false, createdAt: now(), updatedAt: now(),
+  id: uid(), name, kind, emoji, color, parentId: null, sortOrder: i, isSystem: true, isArchived: false, createdAt: now(), updatedAt: now(),
 }));
 
 const accounts: Account[] = [];
@@ -165,7 +165,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       return cat as T;
     }
     case "create_category": {
-      const cat: Category = { id: uid(), name: String(a.name).trim(), kind: a.kind, emoji: a.emoji, color: a.color ?? null, sortOrder: 100, isSystem: false, isArchived: false, createdAt: now(), updatedAt: now() };
+      const cat: Category = { id: uid(), name: String(a.name).trim(), kind: a.kind, emoji: a.emoji, color: a.color ?? null, parentId: a.parentId ?? null, sortOrder: 100, isSystem: false, isArchived: false, createdAt: now(), updatedAt: now() };
       categories.push(cat);
       return cat as T;
     }

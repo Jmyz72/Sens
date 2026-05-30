@@ -3,7 +3,19 @@
 //! CHECK constraints, and indexes per the design spec's Database Design.
 
 /// Ordered list of `(version, sql)`. Append-only — never edit a shipped one.
-pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002)];
+pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003)];
+
+const MIGRATION_003: &str = r#"
+ALTER TABLE categories ADD COLUMN parent_id TEXT REFERENCES categories(id) ON DELETE RESTRICT;
+
+DROP INDEX idx_categories_kind_name;
+
+CREATE UNIQUE INDEX idx_categories_top_kind_name
+  ON categories(kind, name) WHERE parent_id IS NULL;
+
+CREATE UNIQUE INDEX idx_categories_sub_parent_name
+  ON categories(parent_id, name) WHERE parent_id IS NOT NULL;
+"#;
 
 const MIGRATION_002: &str = r#"
 CREATE TABLE account_subtypes (
