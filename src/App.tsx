@@ -73,6 +73,7 @@ export default function App() {
   const [addOpen, setAddOpen] = useState(false);
   const [showTxn, setShowTxn] = useState(false);
   const [showAcct, setShowAcct] = useState(false);
+  const [txnAccountId, setTxnAccountId] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
   const reload = useCallback(async () => {
@@ -122,7 +123,11 @@ export default function App() {
   const portfolioSummary = useMemo(() => sidebarPortfolioSummary(accounts), [accounts]);
   const activeAccountCount = useMemo(() => accounts.filter((a) => !a.isArchived).length, [accounts]);
   const activeCategoryCount = useMemo(() => categories.filter((c) => !c.isArchived).length, [categories]);
-  const go = (id: string) => { setActive(id as ScreenId); if (scroller.current) scroller.current.scrollTop = 0; };
+  const go = (id: string, opts?: { accountId?: string }) => {
+    setActive(id as ScreenId);
+    setTxnAccountId(opts?.accountId ?? null);
+    if (scroller.current) scroller.current.scrollTop = 0;
+  };
   const navCount = (id: ScreenId) => {
     if (id === "accounts") return activeAccountCount;
     if (id === "categories") return activeCategoryCount;
@@ -246,8 +251,8 @@ export default function App() {
 
           <div ref={scroller} style={{ flex: 1, overflow: "auto", padding: 24 }}>
             {active === "dashboard" && <Dashboard month={month} go={go} />}
-            {active === "accounts" && <Accounts />}
-            {active === "transactions" && <Transactions />}
+            {active === "accounts" && <Accounts go={go} />}
+            {active === "transactions" && <Transactions initialAccountId={txnAccountId} />}
             {active === "categories" && <Categories />}
             {active === "settings" && <Settings updater={updater} />}
           </div>

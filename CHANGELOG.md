@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Redesigned the Accounts screen** — the net-worth header now shows a monthly
+  change (with %) and a trend sparkline; each account row gains a balance
+  sparkline, monthly change, last-activity, and quick stats; expanding a row
+  reveals a period-selectable balance chart (1M/3M/6M/1Y/All), In/Out/Net tiles,
+  and a deep link into its transactions. All derived on the client from existing
+  data — no backend changes.
+
 ## [1.1.4] — 2026-05-30
 
 ### Added

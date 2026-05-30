@@ -34,6 +34,11 @@ export function signedFor(kind: TransactionKind, amountCents: number, isDestinat
   return isDestination ? amountCents : -amountCents;
 }
 
+/** Stable ascending sort key for a transaction: date, then createdAt tiebreaker. */
+export function txnSortKey(tx: Transaction): string {
+  return tx.transactionDate + "\x00" + tx.createdAt;
+}
+
 /**
  * Compute a map of transaction id → "balance after this transaction" for a
  * given account. Accumulation follows the spec:
@@ -50,8 +55,8 @@ export function computeRunningBalances(
   openingBalanceCents: number,
 ): Map<string, number> {
   const sorted = [...txns].sort((a, b) => {
-    const ka = a.transactionDate + "\x00" + a.createdAt;
-    const kb = b.transactionDate + "\x00" + b.createdAt;
+    const ka = txnSortKey(a);
+    const kb = txnSortKey(b);
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
 
