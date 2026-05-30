@@ -45,7 +45,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
   const t = useTheme();
   const { categories, reload, version } = useAppData();
   const { notify } = useToast();
-  const today = todayISO();
+  const today = useMemo(() => todayISO(), []);
   const [showArchived, setShowArchived] = useState(false);
   const [all, setAll] = useState<Account[]>([]);
   const [allTxns, setAllTxns] = useState<Transaction[]>([]);
@@ -60,10 +60,14 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
       .catch((e: unknown) => notify((e as { message?: string })?.message ?? "Failed to load activity", "error"));
   }, [version, notify]);
 
-  const stats = useMemo(() => {
-    const m = new Map<string, AccountStats>();
-    for (const a of all) m.set(a.id, computeAccountStats(a, allTxns, today));
-    return m;
+  const { stats, txnsByAccount } = useMemo(() => {
+    const stats = new Map<string, AccountStats>();
+    const txnsByAccount = new Map<string, Transaction[]>();
+    for (const a of all) {
+      txnsByAccount.set(a.id, accountTxns(allTxns, a.id));
+      stats.set(a.id, computeAccountStats(a, allTxns, today));
+    }
+    return { stats, txnsByAccount };
   }, [all, allTxns, today]);
   const nw = useMemo(() => netWorthStats(all, allTxns, today), [all, allTxns, today]);
 
@@ -122,7 +126,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
               {accs.map((a, i) => {
                 const isOpen = open === a.id;
                 const st = stats.get(a.id);
-                const txns = accountTxns(allTxns, a.id);
+                const txns = txnsByAccount.get(a.id) ?? [];
                 const v = balanceDisplay(a.group, a.balanceCents);
                 const sparkPoints = st?.sparkline ?? [];
                 const trendUp = sparkPoints.length < 2 || sparkPoints[sparkPoints.length - 1] >= sparkPoints[0];
@@ -224,7 +228,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
         );
       })}
 
-      {correcting && <SetBalance account={correcting} hasTransactions={accountTxns(allTxns, correcting.id).length > 0 || correcting.balanceCents !== correcting.openingBalanceCents} onClose={() => setCorrecting(null)} onDone={() => { setCorrecting(null); afterMutation(); }} />}
+      {correcting && <SetBalance account={correcting} hasTransactions={(txnsByAccount.get(correcting.id)?.length ?? 0) > 0 || correcting.balanceCents !== correcting.openingBalanceCents} onClose={() => setCorrecting(null)} onDone={() => { setCorrecting(null); afterMutation(); }} />}
       {editing && <EditAccount account={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); afterMutation(); }} />}
     </div>
   );
