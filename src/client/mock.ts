@@ -15,6 +15,7 @@ import type {
   DashboardSummary,
   Transaction,
 } from "../types";
+import { PROVIDER_GROUPS } from "../lib/providers";
 
 const fail = (code: string, message: string): never => {
   throw { code, message };
@@ -39,21 +40,14 @@ const SUBTYPES: AccountSubtype[] = SUBTYPE_ROWS.map(([key, label, type, group], 
 }));
 const subtypeOf = (key: string) => SUBTYPES.find((s) => s.key === key);
 
-// ── seed templates ──
-const TPL_GROUPS: [string, string, [string, string][]][] = [
-  ["Banks", "savings", [["maybank", "Maybank"], ["cimb", "CIMB"], ["public-bank", "Public Bank"], ["rhb", "RHB"], ["hong-leong-bank", "Hong Leong Bank"], ["ambank", "AmBank"], ["bank-islam", "Bank Islam"], ["ocbc", "OCBC"], ["uob", "UOB"], ["hsbc", "HSBC"]]],
-  ["Digital banks", "savings", [["gxbank", "GXBank"], ["boost-bank", "Boost Bank"], ["aeon-bank", "AEON Bank"], ["ryt-bank", "Ryt Bank"]]],
-  ["E-wallets", "ewallet", [["tng-ewallet", "Touch 'n Go eWallet"], ["grabpay", "GrabPay"], ["boost", "Boost"], ["shopeepay", "ShopeePay"], ["mae", "MAE"], ["bigpay", "BigPay"]]],
-  ["Buy now, pay later", "bnpl", [["atome", "Atome"], ["shopee-paylater", "Shopee PayLater"], ["grab-paylater", "Grab PayLater"]]],
-  ["Investment", "investment", [["asnb", "ASNB"], ["stashaway", "StashAway"], ["versa", "Versa"], ["wahed", "Wahed"], ["moomoo", "Moomoo"]]],
-  ["Global fintech", "ewallet", [["paypal", "PayPal"], ["wise", "Wise"], ["revolut", "Revolut"], ["payoneer", "Payoneer"]]],
-  ["Crypto", "crypto", [["luno", "Luno"]]],
-];
-
+// ── seed templates (mirrors src/lib/providers.ts → Rust seed) ──
 const templates: AccountTemplate[] = [];
-TPL_GROUPS.forEach(([group, sub, list]) =>
-  list.forEach(([key, name]) =>
-    templates.push({ key, name, groupName: group, defaultSubtype: sub, iconAsset: key, brandColor: null, sortOrder: templates.length, isActive: true }),
+PROVIDER_GROUPS.forEach(({ group, defaultSubtype, providers }) =>
+  providers.forEach(([key, name]) =>
+    templates.push({
+      key, name, groupName: group, defaultSubtype,
+      iconAsset: key, brandColor: null, sortOrder: templates.length, isActive: true,
+    }),
   ),
 );
 
