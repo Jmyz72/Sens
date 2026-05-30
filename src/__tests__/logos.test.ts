@@ -16,6 +16,10 @@ describe("logoFor", () => {
 // (No completeness requirement — gaps are expected and handled by ProviderLogo.)
 describe("provider logo coverage", () => {
   const BUNDLED = [
+    "aeon-bank", "affin-bank", "agrobank", "al-rajhi-bank", "alliance-bank",
+    "ambank", "bank-rakyat", "cimb", "hong-leong-bank", "luno", "maybank",
+    "ocbc", "public-bank", "rakuten-trade", "rhb", "standard-chartered",
+    "stashaway", "tng-ewallet", "uob",
     "paypal", "wise", "revolut", "n26", "payoneer", "hsbc",
     "grabpay", "grab-paylater", "shopeepay", "shopee-paylater",
   ];
@@ -26,6 +30,6 @@ describe("provider logo coverage", () => {
   });
 
   it("returns null for a provider with no bundled logo (monogram fallback path)", () => {
-    expect(logoFor("maybank")).toBeNull();
+    expect(logoFor("gxbank")).toBeNull();
   });
 });
