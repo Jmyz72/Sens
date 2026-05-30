@@ -230,7 +230,7 @@ mod tests {
     fn list_categories_can_include_archived() {
         let c = open_in_memory().unwrap();
         // Create a custom expense category and immediately archive it.
-        let cat = service::create_category(&c, "Old Food", "expense", "🍔", None).unwrap();
+        let cat = service::create_category(&c, "Old Food", "expense", "🍔", None, None).unwrap();
         service::archive_category(&c, &cat.id).unwrap();
 
         // Without include_archived the category must not appear.
@@ -244,6 +244,38 @@ mod tests {
         // The kind filter must also work in combination with include_archived.
         let all_expense = service::list_categories(&c, Some("expense"), true).unwrap();
         assert!(all_expense.iter().any(|c| c.id == cat.id), "archived expense category should appear under kind filter with include_archived=true");
+    }
+
+    #[test]
+    fn subcategory_inherits_parent_kind() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food P2", "expense", "🍔", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee", "income", "☕", None, Some(&food.id)).unwrap();
+        // kind is derived from the parent, not the passed-in "income"
+        assert_eq!(coffee.kind, "expense");
+        assert_eq!(coffee.parent_id.as_deref(), Some(food.id.as_str()));
+    }
+
+    #[test]
+    fn cannot_nest_subcategory_under_a_subcategory() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food P3", "expense", "🍔", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
+        let nested = service::create_category(&c, "Latte", "expense", "🥛", None, Some(&coffee.id));
+        assert!(nested.is_err(), "two-level cap: cannot nest under a subcategory");
+    }
+
+    #[test]
+    fn subcategory_names_unique_within_parent_only() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food P4", "expense", "🍔", None, None).unwrap();
+        let work = service::create_category(&c, "Work P4", "expense", "💼", None, None).unwrap();
+        service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
+        // same name under a DIFFERENT parent is allowed
+        service::create_category(&c, "Coffee", "expense", "☕", None, Some(&work.id)).unwrap();
+        // duplicate under the SAME parent is rejected
+        let dupe = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id));
+        assert!(dupe.is_err(), "duplicate sibling name should conflict");
     }
 
     #[test]
@@ -269,6 +301,42 @@ mod tests {
         assert_eq!(d.assets_cents, 30_000_00);
         assert_eq!(d.liabilities_cents, -5_000_00);
         assert_eq!(d.net_worth_cents, 25_000_00);
+    }
+
+    #[test]
+    fn archiving_parent_cascades_to_children_and_restores_them() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food P5", "expense", "🍔", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
+
+        service::archive_category(&c, &food.id).unwrap();
+        let archived = service::list_categories(&c, None, true).unwrap();
+        let child = archived.iter().find(|x| x.id == coffee.id).unwrap();
+        assert!(child.is_archived, "child should be archived with its parent");
+
+        service::restore_category(&c, &food.id).unwrap();
+        let restored = service::list_categories(&c, None, true).unwrap();
+        let child2 = restored.iter().find(|x| x.id == coffee.id).unwrap();
+        assert!(!child2.is_archived, "child should be restored with its parent");
+    }
+
+    #[test]
+    fn spending_breakdown_rolls_subcategories_into_parent() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Checking", 0);
+        let food = service::create_category(&c, "Food P6", "expense", "🍔", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
+        // one expense on the PARENT, one on the SUB — both should land in the parent bucket
+        service::create_expense(&c, &a.id, &food.id, 1000, None, "2026-05-10").unwrap();
+        service::create_expense(&c, &a.id, &coffee.id, 500, None, "2026-05-11").unwrap();
+
+        let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
+        let row = s.spending_breakdown.iter().find(|b| b.category_id == food.id).unwrap();
+        assert_eq!(row.total_cents, 1500, "parent + sub spend rolled up");
+        assert!(
+            !s.spending_breakdown.iter().any(|b| b.category_id == coffee.id),
+            "subcategory must not appear as its own bar"
+        );
     }
 
     #[test]

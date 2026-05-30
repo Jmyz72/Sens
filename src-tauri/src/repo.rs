@@ -204,6 +204,7 @@ fn map_category(r: &Row) -> rusqlite::Result<Category> {
         kind: r.get("kind")?,
         emoji: r.get("emoji")?,
         color: r.get("color")?,
+        parent_id: r.get("parent_id")?,
         sort_order: r.get("sort_order")?,
         is_system: r.get::<_, i64>("is_system")? != 0,
         is_archived: r.get::<_, i64>("is_archived")? != 0,
@@ -248,12 +249,13 @@ pub fn insert_category(
     kind: &str,
     emoji: &str,
     color: Option<&str>,
+    parent_id: Option<&str>,
     now: &str,
 ) -> AppResult<Category> {
     conn.execute(
-        "INSERT INTO categories (id, name, kind, emoji, color, sort_order, is_system, is_archived, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 100, 0, 0, ?6, ?6)",
-        params![id, name, kind, emoji, color, now],
+        "INSERT INTO categories (id, name, kind, emoji, color, parent_id, sort_order, is_system, is_archived, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 100, 0, 0, ?7, ?7)",
+        params![id, name, kind, emoji, color, parent_id, now],
     )
     .map_err(map_unique)?;
     get_category(conn, id)
@@ -292,6 +294,15 @@ pub fn set_category_archived(conn: &Connection, id: &str, archived: bool, now: &
         return Err(AppError::NotFound("Category not found".into()));
     }
     get_category(conn, id)
+}
+
+/// Archive or restore all subcategories of a top-level category in one statement.
+pub fn set_children_archived(conn: &Connection, parent_id: &str, archived: bool, now: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE categories SET is_archived = ?2, updated_at = ?3 WHERE parent_id = ?1",
+        params![parent_id, archived as i64, now],
+    )?;
+    Ok(())
 }
 
 // ── Transactions ─────────────────────────────────────────────────────────────
@@ -428,10 +439,12 @@ pub fn sum_kind_in_range(conn: &Connection, kind: &str, from: &str, to: &str) ->
 
 pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<Vec<CategoryBreakdown>> {
     let mut stmt = conn.prepare(
-        "SELECT c.id, c.name, c.emoji, c.color, SUM(t.amount_cents) AS total
-         FROM transactions t JOIN categories c ON c.id = t.category_id
+        "SELECT COALESCE(c.parent_id, c.id) AS group_id, pc.name, pc.emoji, pc.color, SUM(t.amount_cents) AS total
+         FROM transactions t
+         JOIN categories c  ON c.id = t.category_id
+         JOIN categories pc ON pc.id = COALESCE(c.parent_id, c.id)
          WHERE t.kind = 'expense' AND t.transaction_date >= ?1 AND t.transaction_date < ?2
-         GROUP BY c.id ORDER BY total DESC",
+         GROUP BY group_id ORDER BY total DESC",
     )?;
     let rows = stmt
         .query_map(params![from, to], |r| {
@@ -509,7 +522,7 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str, now: &str) -> AppR
 fn map_unique(e: rusqlite::Error) -> AppError {
     let msg = e.to_string();
     if msg.contains("UNIQUE") {
-        AppError::Conflict("A category with this name and kind already exists".into())
+        AppError::Conflict("A category with this name already exists at this level".into())
     } else {
         e.into()
     }

@@ -136,11 +136,33 @@ fn validate_category_kind(kind: &str) -> AppResult<()> {
     }
 }
 
-pub fn create_category(conn: &Connection, name: &str, kind: &str, emoji: &str, color: Option<&str>) -> AppResult<Category> {
+pub fn create_category(
+    conn: &Connection,
+    name: &str,
+    kind: &str,
+    emoji: &str,
+    color: Option<&str>,
+    parent_id: Option<&str>,
+) -> AppResult<Category> {
     let name = require_nonempty("Category name", name)?;
-    validate_category_kind(kind)?;
     let emoji = require_nonempty("Emoji", emoji)?;
-    repo::insert_category(conn, &new_id(), &name, kind, &emoji, color, &now())
+    // A subcategory inherits its parent's kind; a top-level category validates its own.
+    let effective_kind = match parent_id {
+        Some(pid) => {
+            let parent = repo::get_category(conn, pid)?; // NotFound if bogus
+            if parent.parent_id.is_some() {
+                return Err(AppError::Validation(
+                    "Subcategories can only be nested one level deep".into(),
+                ));
+            }
+            parent.kind
+        }
+        None => {
+            validate_category_kind(kind)?;
+            kind.to_string()
+        }
+    };
+    repo::insert_category(conn, &new_id(), &name, &effective_kind, &emoji, color, parent_id, &now())
 }
 
 pub fn update_category(conn: &Connection, input: UpdateCategoryInput) -> AppResult<Category> {
@@ -165,11 +187,26 @@ pub fn archive_category(conn: &Connection, id: &str) -> AppResult<Category> {
     if cat.is_system {
         return Err(AppError::Conflict("System categories cannot be archived".into()));
     }
-    repo::set_category_archived(conn, id, true, &now())
+    let now = now();
+    let updated = repo::set_category_archived(conn, id, true, &now)?;
+    if cat.parent_id.is_none() {
+        repo::set_children_archived(conn, id, true, &now)?;
+    }
+    Ok(updated)
 }
 
 pub fn restore_category(conn: &Connection, id: &str) -> AppResult<Category> {
-    repo::set_category_archived(conn, id, false, &now())
+    let cat = repo::get_category(conn, id)?;
+    let now = now();
+    let updated = repo::set_category_archived(conn, id, false, &now)?;
+    if cat.parent_id.is_none() {
+        // v1 simplification: restoring a top-level category un-archives ALL of its
+        // children, including any that were archived independently before the parent
+        // was. We do not track *why* a child was archived (see the subcategories spec's
+        // "Scope Trims"). Acceptable until per-child restore is needed.
+        repo::set_children_archived(conn, id, false, &now)?;
+    }
+    Ok(updated)
 }
 
 // ── Transactions ─────────────────────────────────────────────────────────────

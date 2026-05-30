@@ -74,8 +74,8 @@ pub fn list_categories(state: State<'_, DbState>, kind: Option<String>, include_
 }
 
 #[tauri::command]
-pub fn create_category(state: State<'_, DbState>, name: String, kind: String, emoji: String, color: Option<String>) -> AppResult<Category> {
-    with_conn!(state, c => service::create_category(&c, &name, &kind, &emoji, color.as_deref()))
+pub fn create_category(state: State<'_, DbState>, name: String, kind: String, emoji: String, color: Option<String>, parent_id: Option<String>) -> AppResult<Category> {
+    with_conn!(state, c => service::create_category(&c, &name, &kind, &emoji, color.as_deref(), parent_id.as_deref()))
 }
 
 #[tauri::command]
