@@ -246,7 +246,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
 
       {correcting && <SetBalance account={correcting} hasTransactions={(txnsByAccount.get(correcting.id)?.length ?? 0) > 0 || correcting.balanceCents !== correcting.openingBalanceCents} onClose={() => setCorrecting(null)} onDone={() => { setCorrecting(null); afterMutation(); }} />}
       {editing && <EditAccount account={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); afterMutation(); }} />}
-      {showAdd && <AddAccount onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); void afterMutation(); }} />}
+      {showAdd && <AddAccount onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); afterMutation(); }} />}
     </div>
   );
 }

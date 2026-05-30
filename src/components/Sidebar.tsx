@@ -2,6 +2,7 @@
 // (expanded only), nav (full labels or an icon rail with hover tooltips), and
 // the workspace/theme footer. Drag region kept minimal for macOS traffic lights.
 
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "../theme/ThemeProvider";
 import { hexA } from "../theme/tokens";
 import type { ThemeMode } from "../theme/tokens";
@@ -29,8 +30,19 @@ export function Sidebar({
 }) {
   const t = useTheme();
 
+  // Clip overflow only during the collapse/expand width animation so content
+  // doesn't visibly spill; allow overflow at rest so rail hover tooltips show.
+  const [animating, setAnimating] = useState(false);
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    setAnimating(true);
+    const id = window.setTimeout(() => setAnimating(false), 220);
+    return () => window.clearTimeout(id);
+  }, [collapsed]);
+
   return (
-    <div className="sens-sidebar" style={{ width: collapsed ? 56 : 220, flexShrink: 0, background: t.sidebar, display: "flex", flexDirection: "column", borderRight: `0.5px solid ${t.border}`, overflow: "hidden" }}>
+    <div className="sens-sidebar" style={{ width: collapsed ? 56 : 220, flexShrink: 0, background: t.sidebar, display: "flex", flexDirection: "column", borderRight: `0.5px solid ${t.border}`, overflow: animating ? "hidden" : "visible" }}>
       <div data-tauri-drag-region style={{ height: 28, flexShrink: 0 }} />
 
       {/* brand header + collapse toggle */}
