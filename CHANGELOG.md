@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-05-31
+
 ### Changed
 - **Redesigned the New Account modal** as a two-step, provider-first flow: pick a
   provider (or "Custom account") from a searchable logo grid, then choose the
