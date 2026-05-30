@@ -23,3 +23,6 @@ dist-ssr
 src-tauri/target/
 src-tauri/gen/schemas
 .superpowers/
+
+# Claude Code local settings
+.claude/
