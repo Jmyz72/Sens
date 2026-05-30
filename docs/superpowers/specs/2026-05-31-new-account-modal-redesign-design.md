@@ -21,8 +21,10 @@ logos also replace the monogram tiles on the **Accounts screen** list rows.
 1. **Clearer flow** — split into two focused steps instead of one dense screen.
 2. **Easy-to-find type** — make account type an explicit, visual 5-card choice.
 3. **Less cramped** — progressive disclosure across two steps; chips instead of dropdowns.
-4. **Real provider logos** — every provider gets a real, bundled logo (no monogram
-   fallback for known providers); logos also appear on the Accounts list.
+4. **Real provider logos where available** — providers with a cleanly-sourceable,
+   bundled logo show it; the rest fall back to a brand-tinted monogram tile. Logos
+   also appear on the Accounts list. (Revised 2026-05-31 from the original
+   "every provider, no gaps" goal — see Logo system below.)
 
 ## Non-goals
 
@@ -135,15 +137,23 @@ A small shared component (e.g. `src/components/ProviderLogo.tsx`):
 
 Used by both Step 1 grid tiles, the Step 2 summary row, and the Accounts list rows.
 
-### No-gaps policy & gap list
+### Logo coverage policy (revised 2026-05-31)
 
-Every one of the ~53 seeded providers must have a real logo before this ships — there is
-**no monogram fallback for a known provider**. During implementation, source every logo
-possible; any that cannot be sourced cleanly (likely candidates: Agrobank, MBSB Bank,
-KAF Digital Bank, Bank Muamalat, Riipay, Al Rajhi Bank) are collected into a short
-**gap list** handed to the user to supply. The redesign is not considered done until the
-logo set is complete. A dev-only check (test or assertion) verifies every seeded
-`template.key` has a corresponding bundled asset.
+**Original goal** was a real logo for every one of the 50 seeded providers with no
+monogram fallback. In practice only a small set of global brands (PayPal, Wise, Revolut,
+N26, Payoneer, HSBC, Grab → GrabPay/Grab PayLater, Shopee → ShopeePay/Shopee PayLater)
+have a cleanly-sourceable, license-clean mark; the ~40 Malaysian banks, digital banks,
+local e-wallets, BNPL, investment providers, and Luno do not, and bundling scraped brand
+art raises accuracy and trademark concerns.
+
+**Revised policy (user-approved): logo where available, monogram otherwise.** Providers
+with a bundled asset in `src/assets/logos/<key>.svg` render the real logo on the white
+plate; every other provider falls back to `ProviderLogo`'s brand-tinted monogram tile.
+There is **no completeness requirement** and no blocking gap list. The bundled global
+marks are sourced from Simple Icons (CC0-licensed SVGs) and tinted with the provider's
+brand color. The test (`src/__tests__/logos.test.ts`) verifies the bundled set resolves
+and confirms gaps fall through to the monogram — it does **not** require full coverage.
+More logos can be added later simply by dropping correctly-named files into the folder.
 
 ## Accounts screen change
 
@@ -194,5 +204,7 @@ readability; keep the file focused on the modal.
 
 ## Open items
 
-- **Logo gap list** — providers with no cleanly sourceable logo, surfaced to the user
-  during implementation; must be filled before shipping.
+- **Additional logos (optional)** — only ~10 global-brand logos are bundled; the
+  remaining providers show the monogram fallback. More can be added at any time by
+  dropping a correctly-named `src/assets/logos/<key>.svg` in (e.g. a user-supplied
+  Malaysian-bank logo pack). No longer a shipping blocker.

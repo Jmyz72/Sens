@@ -1,6 +1,7 @@
-// Bundled provider logos, keyed by template key. Real brand marks live in
+// Bundled provider logos, keyed by template key. Brand marks live in
 // src/assets/logos/<key>.svg and are rendered on a white plate by ProviderLogo.
-// Every seeded provider must have one (enforced by src/__tests__/logos coverage).
+// Coverage is best-effort: providers with a bundled logo show it; the rest fall
+// back to ProviderLogo's brand-tinted monogram tile. No completeness requirement.
 
 const modules = import.meta.glob("../assets/logos/*.svg", {
   eager: true,

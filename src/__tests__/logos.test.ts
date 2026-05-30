@@ -11,3 +11,21 @@ describe("logoFor", () => {
     expect(logoFor("definitely-not-a-provider")).toBeNull();
   });
 });
+
+// Policy: logo where one is bundled, brand-tinted monogram fallback otherwise.
+// (No completeness requirement — gaps are expected and handled by ProviderLogo.)
+describe("provider logo coverage", () => {
+  const BUNDLED = [
+    "paypal", "wise", "revolut", "n26", "payoneer", "hsbc",
+    "grabpay", "grab-paylater", "shopeepay", "shopee-paylater",
+  ];
+
+  it("resolves a logo URL for every bundled provider", () => {
+    const missing = BUNDLED.filter((k) => !logoFor(k));
+    expect(missing).toEqual([]);
+  });
+
+  it("returns null for a provider with no bundled logo (monogram fallback path)", () => {
+    expect(logoFor("maybank")).toBeNull();
+  });
+});
