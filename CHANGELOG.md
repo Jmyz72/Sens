@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-31
+
 ### Added
 - Two-level **subcategories**: categories can now have subcategories via a new
   `parent_id`. A subcategory inherits its parent's kind; nesting is capped at one
