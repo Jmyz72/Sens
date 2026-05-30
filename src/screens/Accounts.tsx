@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Account, AccountTypeName, Transaction } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import type { Theme } from "../theme/tokens";
-import { Btn, Card, Empty, GlyphTile, Money } from "../components/ui";
+import { Btn, Card, Empty, Money } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { TxnRow } from "../components/TxnRow";
 import { Sparkline } from "../components/Sparkline";
@@ -18,7 +18,7 @@ import { useAppData } from "../store";
 import { SetBalance } from "../modals/SetBalance";
 import { EditAccount } from "../modals/EditAccount";
 import { AddAccount } from "../modals/AddAccount";
-import { accountTone } from "../lib/brand";
+import { ProviderLogo } from "../components/ProviderLogo";
 import { balanceDisplay, toneColor, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
 import { useToast } from "../components/Toast";
 import { computeRunningBalances, txnSortKey } from "../lib/kinds";
@@ -151,7 +151,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
                   <div key={a.id} style={{ borderTop: i ? `0.5px solid ${t.divider}` : "none", opacity: a.isArchived ? 0.55 : 1 }}>
                     {/* collapsed dense row */}
                     <div className="sens-row click" onClick={() => toggle(a.id)} style={{ display: "flex", alignItems: "center", gap: 13, padding: "0 18px", minHeight: 78 }}>
-                      <GlyphTile tone={accountTone({ templateKey: a.templateKey, fallbackSeed: a.id }, t.accent)} size={36} emoji={a.name[0]} radius={10} />
+                      <ProviderLogo templateKey={a.templateKey} name={a.name} seed={a.id} size={36} radius={10} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
                           {a.name}
