@@ -296,6 +296,15 @@ pub fn set_category_archived(conn: &Connection, id: &str, archived: bool, now: &
     get_category(conn, id)
 }
 
+/// Archive or restore all subcategories of a top-level category in one statement.
+pub fn set_children_archived(conn: &Connection, parent_id: &str, archived: bool, now: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE categories SET is_archived = ?2, updated_at = ?3 WHERE parent_id = ?1",
+        params![parent_id, archived as i64, now],
+    )?;
+    Ok(())
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 fn map_transaction(r: &Row) -> rusqlite::Result<Transaction> {

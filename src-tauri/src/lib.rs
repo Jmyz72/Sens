@@ -304,6 +304,23 @@ mod tests {
     }
 
     #[test]
+    fn archiving_parent_cascades_to_children_and_restores_them() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food P5", "expense", "🍔", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
+
+        service::archive_category(&c, &food.id).unwrap();
+        let archived = service::list_categories(&c, None, true).unwrap();
+        let child = archived.iter().find(|x| x.id == coffee.id).unwrap();
+        assert!(child.is_archived, "child should be archived with its parent");
+
+        service::restore_category(&c, &food.id).unwrap();
+        let restored = service::list_categories(&c, None, true).unwrap();
+        let child2 = restored.iter().find(|x| x.id == coffee.id).unwrap();
+        assert!(!child2.is_archived, "child should be restored with its parent");
+    }
+
+    #[test]
     fn account_with_unknown_subtype_still_lists() {
         // An account whose subtype isn't in the taxonomy (e.g. a future rename or
         // a direct DB edit) must stay visible via the LEFT JOIN + COALESCE fallback,

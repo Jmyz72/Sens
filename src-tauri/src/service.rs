@@ -187,11 +187,26 @@ pub fn archive_category(conn: &Connection, id: &str) -> AppResult<Category> {
     if cat.is_system {
         return Err(AppError::Conflict("System categories cannot be archived".into()));
     }
-    repo::set_category_archived(conn, id, true, &now())
+    let now = now();
+    let updated = repo::set_category_archived(conn, id, true, &now)?;
+    if cat.parent_id.is_none() {
+        repo::set_children_archived(conn, id, true, &now)?;
+    }
+    Ok(updated)
 }
 
 pub fn restore_category(conn: &Connection, id: &str) -> AppResult<Category> {
-    repo::set_category_archived(conn, id, false, &now())
+    let cat = repo::get_category(conn, id)?;
+    let now = now();
+    let updated = repo::set_category_archived(conn, id, false, &now)?;
+    if cat.parent_id.is_none() {
+        // v1 simplification: restoring a top-level category un-archives ALL of its
+        // children, including any that were archived independently before the parent
+        // was. We do not track *why* a child was archived (see the subcategories spec's
+        // "Scope Trims"). Acceptable until per-child restore is needed.
+        repo::set_children_archived(conn, id, false, &now)?;
+    }
+    Ok(updated)
 }
 
 // ── Transactions ─────────────────────────────────────────────────────────────
