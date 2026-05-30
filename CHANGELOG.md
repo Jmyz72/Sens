@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reveals a period-selectable balance chart (1M/3M/6M/1Y/All), In/Out/Net tiles,
   and a deep link into its transactions. All derived on the client from existing
   data — no backend changes.
+- Redesigned the app shell: the sidebar is now collapsible (full ↔ icon rail with hover tooltips), its collapse state persists across launches, and the empty gap above the logo is gone. New "Coin S" brand mark and regenerated app icons.
+- The top-bar **Add** button now creates a transaction directly; **adding an account moved to the Accounts screen** (an "Add account" button there).
+- Removed the account-count row from the sidebar net-worth panel.
 
 ## [1.1.4] — 2026-05-30
 
