@@ -1,40 +1,27 @@
-// App shell: macOS-style sidebar + toolbar, screen router, month navigation,
-// theme toggle, and the Add menu. Owns the app-data store (accounts +
-// categories) and refreshes screens via a version counter.
+// App shell: composes the collapsible sidebar + top bar, routes screens, owns
+// month navigation and the app-data store (accounts + categories), persists the
+// sidebar collapse state, and refreshes screens via a version counter.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme, useThemeMode } from "./theme/ThemeProvider";
-import { hexA } from "./theme/tokens";
 import { useToast } from "./components/Toast";
-import { Icon, type IconName } from "./components/Icon";
-import { Btn, Money } from "./components/ui";
 import { AppDataCtx } from "./store";
 import type { Account, Category } from "./types";
 import { client } from "./client";
-import { currentMonth, fmtMonth, shiftMonth } from "./lib/format";
+import { currentMonth, shiftMonth } from "./lib/format";
 import { sidebarPortfolioSummary } from "./lib/accounts";
 import { useUpdater } from "./lib/updater";
+import { NAV, type ScreenId } from "./nav";
+import { Sidebar } from "./components/Sidebar";
+import { TopBar } from "./components/TopBar";
 import { Dashboard } from "./screens/Dashboard";
 import { Accounts } from "./screens/Accounts";
 import { Transactions } from "./screens/Transactions";
 import { Settings } from "./screens/Settings";
 import { Categories } from "./screens/Categories";
 import { AddTransaction } from "./modals/AddTransaction";
-import { AddAccount } from "./modals/AddAccount";
 
-type ScreenId = "dashboard" | "accounts" | "transactions" | "categories" | "settings";
-const NAV: { id: ScreenId; label: string; icon: IconName; sub: string }[] = [
-  { id: "dashboard", label: "Dashboard", icon: "home", sub: "Your money at a glance" },
-  { id: "accounts", label: "Accounts", icon: "wallet", sub: "All balances in one place" },
-  { id: "transactions", label: "Transactions", icon: "list", sub: "Every ringgit in and out" },
-  { id: "categories", label: "Categories", icon: "filter", sub: "Income, expense & transfer labels" },
-  { id: "settings", label: "Settings", icon: "sliders", sub: "Preferences and about" },
-];
-const NAV_SECTIONS: { label: string; items: ScreenId[] }[] = [
-  { label: "Overview", items: ["dashboard"] },
-  { label: "Money", items: ["accounts", "transactions", "categories"] },
-  { label: "System", items: ["settings"] },
-];
+const SIDEBAR_KEY = "sens.sidebar";
 
 export default function App() {
   const t = useTheme();
@@ -44,6 +31,10 @@ export default function App() {
   const { checkForUpdates, desktop: updaterDesktop, state: updateState } = updater;
   const [active, setActive] = useState<ScreenId>("dashboard");
   const [month, setMonth] = useState(currentMonth());
+  const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem(SIDEBAR_KEY) === "collapsed");
+
+  // Persist the collapse state whenever it changes.
+  useEffect(() => { localStorage.setItem(SIDEBAR_KEY, collapsed ? "collapsed" : "expanded"); }, [collapsed]);
 
   // On mount: if remember_month is on, restore the last viewed month.
   useEffect(() => {
@@ -70,9 +61,7 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState(0);
-  const [addOpen, setAddOpen] = useState(false);
   const [showTxn, setShowTxn] = useState(false);
-  const [showAcct, setShowAcct] = useState(false);
   const [txnAccountId, setTxnAccountId] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -137,117 +126,28 @@ export default function App() {
   return (
     <AppDataCtx.Provider value={data}>
       <div className="sens" style={{ position: "fixed", inset: 0, display: "flex", background: t.bg, color: t.text, fontFamily: t.font }}>
-        {/* sidebar */}
-        <div style={{ width: 220, flexShrink: 0, background: t.sidebar, display: "flex", flexDirection: "column", borderRight: `0.5px solid ${t.border}` }}>
-          <div data-tauri-drag-region style={{ height: 46, display: "flex", alignItems: "center", padding: "0 16px", flexShrink: 0 }} />
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "2px 16px 14px" }}>
-            <div style={{ width: 30, height: 30, borderRadius: 9, background: t.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 10px ${hexA(t.accent, 0.5)}` }}>
-              <Icon name="sparkle" size={16} color={t.onAccent} stroke={2} />
-            </div>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: -0.3, lineHeight: 1.15 }}>Sens</div>
-              <div style={{ fontSize: 11.5, color: t.faint, marginTop: 1 }}>Personal finance</div>
-            </div>
-          </div>
+        <Sidebar
+          active={active}
+          go={go}
+          collapsed={collapsed}
+          onToggle={() => setCollapsed((c) => !c)}
+          navCount={navCount}
+          month={month}
+          summary={portfolioSummary}
+          loading={loading}
+          mode={mode}
+          onToggleTheme={toggle}
+        />
 
-          <div style={{ margin: "0 12px 14px", padding: 12, borderRadius: 10, background: t.panel, border: `0.5px solid ${t.border}`, boxShadow: `inset 0 1px 0 ${hexA(t.text, t.mode === "dark" ? 0.03 : 0.4)}` }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <div style={{ fontSize: 10.5, color: t.faint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6 }}>Net worth</div>
-              <div style={{ fontSize: 11, color: t.dim, fontWeight: 600 }}>{fmtMonth(month)}</div>
-            </div>
-            <div style={{ marginTop: 7 }}>
-              {loading ? (
-                <span style={{ fontSize: 22, fontWeight: 750, color: t.faint }}>Loading</span>
-              ) : (
-                <Money cents={portfolioSummary.netWorthCents} size={22} weight={750} showCents={false} />
-              )}
-            </div>
-            <div style={{ marginTop: 11, display: "flex", flexDirection: "column", gap: 7 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5, color: t.dim }}>
-                <span>Assets</span>
-                <Money cents={portfolioSummary.assetsCents} size={12.5} weight={650} showCents={false} />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5, color: t.dim }}>
-                <span>Debts</span>
-                <Money cents={Math.abs(portfolioSummary.liabilitiesCents)} size={12.5} weight={650} color={portfolioSummary.liabilitiesCents < 0 ? t.negative : t.income} showCents={false} />
-              </div>
-              <div style={{ height: 1, background: t.divider }} />
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12, color: t.faint }}>
-                <span>Accounts</span>
-                <span style={{ color: t.dim, fontWeight: 650 }}>{activeAccountCount}</span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ padding: "0 10px", display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
-            {NAV_SECTIONS.map((section) => (
-              <div key={section.label} style={{ marginTop: section.label === "Overview" ? 0 : 10 }}>
-                <div style={{ fontSize: 10.5, color: t.faint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, padding: "0 8px 7px" }}>{section.label}</div>
-                {section.items.map((id) => {
-                  const it = NAV.find((item) => item.id === id)!;
-                  const on = it.id === active;
-                  const count = navCount(it.id);
-                  return (
-                    <div key={it.id} className="sens-nav" onClick={() => go(it.id)}
-                      style={{ display: "flex", alignItems: "center", gap: 11, height: 35, padding: "0 11px", borderRadius: 8,
-                        backgroundColor: on ? t.accentSoft : undefined, color: on ? t.text : t.dim, fontWeight: on ? 600 : 500, fontSize: 13.5 }}>
-                      <Icon name={it.icon} size={17} color={on ? t.accent : t.dim} stroke={on ? 2 : 1.7} />
-                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.label}</span>
-                      {count !== null && (
-                        <span style={{ marginLeft: "auto", fontSize: 11.5, color: on ? t.accent : t.faint, fontWeight: 650, fontVariantNumeric: "tabular-nums" }}>{count}</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-          <div style={{ padding: 10, borderTop: `0.5px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div className="sens-nav" style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 9, flex: 1 }}>
-              <Icon name="wallet" size={16} color={t.dim} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>Personal</div>
-                <div style={{ fontSize: 11, color: t.faint, marginTop: 1 }}>Local workspace</div>
-              </div>
-            </div>
-            <button className="sens-icon-btn" title="Toggle theme" onClick={toggle} style={{ width: 30, height: 30, color: t.dim }}>
-              <Icon name={mode === "dark" ? "sun" : "moon"} size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* main */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <div data-tauri-drag-region style={{ height: 60, flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "0 16px", borderBottom: `0.5px solid ${t.divider}` }}>
-            <div style={{ minWidth: 88, flex: "1 1 auto" }}>
-              <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.4, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nav.label}</div>
-              <div style={{ fontSize: 12, color: t.faint, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nav.sub}</div>
-            </div>
-            <div style={{ flex: 1 }} />
-            {active === "dashboard" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 2, background: t.panel, borderRadius: 8, border: `0.5px solid ${t.border}`, padding: 2 }}>
-                <button className="sens-icon-btn" onClick={() => handleSetMonth((m) => shiftMonth(m, -1))} style={{ width: 26, height: 26, color: t.dim }}><Icon name="chevronLeft" size={15} /></button>
-                <span style={{ fontSize: 12.5, fontWeight: 600, minWidth: 92, textAlign: "center" }}>{fmtMonth(month)}</span>
-                <button className="sens-icon-btn" onClick={() => handleSetMonth((m) => shiftMonth(m, 1))} style={{ width: 26, height: 26, color: t.dim }}><Icon name="chevronRight" size={15} /></button>
-              </div>
-            )}
-            <div style={{ position: "relative" }}>
-              <Btn icon="plus" onClick={() => setAddOpen((o) => !o)}>Add</Btn>
-              {addOpen && (
-                <>
-                  <div style={{ position: "fixed", inset: 0, zIndex: 60 }} onClick={() => setAddOpen(false)} />
-                  <div className="sens-pop" style={{ position: "absolute", right: 0, top: 40, zIndex: 61, width: 180, background: t.panel, border: `0.5px solid ${t.borderStrong}`, borderRadius: 11, padding: 5, boxShadow: "0 20px 50px rgba(0,0,0,0.4)" }}>
-                    {[{ label: "Transaction", icon: "list" as IconName, fn: () => setShowTxn(true) }, { label: "Account", icon: "wallet" as IconName, fn: () => setShowAcct(true) }].map((o) => (
-                      <button key={o.label} className="sens-btn sens-btn-ghost" onClick={() => { setAddOpen(false); o.fn(); }}
-                        style={{ width: "100%", justifyContent: "flex-start", gap: 9, height: 34, padding: "0 10px", borderRadius: 7, fontSize: 13, fontWeight: 500, color: t.text }}>
-                        <Icon name={o.icon} size={16} color={t.dim} /> {o.label}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+          <TopBar
+            title={nav.label}
+            sub={nav.sub}
+            isDashboard={active === "dashboard"}
+            month={month}
+            onShiftMonth={(d) => handleSetMonth((m) => shiftMonth(m, d))}
+            onAddTransaction={() => setShowTxn(true)}
+          />
 
           <div ref={scroller} style={{ flex: 1, overflow: "auto", padding: 24 }}>
             {active === "dashboard" && <Dashboard month={month} go={go} />}
@@ -259,7 +159,6 @@ export default function App() {
         </div>
 
         {showTxn && <AddTransaction accounts={accounts} categories={categories} onClose={() => setShowTxn(false)} onDone={() => { setShowTxn(false); reload(); }} />}
-        {showAcct && <AddAccount onClose={() => setShowAcct(false)} onDone={() => { setShowAcct(false); reload(); }} />}
       </div>
     </AppDataCtx.Provider>
   );

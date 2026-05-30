@@ -17,6 +17,7 @@ import { client } from "../client";
 import { useAppData } from "../store";
 import { SetBalance } from "../modals/SetBalance";
 import { EditAccount } from "../modals/EditAccount";
+import { AddAccount } from "../modals/AddAccount";
 import { accountTone } from "../lib/brand";
 import { balanceDisplay, toneColor, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
 import { useToast } from "../components/Toast";
@@ -52,6 +53,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
   const [period, setPeriod] = useState<ChartPeriod>("3M");
   const [correcting, setCorrecting] = useState<Account | null>(null);
   const [editing, setEditing] = useState<Account | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
 
   useEffect(() => { client.listAccounts(true).then(setAll).catch(() => {}); }, [version]);
   useEffect(() => {
@@ -117,12 +119,15 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
             <Sparkline points={nw.series} color={t.accent} fill width={120} height={46} />
-            <Btn variant="outline" size="sm" onClick={() => setShowArchived((s) => !s)}>{showArchived ? "Hide archived" : "Show archived"}</Btn>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="outline" size="sm" onClick={() => setShowArchived((s) => !s)}>{showArchived ? "Hide archived" : "Show archived"}</Btn>
+              <Btn size="sm" icon="plus" onClick={() => setShowAdd(true)}>Add account</Btn>
+            </div>
           </div>
         </div>
       </Card>
 
-      {visible.length === 0 && <Card><Empty icon="wallet" title="No accounts yet" hint="Create one from the Add menu." /></Card>}
+      {visible.length === 0 && <Card><Empty icon="wallet" title="No accounts yet" hint="Create one with the Add account button." /></Card>}
 
       {/* ===== Grouped accounts ===== */}
       {orderedGroups.map(([ty, accs]) => {
@@ -241,6 +246,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
 
       {correcting && <SetBalance account={correcting} hasTransactions={(txnsByAccount.get(correcting.id)?.length ?? 0) > 0 || correcting.balanceCents !== correcting.openingBalanceCents} onClose={() => setCorrecting(null)} onDone={() => { setCorrecting(null); afterMutation(); }} />}
       {editing && <EditAccount account={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); afterMutation(); }} />}
+      {showAdd && <AddAccount onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); afterMutation(); }} />}
     </div>
   );
 }
