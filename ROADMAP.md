@@ -9,7 +9,7 @@ This file is the index; the specs and plans hold the detail.
 The project is **pre-1.0**. In `0.x`, the **minor** carries feature releases and the
 **patch** carries fixes/follow-ups. **`1.0.0` is reserved for feature-complete.**
 
-**Now:** `v0.4.0` — Subcategories (in flight) ·
+**Last shipped:** `v0.4.0` — Subcategories ·
 **Next:** `v0.5.0` — Credit & debt behavior ·
 **Later:** the climb to `v1.0.0`
 
@@ -26,15 +26,13 @@ Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
 | 🟢 `v0.2.4` | Advanced sidebar shell (net worth, assets, debts) |
 | 🟢 `v0.3.0` | Accounts screen redesign + collapsible app shell, new brand mark |
 | 🟢 `v0.3.1` | Two-step New Account modal + provider logos |
+| 🟢 `v0.4.0` | Two-level subcategories + master–detail Categories screen |
 
 ## In progress
 
-### 🟡 v0.4.0 — Subcategories
-Two-level categories with a master–detail Categories screen, a subcategory-aware
-transaction picker, and dashboard spend roll-up into the parent.
-**Merged to `main` (PR #6); awaiting the `v0.4.0` release tag** — run
-`npm run release -- minor` to ship it.
-— spec: `docs/superpowers/specs/2026-05-31-categories-subcategories-redesign-design.md`
+_Nothing in flight — `v0.5.0` is next up. The `v0.4.0` subcategories work shipped;
+its design lives at
+`docs/superpowers/specs/2026-05-31-categories-subcategories-redesign-design.md`._
 
 ## Planned — the climb to 1.0
 
