@@ -2,12 +2,12 @@
 // All colors via theme tokens; segmented control matches AddTransaction kind selector style.
 
 import { useEffect, useState } from "react";
-import type { Update } from "@tauri-apps/plugin-updater";
 import { useTheme, useThemeMode } from "../theme/ThemeProvider";
 import { hexA, ThemeMode } from "../theme/tokens";
 import { Btn, Card, SectionTitle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
+import { formatLastChecked, updatePanelCopy, type useUpdater } from "../lib/updater";
 
 // ─── Segmented control (reusable 2-option) ───────────────────────────────────
 
@@ -124,26 +124,15 @@ function Divider() {
   return <div style={{ height: 0.5, background: t.divider }} />;
 }
 
-function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-type UpdateStatus = "idle" | "checking" | "current" | "available" | "downloading" | "error";
-
 // ─── Settings screen ─────────────────────────────────────────────────────────
 
-export function Settings() {
+export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }) {
   const t = useTheme();
   const { mode, toggle } = useThemeMode();
 
   // remember_month preference — tri-state: null = loading, then boolean
   const [rememberMonth, setRememberMonth] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
-  const [updateMessage, setUpdateMessage] = useState("");
-  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
-  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
-  const updaterAvailable = isTauri();
 
   useEffect(() => {
     client
@@ -177,69 +166,20 @@ export function Settings() {
     if (val !== mode) toggle();
   }
 
-  async function handleCheckForUpdates() {
-    if (!updaterAvailable) return;
-
-    setUpdateStatus("checking");
-    setUpdateMessage("");
-    setPendingUpdate(null);
-    setDownloadProgress(null);
-
-    try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = await check();
-
-      if (!update) {
-        setUpdateStatus("current");
-        setUpdateMessage("Sens is up to date");
-        return;
-      }
-
-      setPendingUpdate(update);
-      setUpdateStatus("available");
-      setUpdateMessage(`Version ${update.version} is available`);
-    } catch (err) {
-      setUpdateStatus("error");
-      setUpdateMessage(err instanceof Error ? err.message : "Could not check for updates");
-    }
-  }
-
-  async function handleInstallUpdate() {
-    if (!pendingUpdate) return;
-
-    setUpdateStatus("downloading");
-    setUpdateMessage(`Installing version ${pendingUpdate.version}`);
-    setDownloadProgress(null);
-
-    try {
-      let downloaded = 0;
-      let total: number | undefined;
-
-      await pendingUpdate.downloadAndInstall((event) => {
-        if (event.event === "Started") {
-          total = event.data.contentLength;
-          downloaded = 0;
-          setDownloadProgress(total ? 0 : null);
-        } else if (event.event === "Progress") {
-          downloaded += event.data.chunkLength;
-          setDownloadProgress(total ? Math.round((downloaded / total) * 100) : null);
-        } else {
-          setDownloadProgress(100);
-        }
-      });
-
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
-    } catch (err) {
-      setUpdateStatus("error");
-      setUpdateMessage(err instanceof Error ? err.message : "Could not install update");
-    }
-  }
-
-  const updateBusy = updateStatus === "checking" || updateStatus === "downloading";
-  const updateHint = updaterAvailable
-    ? updateMessage || "Check GitHub Releases for a newer signed build"
-    : "Available in the installed desktop app";
+  const updateCopy = updatePanelCopy({
+    isDesktop: updater.desktop,
+    ...updater.state,
+  });
+  const updateBusy = updater.state.status === "checking" || updater.state.status === "downloading";
+  const canInstall = updater.desktop && updater.state.status === "available";
+  const updateTone =
+    updateCopy.tone === "error"
+      ? t.expense
+      : updateCopy.tone === "success"
+        ? t.income
+        : updateCopy.tone === "accent"
+          ? t.accent
+          : t.dim;
 
   return (
     <div className="sens-screen" style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 20 }}>
@@ -296,27 +236,45 @@ export function Settings() {
             right={<span style={{ fontSize: 13, color: t.faint, fontFamily: t.mono }}>{__APP_VERSION__}</span>}
           />
           <Divider />
-          <SettingRow
-            label="Updates"
-            hint={downloadProgress === null ? updateHint : `${updateHint} (${downloadProgress}%)`}
-            right={
-              pendingUpdate && updateStatus === "available" ? (
-                <Btn size="sm" icon="arrowDown" onClick={handleInstallUpdate}>
-                  Install
-                </Btn>
-              ) : (
-                <Btn
-                  size="sm"
-                  variant="outline"
-                  icon="restore"
-                  onClick={handleCheckForUpdates}
-                  disabled={!updaterAvailable || updateBusy}
-                >
-                  {updateStatus === "checking" ? "Checking" : updateStatus === "downloading" ? "Installing" : "Check"}
-                </Btn>
-              )
-            }
-          />
+          <div style={{ paddingTop: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                <div style={{ width: 26, height: 26, borderRadius: 8, background: hexA(updateTone, 0.14), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Icon name={updateCopy.tone === "error" ? "alertCircle" : "arrowDown"} size={15} color={updateTone} stroke={2} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 650, color: t.text }}>{updateCopy.title}</div>
+                  <div style={{ fontSize: 12, color: t.faint, marginTop: 2 }}>{updateCopy.detail}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                {canInstall ? (
+                  <Btn size="sm" icon="arrowDown" onClick={updater.installUpdate}>
+                    {updateCopy.primaryAction}
+                  </Btn>
+                ) : (
+                  <Btn
+                    size="sm"
+                    variant="outline"
+                    icon="restore"
+                    onClick={updater.checkForUpdates}
+                    disabled={!updater.desktop || updateBusy}
+                  >
+                    {updateCopy.primaryAction}
+                  </Btn>
+                )}
+              </div>
+            </div>
+            {updater.state.status === "downloading" && updater.state.downloadProgress !== null && (
+              <div style={{ height: 5, borderRadius: 999, background: t.panel2, overflow: "hidden", marginBottom: 9 }}>
+                <div style={{ height: "100%", width: `${updater.state.downloadProgress}%`, background: t.accent }} />
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: t.faint, fontSize: 11.5 }}>
+              <span>Last checked</span>
+              <span style={{ fontFamily: t.mono }}>{formatLastChecked(updater.state.lastCheckedAt)}</span>
+            </div>
+          </div>
         </div>
       </Card>
     </div>

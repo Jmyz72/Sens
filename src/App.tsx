@@ -12,6 +12,7 @@ import { AppDataCtx } from "./store";
 import type { Account, Category } from "./types";
 import { client } from "./client";
 import { currentMonth, fmtMonth, shiftMonth } from "./lib/format";
+import { useUpdater } from "./lib/updater";
 import { Dashboard } from "./screens/Dashboard";
 import { Accounts } from "./screens/Accounts";
 import { Transactions } from "./screens/Transactions";
@@ -33,6 +34,8 @@ export default function App() {
   const t = useTheme();
   const { mode, toggle } = useThemeMode();
   const { notify } = useToast();
+  const updater = useUpdater();
+  const { checkForUpdates, desktop: updaterDesktop, state: updateState } = updater;
   const [active, setActive] = useState<ScreenId>("dashboard");
   const [month, setMonth] = useState(currentMonth());
 
@@ -77,6 +80,21 @@ export default function App() {
   }, [notify]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  const updateToastShown = useRef(false);
+  useEffect(() => {
+    if (!updaterDesktop) return;
+    const handle = window.setTimeout(() => {
+      void checkForUpdates();
+    }, 3500);
+    return () => window.clearTimeout(handle);
+  }, [checkForUpdates, updaterDesktop]);
+
+  useEffect(() => {
+    if (updateState.status !== "available" || updateToastShown.current) return;
+    updateToastShown.current = true;
+    notify(`Sens ${updateState.latestVersion} is available in Settings.`, "info");
+  }, [notify, updateState.latestVersion, updateState.status]);
 
   // One-time notice after the v1.1 migration reclassified accounts into owe
   // groups (credit/loans/borrowed). Suppressed forever after first display.
@@ -171,7 +189,7 @@ export default function App() {
             {active === "accounts" && <Accounts />}
             {active === "transactions" && <Transactions />}
             {active === "categories" && <Categories />}
-            {active === "settings" && <Settings />}
+            {active === "settings" && <Settings updater={updater} />}
           </div>
         </div>
 
