@@ -53,6 +53,8 @@ describe("setTauriConfVersion", () => {
     expect(out).toContain(`"version": "1.2.0"`);
     expect(out).not.toContain(`"version": "1.1.1"`);
   });
+  it("throws when there is no version field", () =>
+    expect(() => setTauriConfVersion(`{\n  "name": "sens"\n}`, "1.2.0")).toThrow());
 });
 
 describe("rollChangelog", () => {

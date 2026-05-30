@@ -47,7 +47,7 @@ writeFileSync(CARGO, setCargoTomlVersion(readFileSync(CARGO, "utf8"), next));
 writeFileSync(CONF, setTauriConfVersion(readFileSync(CONF, "utf8"), next));
 writeFileSync(CHANGELOG, rollChangelog(readFileSync(CHANGELOG, "utf8"), next, today));
 
-// --- Refresh Cargo.lock so --locked CI builds don't fail on a stale lock ---
+// --- Keep the committed Cargo.lock in sync with the bumped package version ---
 try {
   execFileSync("cargo", ["update", "-p", "sens"], { cwd: "src-tauri", stdio: "inherit" });
 } catch {
