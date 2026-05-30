@@ -119,8 +119,3 @@ export function accountTone(
   }
   return accentFallback;
 }
-
-/** Convenience alias for the provider picker (key is always known). */
-export function templateTone(key: string, accentFallback: string): string {
-  return BRAND_COLORS[key] ?? accentFallback;
-}

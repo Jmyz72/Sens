@@ -171,7 +171,7 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
           </Field>
 
           <Field label="Account name">
-            <input className="sens-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Everyday Savings" style={inputStyle(t)} />
+            <input className="sens-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Everyday Savings" autoFocus style={inputStyle(t)} />
           </Field>
 
           <Field label={isOwe ? "Amount owed (RM)" : "Opening balance (RM)"}>
