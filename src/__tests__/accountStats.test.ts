@@ -106,6 +106,7 @@ describe("netWorthStats", () => {
     expect(nw.deltaCents).toBe(2000);
     expect(nw.pct).toBeCloseTo(2000 / 6000, 5); // start-of-month net worth = 10000-4000
     expect(nw.series[nw.series.length - 1]).toBe(8000); // 12000 - 4000
+    expect(nw.series[0]).toBe(6000); // window-start net worth, before the in-window income
   });
 });
 
@@ -115,5 +116,8 @@ describe("periodFromDate", () => {
   });
   it("maps 3M to three months earlier", () => {
     expect(periodFromDate("3M", "2026-05-15")).toBe("2026-02-15");
+  });
+  it("clamps the day when the target month is shorter", () => {
+    expect(periodFromDate("1M", "2026-03-31")).toBe("2026-02-28");
   });
 });

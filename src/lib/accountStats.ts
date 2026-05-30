@@ -7,7 +7,7 @@
 // shrinking (e.g. -50000 → -40000) is an increase — correctly positive.
 
 import type { Account, Transaction } from "../types";
-import { signedFor } from "./kinds";
+import { signedFor, txnSortKey } from "./kinds";
 
 export interface AccountStats {
   txnCount: number;
@@ -34,8 +34,8 @@ export function accountTxns(all: Transaction[], accountId: string): Transaction[
 
 function sortByDate(txns: Transaction[]): Transaction[] {
   return [...txns].sort((a, b) => {
-    const ka = a.transactionDate + "\x00" + a.createdAt;
-    const kb = b.transactionDate + "\x00" + b.createdAt;
+    const ka = txnSortKey(a);
+    const kb = txnSortKey(b);
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
 }
@@ -48,10 +48,12 @@ function downsample(a: number[], max: number): number[] {
   return out;
 }
 
-/** Subtract n calendar months from a YYYY-MM-DD date, in local time. */
+/** Subtract n calendar months from a YYYY-MM-DD date, clamping the day to the
+ *  target month's last valid day (so May 31 − 3mo = Feb 28, not Mar 3). */
 function monthsAgoISO(today: string, n: number): string {
   const [y, m, d] = today.split("-").map(Number);
-  const dt = new Date(y, m - 1 - n, d);
+  const lastDay = new Date(y, m - n, 0).getDate(); // day 0 of (target month + 1) = last day of target month
+  const dt = new Date(y, m - 1 - n, Math.min(d, lastDay));
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 }
 
@@ -94,6 +96,12 @@ export function balanceSeries(account: Account, txns: Transaction[], fromDate: s
   return downsample(series, maxPoints);
 }
 
+/**
+ * Derive an account's stats. `allTxns` MUST be the complete, unfiltered
+ * transaction history — balances are recomputed as openingBalance + Σ deltas,
+ * so a windowed/paged slice would yield a wrong currentBalance/monthChange.
+ * `today` is a YYYY-MM-DD string (injected for determinism/testability).
+ */
 export function computeAccountStats(account: Account, allTxns: Transaction[], today: string): AccountStats {
   const txns = accountTxns(allTxns, account.id);
   const sorted = sortByDate(txns);
@@ -134,6 +142,10 @@ export interface NetWorthStats {
   series: number[]; // ~6-month net-worth series for the header sparkline
 }
 
+/**
+ * Net-worth delta + trend across non-archived accounts. Like computeAccountStats,
+ * `allTxns` MUST be the complete transaction history (balances are recomputed).
+ */
 export function netWorthStats(accounts: Account[], allTxns: Transaction[], today: string): NetWorthStats {
   const active = accounts.filter((a) => !a.isArchived);
   const monthStart = today.slice(0, 7) + "-01";
