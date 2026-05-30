@@ -105,6 +105,11 @@ Unchanged contract:
 `templateKey` is the chosen provider's key, or `null` for Custom. The Tauri command,
 service, repo, and `mock.ts` all stay as-is.
 
+**The Step 2 type-card selection is non-persisted UI state.** Only `subtype` is sent and
+stored (in `accounts.subtype`); `type` and `group` are derived on read by JOIN to the
+`account_subtypes` table. The 5 type-cards exist purely to filter the subtype-chip list —
+the chosen `type` is never sent to the backend and never stored.
+
 ## Logo system
 
 ### Assets
