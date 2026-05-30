@@ -112,9 +112,11 @@ Either way the rewrite runs against a **fresh backup clone / backup branch** fir
 6. Delete + recreate the 8 GitHub Releases against the new tags.
 7. Create `ROADMAP.md` (Parts A + B) and commit.
 
-### Risks the user has accepted
+### Repo context & risks the user has accepted
 
-- Force-pushing rewritten history + tags and deleting/recreating Releases breaks any existing clone or downloaded `v1.x` reference. Acceptable for a solo, local-first personal-finance app.
+The repo `Jmyz72/Sens` is **public** on GitHub but currently has **0 forks and 0 stars** — no downstream clones depend on the existing tags/SHAs. The user confirmed the **full history rewrite** (commit messages + SHAs) with this public context explicit; doing it now, before there is any audience, is the lowest-impact moment to rewrite. The repo recently gained an open-source presentation layer (LICENSE, README, CONTRIBUTING, SECURITY, issue/PR templates) — the clean `0.x` history is what every future clone/fork will see.
+
+- Force-pushing rewritten history + tags and deleting/recreating Releases permanently rewrites public history; any pre-existing clone or downloaded `v1.x` reference is broken. Acceptable given 0 forks/0 stars.
 - Every commit SHA changes; any external link to an old SHA/tag dies.
 
 ## Out of scope
