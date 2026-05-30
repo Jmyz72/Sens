@@ -16,6 +16,17 @@ them by hand.**
 
 ## Cutting a release
 
+Before cutting updater-enabled releases, make sure the repository has these
+GitHub Actions secrets:
+
+- `TAURI_SIGNING_PRIVATE_KEY` — the full contents of the updater private key.
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — optional; leave unset for an unencrypted
+  updater key.
+
+The matching public key is committed in `src-tauri/tauri.conf.json`. Keep the
+private key backed up; losing it means already-installed apps cannot accept future
+updates.
+
 1. Make sure `main` is green (the **CI** workflow passes) and you are on `main`
    with a clean working tree.
 2. Confirm the `## [Unreleased]` section in `CHANGELOG.md` lists everything in this
@@ -34,11 +45,13 @@ them by hand.**
    git push --follow-tags
    ```
 6. Watch the **Release** workflow in the GitHub Actions tab. When it finishes, confirm
-   the GitHub Release for the tag has the macOS (Apple Silicon), Windows, and Linux
-   artifacts attached.
+   the GitHub Release for the tag has the macOS (Apple Silicon), Windows, Linux, and
+   `latest.json` updater artifacts attached.
 
 ## Notes
 
 - **Unsigned macOS builds:** recipients must right-click the app and choose **Open** on
   first launch (Gatekeeper). Your own machine runs it normally.
+- **Updater bootstrap:** users must install one updater-enabled release manually; later
+  releases can be installed from Settings → Updates.
 - **Hotfix:** branch from `main`, fix via PR, then cut a **patch** release the same way.
