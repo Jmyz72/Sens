@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { balanceDisplay, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
+import { balanceDisplay, sidebarPortfolioSummary, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
+import type { Account } from "../types";
 
 describe("balanceDisplay", () => {
   it("own shows signed value as-is", () => {
@@ -18,5 +19,36 @@ describe("type metadata", () => {
   it("labels all five types and orders them own→owe", () => {
     expect(TYPE_LABEL.fund).toBe("Cash & funds");
     expect(TYPE_ORDER).toEqual(["fund", "financial", "receivable", "payable", "credit"]);
+  });
+});
+
+describe("sidebarPortfolioSummary", () => {
+  it("sums active assets and liabilities into signed net worth", () => {
+    const accounts: Pick<Account, "group" | "balanceCents" | "isArchived">[] = [
+      { group: "own", balanceCents: 120000, isArchived: false },
+      { group: "own", balanceCents: 30000, isArchived: false },
+      { group: "owe", balanceCents: -45000, isArchived: false },
+      { group: "owe", balanceCents: 5000, isArchived: false },
+    ];
+
+    expect(sidebarPortfolioSummary(accounts)).toEqual({
+      assetsCents: 150000,
+      liabilitiesCents: -40000,
+      netWorthCents: 110000,
+    });
+  });
+
+  it("ignores archived accounts", () => {
+    const accounts: Pick<Account, "group" | "balanceCents" | "isArchived">[] = [
+      { group: "own", balanceCents: 120000, isArchived: false },
+      { group: "own", balanceCents: 900000, isArchived: true },
+      { group: "owe", balanceCents: -25000, isArchived: true },
+    ];
+
+    expect(sidebarPortfolioSummary(accounts)).toEqual({
+      assetsCents: 120000,
+      liabilitiesCents: 0,
+      netWorthCents: 120000,
+    });
   });
 });

@@ -3,7 +3,7 @@
 // (section labels, ordering) and the sign adapter for owe (liability) balances —
 // the one place that knows "a liability shows as a positive amount you owe".
 
-import type { AccountGroup, AccountTypeName } from "../types";
+import type { Account, AccountGroup, AccountTypeName } from "../types";
 
 export const TYPE_LABEL: Record<AccountTypeName, string> = {
   fund: "Cash & funds",
@@ -42,4 +42,20 @@ export function balanceDisplay(group: AccountGroup, balanceCents: number): Balan
 /** Resolve a BalanceTone to a theme color. */
 export function toneColor(tone: BalanceTone, t: { text: string; negative: string; income: string }): string {
   return tone === "negative" ? t.negative : tone === "income" ? t.income : t.text;
+}
+
+export interface SidebarPortfolioSummary {
+  assetsCents: number;
+  liabilitiesCents: number;
+  netWorthCents: number;
+}
+
+export function sidebarPortfolioSummary(accounts: Pick<Account, "group" | "balanceCents" | "isArchived">[]): SidebarPortfolioSummary {
+  return accounts.reduce<SidebarPortfolioSummary>((summary, account) => {
+    if (account.isArchived) return summary;
+    if (account.group === "own") summary.assetsCents += account.balanceCents;
+    else summary.liabilitiesCents += account.balanceCents;
+    summary.netWorthCents = summary.assetsCents + summary.liabilitiesCents;
+    return summary;
+  }, { assetsCents: 0, liabilitiesCents: 0, netWorthCents: 0 });
 }

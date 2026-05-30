@@ -7,11 +7,12 @@ import { useTheme, useThemeMode } from "./theme/ThemeProvider";
 import { hexA } from "./theme/tokens";
 import { useToast } from "./components/Toast";
 import { Icon, type IconName } from "./components/Icon";
-import { Btn } from "./components/ui";
+import { Btn, Money } from "./components/ui";
 import { AppDataCtx } from "./store";
 import type { Account, Category } from "./types";
 import { client } from "./client";
 import { currentMonth, fmtMonth, shiftMonth } from "./lib/format";
+import { sidebarPortfolioSummary } from "./lib/accounts";
 import { useUpdater } from "./lib/updater";
 import { Dashboard } from "./screens/Dashboard";
 import { Accounts } from "./screens/Accounts";
@@ -28,6 +29,11 @@ const NAV: { id: ScreenId; label: string; icon: IconName; sub: string }[] = [
   { id: "transactions", label: "Transactions", icon: "list", sub: "Every ringgit in and out" },
   { id: "categories", label: "Categories", icon: "filter", sub: "Income, expense & transfer labels" },
   { id: "settings", label: "Settings", icon: "sliders", sub: "Preferences and about" },
+];
+const NAV_SECTIONS: { label: string; items: ScreenId[] }[] = [
+  { label: "Overview", items: ["dashboard"] },
+  { label: "Money", items: ["accounts", "transactions", "categories"] },
+  { label: "System", items: ["settings"] },
 ];
 
 export default function App() {
@@ -113,7 +119,15 @@ export default function App() {
 
   const data = useMemo(() => ({ accounts, categories, loading, reload, version }), [accounts, categories, loading, reload, version]);
   const nav = NAV.find((n) => n.id === active)!;
+  const portfolioSummary = useMemo(() => sidebarPortfolioSummary(accounts), [accounts]);
+  const activeAccountCount = useMemo(() => accounts.filter((a) => !a.isArchived).length, [accounts]);
+  const activeCategoryCount = useMemo(() => categories.filter((c) => !c.isArchived).length, [categories]);
   const go = (id: string) => { setActive(id as ScreenId); if (scroller.current) scroller.current.scrollTop = 0; };
+  const navCount = (id: ScreenId) => {
+    if (id === "accounts") return activeAccountCount;
+    if (id === "categories") return activeCategoryCount;
+    return null;
+  };
 
   return (
     <AppDataCtx.Provider value={data}>
@@ -121,29 +135,75 @@ export default function App() {
         {/* sidebar */}
         <div style={{ width: 220, flexShrink: 0, background: t.sidebar, display: "flex", flexDirection: "column", borderRight: `0.5px solid ${t.border}` }}>
           <div data-tauri-drag-region style={{ height: 46, display: "flex", alignItems: "center", padding: "0 16px", flexShrink: 0 }} />
-          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "2px 16px 16px" }}>
-            <div style={{ width: 27, height: 27, borderRadius: 8, background: t.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 10px ${hexA(t.accent, 0.5)}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "2px 16px 14px" }}>
+            <div style={{ width: 30, height: 30, borderRadius: 9, background: t.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 10px ${hexA(t.accent, 0.5)}` }}>
               <Icon name="sparkle" size={16} color={t.onAccent} stroke={2} />
             </div>
-            <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: -0.3 }}>Sens</span>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: -0.3, lineHeight: 1.15 }}>Sens</div>
+              <div style={{ fontSize: 11.5, color: t.faint, marginTop: 1 }}>Personal finance</div>
+            </div>
           </div>
+
+          <div style={{ margin: "0 12px 14px", padding: 12, borderRadius: 10, background: t.panel, border: `0.5px solid ${t.border}`, boxShadow: `inset 0 1px 0 ${hexA(t.text, t.mode === "dark" ? 0.03 : 0.4)}` }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ fontSize: 10.5, color: t.faint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6 }}>Net worth</div>
+              <div style={{ fontSize: 11, color: t.dim, fontWeight: 600 }}>{fmtMonth(month)}</div>
+            </div>
+            <div style={{ marginTop: 7 }}>
+              {loading ? (
+                <span style={{ fontSize: 22, fontWeight: 750, color: t.faint }}>Loading</span>
+              ) : (
+                <Money cents={portfolioSummary.netWorthCents} size={22} weight={750} showCents={false} />
+              )}
+            </div>
+            <div style={{ marginTop: 11, display: "flex", flexDirection: "column", gap: 7 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5, color: t.dim }}>
+                <span>Assets</span>
+                <Money cents={portfolioSummary.assetsCents} size={12.5} weight={650} showCents={false} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5, color: t.dim }}>
+                <span>Debts</span>
+                <Money cents={Math.abs(portfolioSummary.liabilitiesCents)} size={12.5} weight={650} color={portfolioSummary.liabilitiesCents < 0 ? t.negative : t.income} showCents={false} />
+              </div>
+              <div style={{ height: 1, background: t.divider }} />
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12, color: t.faint }}>
+                <span>Accounts</span>
+                <span style={{ color: t.dim, fontWeight: 650 }}>{activeAccountCount}</span>
+              </div>
+            </div>
+          </div>
+
           <div style={{ padding: "0 10px", display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
-            {NAV.map((it) => {
-              const on = it.id === active;
-              return (
-                <div key={it.id} className="sens-nav" onClick={() => go(it.id)}
-                  style={{ display: "flex", alignItems: "center", gap: 11, height: 34, padding: "0 11px", borderRadius: 8,
-                    backgroundColor: on ? t.accentSoft : undefined, color: on ? t.text : t.dim, fontWeight: on ? 600 : 500, fontSize: 13.5 }}>
-                  <Icon name={it.icon} size={17} color={on ? t.accent : t.dim} stroke={on ? 2 : 1.7} />
-                  <span>{it.label}</span>
-                </div>
-              );
-            })}
+            {NAV_SECTIONS.map((section) => (
+              <div key={section.label} style={{ marginTop: section.label === "Overview" ? 0 : 10 }}>
+                <div style={{ fontSize: 10.5, color: t.faint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, padding: "0 8px 7px" }}>{section.label}</div>
+                {section.items.map((id) => {
+                  const it = NAV.find((item) => item.id === id)!;
+                  const on = it.id === active;
+                  const count = navCount(it.id);
+                  return (
+                    <div key={it.id} className="sens-nav" onClick={() => go(it.id)}
+                      style={{ display: "flex", alignItems: "center", gap: 11, height: 35, padding: "0 11px", borderRadius: 8,
+                        backgroundColor: on ? t.accentSoft : undefined, color: on ? t.text : t.dim, fontWeight: on ? 600 : 500, fontSize: 13.5 }}>
+                      <Icon name={it.icon} size={17} color={on ? t.accent : t.dim} stroke={on ? 2 : 1.7} />
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.label}</span>
+                      {count !== null && (
+                        <span style={{ marginLeft: "auto", fontSize: 11.5, color: on ? t.accent : t.faint, fontWeight: 650, fontVariantNumeric: "tabular-nums" }}>{count}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
           <div style={{ padding: 10, borderTop: `0.5px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div className="sens-nav" style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 9, flex: 1 }}>
               <Icon name="wallet" size={16} color={t.dim} />
-              <span style={{ fontSize: 12.5, fontWeight: 600 }}>Personal</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>Personal</div>
+                <div style={{ fontSize: 11, color: t.faint, marginTop: 1 }}>Local workspace</div>
+              </div>
             </div>
             <button className="sens-icon-btn" title="Toggle theme" onClick={toggle} style={{ width: 30, height: 30, color: t.dim }}>
               <Icon name={mode === "dark" ? "sun" : "moon"} size={16} />
@@ -153,17 +213,17 @@ export default function App() {
 
         {/* main */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <div data-tauri-drag-region style={{ height: 60, flexShrink: 0, display: "flex", alignItems: "center", gap: 14, padding: "0 24px", borderBottom: `0.5px solid ${t.divider}` }}>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.4, lineHeight: 1.1 }}>{nav.label}</div>
-              <div style={{ fontSize: 12, color: t.faint, marginTop: 1 }}>{nav.sub}</div>
+          <div data-tauri-drag-region style={{ height: 60, flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "0 16px", borderBottom: `0.5px solid ${t.divider}` }}>
+            <div style={{ minWidth: 88, flex: "1 1 auto" }}>
+              <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.4, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nav.label}</div>
+              <div style={{ fontSize: 12, color: t.faint, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nav.sub}</div>
             </div>
             <div style={{ flex: 1 }} />
             {active === "dashboard" && (
               <div style={{ display: "flex", alignItems: "center", gap: 2, background: t.panel, borderRadius: 8, border: `0.5px solid ${t.border}`, padding: 2 }}>
-                <button className="sens-icon-btn" onClick={() => handleSetMonth((m) => shiftMonth(m, -1))} style={{ width: 28, height: 26, color: t.dim }}><Icon name="chevronLeft" size={15} /></button>
-                <span style={{ fontSize: 12.5, fontWeight: 600, minWidth: 110, textAlign: "center" }}>{fmtMonth(month)}</span>
-                <button className="sens-icon-btn" onClick={() => handleSetMonth((m) => shiftMonth(m, 1))} style={{ width: 28, height: 26, color: t.dim }}><Icon name="chevronRight" size={15} /></button>
+                <button className="sens-icon-btn" onClick={() => handleSetMonth((m) => shiftMonth(m, -1))} style={{ width: 26, height: 26, color: t.dim }}><Icon name="chevronLeft" size={15} /></button>
+                <span style={{ fontSize: 12.5, fontWeight: 600, minWidth: 92, textAlign: "center" }}>{fmtMonth(month)}</span>
+                <button className="sens-icon-btn" onClick={() => handleSetMonth((m) => shiftMonth(m, 1))} style={{ width: 26, height: 26, color: t.dim }}><Icon name="chevronRight" size={15} /></button>
               </div>
             )}
             <div style={{ position: "relative" }}>
