@@ -11,7 +11,7 @@ import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { parseAmountToCents, todayISO } from "../lib/format";
 import { KIND_META, kindColor } from "../lib/kinds";
-import { categoriesByKind } from "../store";
+import { categoryPickerItems } from "../lib/categories";
 
 const FORM_KINDS: TransactionKind[] = ["expense", "income", "transfer"];
 
@@ -30,9 +30,9 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
   const [busy, setBusy] = useState(false);
 
   const catKind: Category["kind"] = kind === "income" ? "income" : kind === "transfer" ? "transfer" : "expense";
-  const catList = useMemo(() => categoriesByKind(categories, catKind), [categories, catKind]);
+  const pickerItems = useMemo(() => categoryPickerItems(categories, catKind), [categories, catKind]);
   const [categoryId, setCategoryId] = useState(editing?.categoryId ?? "");
-  const effectiveCat = categoryId || catList[0]?.id || "";
+  const effectiveCat = categoryId || pickerItems[0]?.id || "";
 
   const cents = parseAmountToCents(amount);
   const valid = cents != null && accountId && (kind !== "transfer" ? !!effectiveCat : toAccountId && toAccountId !== accountId);
@@ -119,7 +119,11 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <Field label="Category">
               <select className="sens-input" value={effectiveCat} onChange={(e) => setCategoryId(e.target.value)} style={sel}>
-                {catList.map((c) => <option key={c.id} value={c.id} style={{ background: t.panel2 }}>{c.emoji} {c.name}</option>)}
+                {pickerItems.map((it) => (
+                  <option key={it.id} value={it.id} style={{ background: t.panel2 }}>
+                    {it.depth === 1 ? " " : ""}{it.emoji} {it.label}
+                  </option>
+                ))}
               </select>
             </Field>
             <Field label="Account">
