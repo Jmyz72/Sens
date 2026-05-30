@@ -46,6 +46,10 @@ function baseCss(t: Theme): string {
     .sens ::-webkit-scrollbar-thumb:hover{background:${hexA(t.mode === "dark" ? "#ffffff" : "#000000", 0.2)};background-clip:padding-box;}
     .sens-nav{cursor:pointer;transition:background-color .12s,color .12s;}
     .sens-nav:hover{background-color:var(--row-hover);}
+    .sens-sidebar{transition:width .18s cubic-bezier(.2,.7,.3,1);}
+    .sens-tip{position:relative;}
+    .sens-tip::after{content:attr(data-tip);position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);background:${t.panel2};color:${t.text};border:0.5px solid ${t.borderStrong};font-size:12px;font-weight:600;padding:4px 9px;border-radius:7px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .12s;z-index:80;box-shadow:0 8px 24px rgba(0,0,0,0.3);}
+    .sens-tip:hover::after{opacity:1;}
     .sens-row{transition:background-color .12s;}
     .sens-row.click{cursor:pointer;}
     .sens-row:hover{background-color:var(--row-hover);}
@@ -70,6 +74,6 @@ function baseCss(t: Theme): string {
     .sens-bar{transition:width .5s cubic-bezier(.2,.7,.3,1);}
     @keyframes sensShimmer{from{background-position:200% center;}to{background-position:-200% center;}}
     .sens-shimmer{background-size:300% 100%;animation:sensShimmer 2s linear infinite;}
-    @media (prefers-reduced-motion: reduce){.sens-shimmer{animation:none;}.sens-screen{animation:none;}.sens-pop{animation:none;}}
+    @media (prefers-reduced-motion: reduce){.sens-shimmer{animation:none;}.sens-screen{animation:none;}.sens-pop{animation:none;}.sens-sidebar{transition:none;}}
   `;
 }
