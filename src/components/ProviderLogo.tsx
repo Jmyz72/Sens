@@ -26,7 +26,7 @@ export function ProviderLogo({
         display: "flex", alignItems: "center", justifyContent: "center",
         flexShrink: 0, overflow: "hidden", boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
       }}>
-        <img src={url} alt={name ?? ""} style={{ width: "72%", height: "72%", objectFit: "contain" }} />
+        <img src={url} alt={name ?? templateKey ?? ""} style={{ width: "72%", height: "72%", objectFit: "contain" }} />
       </div>
     );
   }
@@ -35,7 +35,7 @@ export function ProviderLogo({
     <GlyphTile
       tone={accountTone({ templateKey, fallbackSeed: seed }, t.accent)}
       size={size}
-      emoji={(name ?? "?")[0]}
+      emoji={name?.[0] ?? "?"}
       radius={radius}
     />
   );
