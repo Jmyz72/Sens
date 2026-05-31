@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn seeds_templates_and_categories() {
         let c = open_in_memory().unwrap();
-        assert_eq!(service::list_account_templates(&c).unwrap().len(), 50); // +Luno
+        assert_eq!(service::list_account_templates(&c).unwrap().len(), 51); // +Luno, +Cash
         assert!(!service::list_categories(&c, Some("expense"), false).unwrap().is_empty());
     }
 

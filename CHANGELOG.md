@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Cash account template** — the account picker now leads with a dedicated
+  **Cash** provider (default subtype `cash`) for physical notes/coins, so you no
+  longer have to reach for "Custom account". It carries an original, in-house
+  **RM100**-styled logo (violet note, hibiscus, portrait disc) — evocative of the
+  real banknote without reproducing Bank Negara's copyrighted design. Existing
+  users pick it up automatically via an idempotent every-open template re-seed;
+  fresh installs and factory reset get it too.
+
 ## [0.4.6] — 2026-05-31
 
 ### Added

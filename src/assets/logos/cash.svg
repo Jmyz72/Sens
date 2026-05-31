@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 84" role="img" aria-label="Cash (RM100)">
+  <defs>
+    <linearGradient id="cashViolet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9466b3"/>
+      <stop offset="1" stop-color="#5d3a83"/>
+    </linearGradient>
+    <!-- bunga raya (hibiscus): five petals + protruding stamen -->
+    <g id="cashHibiscus">
+      <g fill="#fff">
+        <ellipse cx="0" cy="-7.5" rx="4.6" ry="7.5"/>
+        <ellipse cx="0" cy="-7.5" rx="4.6" ry="7.5" transform="rotate(72)"/>
+        <ellipse cx="0" cy="-7.5" rx="4.6" ry="7.5" transform="rotate(144)"/>
+        <ellipse cx="0" cy="-7.5" rx="4.6" ry="7.5" transform="rotate(216)"/>
+        <ellipse cx="0" cy="-7.5" rx="4.6" ry="7.5" transform="rotate(288)"/>
+      </g>
+      <circle r="3" fill="#ffd98a"/>
+      <line x1="0" y1="0" x2="6" y2="-12" stroke="#ffd98a" stroke-width="1.4"/>
+      <circle cx="6" cy="-12" r="1.7" fill="#ffd98a"/>
+    </g>
+  </defs>
+
+  <!-- note body -->
+  <rect x="2" y="2" width="116" height="80" rx="9" fill="url(#cashViolet)"/>
+  <rect x="8" y="8" width="104" height="68" rx="6" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="2"/>
+
+  <!-- hibiscus watermark behind the value -->
+  <use href="#cashHibiscus" transform="translate(80,46) scale(2.4)" opacity=".15"/>
+
+  <!-- portrait disc (abstracted) -->
+  <circle cx="29" cy="42" r="14" fill="#efe4d0"/>
+  <circle cx="29" cy="42" r="14" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1.5"/>
+  <circle cx="29" cy="38.5" r="4.2" fill="#c9b48f"/>
+  <path d="M21 51 Q29 42.5 37 51 Z" fill="#c9b48f"/>
+
+  <!-- denomination -->
+  <text x="80" y="38" font-size="11" font-weight="700" fill="#fff" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" letter-spacing="1">RM</text>
+  <text x="80" y="62" font-size="30" font-weight="800" fill="#fff" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">100</text>
+
+  <!-- crisp corner hibiscus -->
+  <use href="#cashHibiscus" transform="translate(104,16) scale(.62)" opacity=".92"/>
+
+  <!-- guilloché flourish -->
+  <path d="M12 70 Q26 64 40 70 T68 70 T96 70" fill="none" stroke="#fff" stroke-opacity=".25" stroke-width="1"/>
+</svg>

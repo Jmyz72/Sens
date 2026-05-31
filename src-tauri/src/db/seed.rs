@@ -50,6 +50,10 @@ fn templates() -> Vec<Tpl> {
     let crypto = [("luno", "Luno")];
 
     let mut out = Vec::new();
+    // Cash leads the picker (the most basic account). A negative sort_order keeps
+    // it first for everyone without renumbering — and so disturbing the committed
+    // sort_order of — the providers existing users already have seeded.
+    out.push(Tpl("cash", "Cash", "Cash", "cash", -1));
     let mut order = 0i64;
     let mut push = |list: &[(&'static str, &'static str)], group: &'static str, sub: &'static str, order: &mut i64| {
         for (k, n) in list {
@@ -222,6 +226,16 @@ const SUBCATEGORIES: &[(&str, &str, &str, &str, &str, i64)] = &[
 ];
 
 pub fn seed(conn: &Connection, now: &str) -> AppResult<()> {
+    seed_templates(conn)?;
+    seed_categories(conn, now)?;
+    Ok(())
+}
+
+/// Idempotent: upserts the built-in provider template catalog via
+/// `INSERT OR IGNORE` on the stable `key`. Safe to re-run; used by first-run
+/// seeding, factory reset, and the every-open backfill (see `db::backfill_templates`)
+/// so existing users pick up newly added templates (e.g. Cash).
+pub fn seed_templates(conn: &Connection) -> AppResult<()> {
     for t in templates() {
         conn.execute(
             "INSERT OR IGNORE INTO account_templates
@@ -230,7 +244,6 @@ pub fn seed(conn: &Connection, now: &str) -> AppResult<()> {
             rusqlite::params![t.0, t.1, t.2, t.3, t.0, t.4],
         )?;
     }
-    seed_categories(conn, now)?;
     Ok(())
 }
 

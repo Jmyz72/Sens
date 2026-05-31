@@ -28,7 +28,25 @@ pub fn open(path: &Path) -> AppResult<Connection> {
     run_migrations(&conn)?;
     seed_once(&conn)?;
     backfill_defaults(&conn)?;
+    backfill_templates(&conn)?;
     Ok(conn)
+}
+
+/// Re-seed the built-in provider template catalog on every open so existing
+/// users pick up newly added templates (e.g. the Cash template). Idempotent
+/// `INSERT OR IGNORE`; templates are not user-deletable, so this never
+/// resurrects or duplicates anything. Ungated by design, unlike category
+/// backfills, which must not resurrect categories a user has since deleted.
+fn backfill_templates(conn: &Connection) -> AppResult<()> {
+    conn.execute_batch("BEGIN")?;
+    match seed::seed_templates(conn) {
+        Ok(()) => conn.execute_batch("COMMIT")?,
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(e);
+        }
+    }
+    Ok(())
 }
 
 /// Run every backfill gate in order (see `BACKFILL_GATES`).
@@ -47,6 +65,7 @@ pub fn open_in_memory() -> AppResult<Connection> {
     run_migrations(&conn)?;
     seed_once(&conn)?;
     backfill_defaults(&conn)?;
+    backfill_templates(&conn)?;
     Ok(conn)
 }
 
@@ -337,5 +356,34 @@ mod migration_tests {
         // Idempotent: a second pass (gate now set) changes nothing.
         super::backfill_defaults(&conn).unwrap();
         assert_eq!(count("Pets"), 1, "v3 backfill must not duplicate on re-run");
+    }
+
+    #[test]
+    fn template_backfill_adds_cash_for_existing_users_and_keeps_it_first() {
+        let conn = super::open_in_memory().unwrap();
+        let cash_count = |conn: &Connection| -> i64 {
+            conn.query_row("SELECT COUNT(*) FROM account_templates WHERE key = 'cash'", [], |r| r.get(0))
+                .unwrap()
+        };
+        // Simulate a DB that predates the Cash template.
+        conn.execute("DELETE FROM account_templates WHERE key = 'cash'", []).unwrap();
+        assert_eq!(cash_count(&conn), 0);
+
+        super::backfill_templates(&conn).unwrap();
+        assert_eq!(cash_count(&conn), 1, "ungated template backfill should add Cash");
+
+        // It sorts ahead of every other provider (negative sort_order).
+        let first: String = conn
+            .query_row(
+                "SELECT key FROM account_templates WHERE is_active = 1 ORDER BY sort_order LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(first, "cash", "Cash should lead the picker");
+
+        // Idempotent: a second pass changes nothing.
+        super::backfill_templates(&conn).unwrap();
+        assert_eq!(cash_count(&conn), 1, "template backfill must not duplicate on re-run");
     }
 }

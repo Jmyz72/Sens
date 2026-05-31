@@ -63,6 +63,10 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
     // Pre-fill the name from the provider, but never clobber a name the user typed.
     // Re-fill when it's empty or still the previous provider's auto-filled value.
     if (!name || name === provider?.name) setName(tpl.name);
+    // Apply the provider's suggested subtype (and its derived type) so the details
+    // step lands on the right kind — e.g. Cash → cash, not the savings default.
+    const suggested = subtypes.find((s) => s.key === tpl.defaultSubtype);
+    if (suggested) { setType(suggested.type); setSubtype(suggested.key); }
     setProvider(tpl);
     setStep(2);
   }

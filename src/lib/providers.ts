@@ -10,6 +10,9 @@ export type ProviderGroup = {
 };
 
 export const PROVIDER_GROUPS: ProviderGroup[] = [
+  { group: "Cash", defaultSubtype: "cash", providers: [
+    ["cash", "Cash"],
+  ] },
   { group: "Banks", defaultSubtype: "savings", providers: [
     ["maybank", "Maybank"], ["cimb", "CIMB"], ["public-bank", "Public Bank"],
     ["rhb", "RHB"], ["hong-leong-bank", "Hong Leong Bank"], ["ambank", "AmBank"],
