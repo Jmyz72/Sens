@@ -24,7 +24,6 @@ Use `npm run release -- <major|minor|patch>` to cut a release — it bumps all t
 version files (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`) plus
 `Cargo.lock`, rolls the CHANGELOG `[Unreleased]` section, commits, and tags. **Never
 hand-edit the version files.** Pushing the resulting `v*` tag (`git push --follow-tags`)
-triggers `.github/workflows/release.yml`, which builds unsigned mac/Windows/Linux
 triggers `.github/workflows/release.yml`, which builds unsigned macOS/Windows
 binaries and publishes a GitHub Release. `.github/workflows/ci.yml` gates every PR.
 

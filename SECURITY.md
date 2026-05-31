@@ -20,7 +20,7 @@ Instead, report them privately using **[GitHub Private Security Advisories](http
 1. Go to the **Security** tab of the repository.
 2. Click **Report a vulnerability**.
 3. Provide a clear description, including:
-   - The affected version(s) and platform (macOS / Windows / Linux)
+   - The affected version(s) and platform (macOS / Windows)
    - Steps to reproduce, or a proof of concept
    - The potential impact as you see it
    - Any suggested remediation, if you have one

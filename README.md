@@ -21,7 +21,7 @@ Sens is a **manual** personal-finance tracker. You enter your accounts and trans
 - **Local-first** — your data lives in a single SQLite file on your machine. Nothing is sent anywhere.
 - **MYR only** — all money is Malaysian Ringgit, stored as integer cents end-to-end (no floating-point rounding bugs).
 - **Manual entry only** — no bank connections, no sync, no imports. You are in control of every number.
-- **Desktop-native** — built with Tauri for a fast, lightweight macOS / Windows / Linux app.
+- **Desktop-native** — built with Tauri for a fast, lightweight macOS / Windows app.
 
 > Looking for an **investment portfolio** tracker with market prices, multi-currency, and performance analytics? That's a different problem — Sens focuses on day-to-day cashflow and net worth.
 
