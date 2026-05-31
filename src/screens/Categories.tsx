@@ -221,8 +221,6 @@ export function Categories() {
     setEditing(null);
   }
 
-  const [dragId, setDragId] = useState<string | null>(null);
-
   async function commitReorder(siblings: Category[], fromId: string, toId: string) {
     const ids = siblings.map((c) => c.id);
     const from = ids.indexOf(fromId);
@@ -275,9 +273,13 @@ export function Categories() {
                   return (
                     <button key={c.id} className="sens-row" onClick={() => setSelectedId(c.id)}
                       draggable
-                      onDragStart={() => setDragId(c.id)}
+                      onDragStart={(e) => e.dataTransfer.setData("text/plain", c.id)}
                       onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => { if (dragId) commitReorder(nodes.map((n) => n.category), dragId, c.id); setDragId(null); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const fromId = e.dataTransfer.getData("text/plain");
+                        if (fromId) commitReorder(nodes.map((n) => n.category), fromId, c.id);
+                      }}
                       style={{
                         width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "8px 16px",
                         background: on ? t.panel2 : "transparent", border: "none", cursor: "pointer",
@@ -354,7 +356,6 @@ function CategoryDetail({
 }) {
   const t = useTheme();
   const c = node.category;
-  const [dragChild, setDragChild] = useState<string | null>(null);
 
   return (
     <Card pad={0} style={{ overflow: "hidden" }}>
@@ -395,9 +396,13 @@ function CategoryDetail({
             {node.children.map((child) => (
               <div key={child.id} className="sens-row"
                 draggable
-                onDragStart={() => setDragChild(child.id)}
+                onDragStart={(e) => e.dataTransfer.setData("text/plain", child.id)}
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={() => { if (dragChild) onReorderChildren(dragChild, child.id); setDragChild(null); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const fromId = e.dataTransfer.getData("text/plain");
+                  if (fromId) onReorderChildren(fromId, child.id);
+                }}
                 style={{ display: "flex", alignItems: "center", gap: 11, padding: "8px 10px",
                   border: `0.5px solid ${t.border}`, borderRadius: 9, opacity: child.isArchived ? 0.55 : 1 }}>
                 <GlyphTile tone={child.color ?? t.accent} size={28} emoji={child.emoji} radius={8} />
