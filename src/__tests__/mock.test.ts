@@ -303,6 +303,46 @@ describe("get_dashboard_summary: adjustments excluded from income/expense", () =
   });
 });
 
+// ── excludedFromReporting: flagged txns move balance but skip the dashboard ───
+
+describe("get_dashboard_summary: excludedFromReporting txns excluded from income/expense", () => {
+  it("a flagged expense moves balance but is excluded from the dashboard", async () => {
+    const month = "2026-05";
+    const acc = await freshAccount(`Flagged-${Date.now()}`, 10000);
+    const catId = await firstCategoryId("expense");
+
+    const before = await mockInvoke<DashboardSummary>("get_dashboard_summary", { month });
+
+    // Normal expense — counts toward the dashboard.
+    await mockInvoke("create_expense_transaction", {
+      accountId: acc.id,
+      categoryId: catId,
+      amountCents: 700,
+      description: "Counted",
+      date: "2026-05-10",
+    });
+    // Flagged expense — money movement only, excluded from reporting.
+    await mockInvoke("create_expense_transaction", {
+      accountId: acc.id,
+      categoryId: catId,
+      amountCents: 300,
+      description: "Excluded",
+      date: "2026-05-11",
+      excludedFromReporting: true,
+    });
+
+    // Both expenses move the balance: 10000 - 700 - 300 = 9000.
+    const refreshed = (await mockInvoke<Account[]>("list_accounts", { includeArchived: false })).find(
+      (x) => x.id === acc.id,
+    )!;
+    expect(refreshed.balanceCents).toBe(9000);
+
+    // Only the unflagged 700 reaches the dashboard expense total.
+    const after = await mockInvoke<DashboardSummary>("get_dashboard_summary", { month });
+    expect(after.expenseCents).toBe(before.expenseCents + 700);
+  });
+});
+
 // ── get_setting / set_setting round-trip ─────────────────────────────────────
 
 describe("get_setting / set_setting round-trip", () => {
