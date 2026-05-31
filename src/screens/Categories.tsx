@@ -13,7 +13,7 @@ import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { useAppData } from "../store";
 import { useToast } from "../components/Toast";
-import { categoryTree, reorderIds, type CategoryNode } from "../lib/categories";
+import { categoryTree, reorderIds, moveTargets, type CategoryNode } from "../lib/categories";
 
 // ── Preset colour palette (data constant, acceptable hardcoded hex) ─────────
 
@@ -166,6 +166,53 @@ function CategoryForm({ initial, parent, defaultKind = "expense", onClose, onDon
   );
 }
 
+// ── Move modal ───────────────────────────────────────────────────────────────
+
+function MoveCategoryModal({ category, all, onClose, onDone }: {
+  category: Category;
+  all: Category[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const t = useTheme();
+  const { notify } = useToast();
+  const [busy, setBusy] = useState(false);
+  const targets = moveTargets(all, category);
+  const isSub = category.parentId != null;
+
+  async function move(parentId: string | null) {
+    setBusy(true);
+    try { await client.setCategoryParent(category.id, parentId); onDone(); }
+    catch (e) { notify((e as { message?: string })?.message ?? "Failed to move category", "error"); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <Modal onClose={onClose} width={360}>
+      <div style={{ padding: "16px 20px", borderBottom: `0.5px solid ${t.divider}`, fontSize: 15, fontWeight: 700 }}>
+        Move "{category.name}"
+      </div>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+        {isSub && (
+          <Btn variant="outline" size="md" disabled={busy} onClick={() => move(null)}>
+            Make top-level category
+          </Btn>
+        )}
+        {targets.length === 0 && !isSub && (
+          <div style={{ fontSize: 12.5, color: t.faint }}>
+            No eligible destination. Empty this category's subcategories first, or add another top-level category of the same kind.
+          </div>
+        )}
+        {targets.map((p) => (
+          <Btn key={p.id} variant="outline" size="md" disabled={busy} onClick={() => move(p.id)}>
+            <GlyphTile tone={p.color ?? t.accent} size={20} emoji={p.emoji} radius={6} /> Under {p.name}
+          </Btn>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 // ── Main screen ──────────────────────────────────────────────────────────────
 
 export function Categories() {
@@ -178,6 +225,7 @@ export function Categories() {
   const [creating, setCreating] = useState<CategoryKind | null>(null);
   const [addingSubTo, setAddingSubTo] = useState<Category | null>(null);
   const [editing, setEditing] = useState<Category | null>(null);
+  const [moving, setMoving] = useState<Category | null>(null);
 
   useEffect(() => {
     client.listCategories(undefined, true).then(setAll).catch(() => {});
@@ -317,6 +365,8 @@ export function Categories() {
             onDelete={() => del(selectedNode.category)}
             onDeleteChild={(child) => del(child)}
             onReorderChildren={(fromId, toId) => commitReorder(selectedNode.children, fromId, toId)}
+            onMove={() => setMoving(selectedNode.category)}
+            onMoveChild={(child) => setMoving(child)}
           />
         ) : (
           <Card><Empty icon="filter" title="No categories yet" hint="Create one with the New button." /></Card>
@@ -333,6 +383,9 @@ export function Categories() {
       {editing && (
         <CategoryForm initial={editing} onClose={() => setEditing(null)} onDone={afterMutation} />
       )}
+      {moving && (
+        <MoveCategoryModal category={moving} all={all} onClose={() => setMoving(null)} onDone={() => { setMoving(null); reload(); }} />
+      )}
     </div>
   );
 }
@@ -340,7 +393,7 @@ export function Categories() {
 // ── Detail pane ──────────────────────────────────────────────────────────────
 
 function CategoryDetail({
-  node, onEdit, onArchive, onRestore, onAddSub, onEditChild, onArchiveChild, onRestoreChild, onDelete, onDeleteChild, onReorderChildren,
+  node, onEdit, onArchive, onRestore, onAddSub, onEditChild, onArchiveChild, onRestoreChild, onDelete, onDeleteChild, onReorderChildren, onMove, onMoveChild,
 }: {
   node: CategoryNode;
   onEdit: () => void;
@@ -353,6 +406,8 @@ function CategoryDetail({
   onDelete: () => void;
   onDeleteChild: (c: Category) => void;
   onReorderChildren: (fromId: string, toId: string) => void;
+  onMove: () => void;
+  onMoveChild: (c: Category) => void;
 }) {
   const t = useTheme();
   const c = node.category;
@@ -373,6 +428,7 @@ function CategoryDetail({
         </div>
         <div style={{ display: "flex", gap: 4 }}>
           <Btn variant="outline" size="sm" icon="pencil" onClick={onEdit}>Edit</Btn>
+          <Btn variant="outline" size="sm" icon="swap" onClick={onMove}>Move</Btn>
           {c.isArchived
             ? <Btn variant="outline" size="sm" icon="restore" onClick={onRestore}>Restore</Btn>
             : <Btn variant="outline" size="sm" icon="archive" onClick={onArchive}>Archive</Btn>
@@ -412,6 +468,7 @@ function CategoryDetail({
                 </span>
                 <div style={{ display: "flex", gap: 4 }}>
                   <Btn variant="outline" size="sm" icon="pencil" onClick={() => onEditChild(child)}>Edit</Btn>
+                  <Btn variant="outline" size="sm" icon="swap" onClick={() => onMoveChild(child)}>Move</Btn>
                   {child.isArchived
                     ? <Btn variant="outline" size="sm" icon="restore" onClick={() => onRestoreChild(child)}>Restore</Btn>
                     : <Btn variant="outline" size="sm" icon="archive" onClick={() => onArchiveChild(child)}>Archive</Btn>}
