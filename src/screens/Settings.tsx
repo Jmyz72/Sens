@@ -182,7 +182,7 @@ export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }
           : t.dim;
 
   return (
-    <div className="sens-screen" style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="sens-screen" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Appearance */}
       <Card>
         <SectionTitle>Appearance</SectionTitle>

@@ -319,7 +319,7 @@ export function Categories() {
   const hasArchived = all.some((c) => c.isArchived);
 
   return (
-    <div className="sens-screen" style={{ display: "flex", gap: 14, alignItems: "flex-start", maxWidth: 940 }}>
+    <div className="sens-screen" style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
       {/* LEFT RAIL */}
       <div style={{ width: 290, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
         <Card>
