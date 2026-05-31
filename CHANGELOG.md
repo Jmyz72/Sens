@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-05-31
+
 ### Fixed
 - **Drag-to-reorder categories and subcategories now works in the desktop app.**
   The Tauri webview's OS-level drag-and-drop was intercepting the events before
