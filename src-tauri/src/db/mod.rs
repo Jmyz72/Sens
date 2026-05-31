@@ -11,6 +11,14 @@ use std::path::Path;
 
 const FIRST_RUN_KEY: &str = "seeded";
 const DEFAULTS_V2_KEY: &str = "defaults_v2_seeded";
+const DEFAULTS_V3_KEY: &str = "defaults_v3_seeded";
+
+/// Backfill gate flags, applied in order on every open. Each gate runs the
+/// idempotent category seed at most once; bump with a new flag whenever the
+/// default category tree is enriched so existing users pick up the additions.
+/// `seed_categories` always seeds the *current* full tree, so a single later
+/// gate also covers users who never hit an earlier one.
+const BACKFILL_GATES: &[&str] = &[DEFAULTS_V2_KEY, DEFAULTS_V3_KEY];
 
 /// Open the database, enforce foreign keys, run migrations, and seed once.
 pub fn open(path: &Path) -> AppResult<Connection> {
@@ -21,6 +29,14 @@ pub fn open(path: &Path) -> AppResult<Connection> {
     seed_once(&conn)?;
     backfill_defaults(&conn)?;
     Ok(conn)
+}
+
+/// Run every backfill gate in order (see `BACKFILL_GATES`).
+fn backfill_defaults(conn: &Connection) -> AppResult<()> {
+    for gate in BACKFILL_GATES {
+        backfill_gate(conn, gate)?;
+    }
+    Ok(())
 }
 
 /// Open an in-memory database (used by tests).
@@ -95,15 +111,15 @@ fn seed_once(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
-/// Backfill the richer default category tree for existing users. Gated by its
-/// own flag so it runs once; INSERT OR IGNORE means it never duplicates rows a
-/// fresh install already has, and never resurrects a default the user deleted
-/// after this has run.
-fn backfill_defaults(conn: &Connection) -> AppResult<()> {
+/// Backfill the richer default category tree for existing users. Gated by the
+/// given flag so it runs once per gate; INSERT OR IGNORE means it never
+/// duplicates rows a fresh install already has, and never resurrects a default
+/// the user deleted after that gate has run.
+fn backfill_gate(conn: &Connection, gate: &str) -> AppResult<()> {
     let done: bool = conn
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM app_settings WHERE key = ?1)",
-            [DEFAULTS_V2_KEY],
+            [gate],
             |r| r.get(0),
         )
         .unwrap_or(false);
@@ -116,7 +132,7 @@ fn backfill_defaults(conn: &Connection) -> AppResult<()> {
         seed::seed_categories(conn, &now)?;
         conn.execute(
             "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, '1', ?2)",
-            rusqlite::params![DEFAULTS_V2_KEY, now],
+            rusqlite::params![gate, now],
         )?;
         Ok(())
     })();
@@ -146,7 +162,7 @@ pub fn reset_to_defaults(conn: &Connection) -> AppResult<()> {
         conn.execute("DELETE FROM accounts", [])?;
         conn.execute("DELETE FROM app_settings", [])?;
         seed::seed(conn, &now)?;
-        for key in [FIRST_RUN_KEY, DEFAULTS_V2_KEY] {
+        for key in [FIRST_RUN_KEY, DEFAULTS_V2_KEY, DEFAULTS_V3_KEY] {
             conn.execute(
                 "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, '1', ?2)",
                 rusqlite::params![key, now],
@@ -284,5 +300,42 @@ mod migration_tests {
         // The gate flag is now set, so a second backfill is a no-op.
         super::backfill_defaults(&conn).unwrap();
         assert_eq!(children(&food), subs, "a gated second backfill must change nothing");
+    }
+
+    #[test]
+    fn v3_backfill_adds_new_top_level_categories_for_v2_users() {
+        let conn = super::open_in_memory().unwrap();
+        let count = |name: &str| -> i64 {
+            conn.query_row(
+                "SELECT COUNT(*) FROM categories WHERE name = ?1 AND parent_id IS NULL",
+                [name],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        // Simulate a user who upgraded through v2 (so its flag is set) but never
+        // saw the v3 enrichment: drop the new top-levels and the v3 gate.
+        for name in ["Family & Dependents", "Donations & Religious", "Pets"] {
+            // Children first — parent_id FK is ON DELETE RESTRICT.
+            conn.execute(
+                "DELETE FROM categories WHERE parent_id IN
+                   (SELECT id FROM categories WHERE name = ?1 AND parent_id IS NULL)",
+                [name],
+            )
+            .unwrap();
+            conn.execute("DELETE FROM categories WHERE name = ?1 AND parent_id IS NULL", [name])
+                .unwrap();
+            assert_eq!(count(name), 0);
+        }
+        conn.execute("DELETE FROM app_settings WHERE key = ?1", [super::DEFAULTS_V3_KEY]).unwrap();
+
+        super::backfill_defaults(&conn).unwrap();
+
+        for name in ["Family & Dependents", "Donations & Religious", "Pets"] {
+            assert_eq!(count(name), 1, "v3 backfill should add {name}");
+        }
+        // Idempotent: a second pass (gate now set) changes nothing.
+        super::backfill_defaults(&conn).unwrap();
+        assert_eq!(count("Pets"), 1, "v3 backfill must not duplicate on re-run");
     }
 }

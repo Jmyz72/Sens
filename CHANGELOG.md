@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Richer default categories** — the seeded category tree now covers the
+  recurring realities of Malaysian personal finance: new top-levels **Business**,
+  **Rental Income**, **Government & Aid**, **Cashback & Rewards** (income) and
+  **Family & Dependents**, **Kids**, **Insurance & Protection**, **Personal Care**,
+  **Home & Living**, **Donations & Religious** (incl. Zakat), **Government & Fees**
+  (road tax, summons), **Pets**, and **Fees & Charges** (expense), plus many new
+  subcategories (e.g. Mamak/Kopitiam, Bubble tea, TnG/Toll reload, Astro/TV, Dental,
+  Optical, Mental health, Angpow/Duit raya). Existing users are backfilled once via
+  a new `defaults_v3_seeded` gate (idempotent `INSERT OR IGNORE`, never duplicates
+  or disturbs your edits); fresh installs and factory reset get the full set.
+
+### Changed
+- Dropped **Investments** from the default income categories. Saving/investing,
+  loans & debt, reimbursements/claims, and credit-card payments are deliberately
+  **not** categories — they are money movement that dedicated features will handle
+  in a later phase. Existing users keep any such categories they already have.
+
 ## [0.4.5] — 2026-05-31
 
 ### Added

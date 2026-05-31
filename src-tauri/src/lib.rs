@@ -443,19 +443,19 @@ mod tests {
         let food = all.iter().find(|x| x.name == "Food" && x.parent_id.is_none()).unwrap();
         let coffee = all.iter().find(|x| x.name == "Coffee" && x.parent_id.as_deref() == Some(food.id.as_str()));
         assert!(coffee.is_some(), "expected a seeded 'Coffee' subcategory under Food");
-        // New income top-level.
+        // A richer income top-level seeded by the default set.
         let inc = service::list_categories(&c, Some("income"), false).unwrap();
-        assert!(inc.iter().any(|x| x.name == "Investments" && x.parent_id.is_none()), "expected seeded 'Investments' income category");
+        assert!(inc.iter().any(|x| x.name == "Business" && x.parent_id.is_none()), "expected seeded 'Business' income category");
     }
 
     #[test]
-    fn other_income_sorts_after_investments() {
+    fn other_income_sorts_last() {
         let c = open_in_memory().unwrap();
         let income = service::list_categories(&c, Some("income"), false).unwrap();
         let pos = |name: &str| income.iter().position(|x| x.name == name).unwrap();
         assert!(
-            pos("Other Income") > pos("Investments"),
-            "Other Income must come after Investments by default"
+            pos("Other Income") > pos("Salary"),
+            "Other Income must come after the named income categories by default"
         );
     }
 
