@@ -101,7 +101,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
   const afterMutation = async () => { await reload(); };
 
   return (
-    <div className="sens-screen" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 880 }}>
+    <div className="sens-screen" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* ===== Net-worth header ===== */}
       <Card>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
