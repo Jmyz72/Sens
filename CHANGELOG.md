@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-05-31
+
 ### Fixed
 - All screens now span the full window width. Accounts, Categories, and Settings
   previously capped their content width and hugged the left edge while Dashboard
