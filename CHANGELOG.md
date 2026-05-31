@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7] — 2026-05-31
+
 ### Added
 - **Cash account template** — the account picker now leads with a dedicated
   **Cash** provider (default subtype `cash`) for physical notes/coins, so you no
