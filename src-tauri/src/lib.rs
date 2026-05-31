@@ -405,8 +405,10 @@ mod tests {
         // Cross-kind move rejected.
         assert!(matches!(service::set_category_parent(&c, &coffee.id, Some(&salary.id)), Err(AppError::Validation(_))));
 
-        // Cannot demote a parent that still has children.
-        assert!(matches!(service::set_category_parent(&c, &food.id, Some(&salary.id)), Err(AppError::Validation(_))));
+        // Cannot demote a parent that still has children (use a same-kind target so the
+        // children guard — not the cross-kind guard — is what rejects it).
+        let dessert = service::create_category(&c, "Dessert R", "expense", "🍰", None, None).unwrap();
+        assert!(matches!(service::set_category_parent(&c, &food.id, Some(&dessert.id)), Err(AppError::Validation(_))));
 
         // New parent must be top-level (not a subcategory).
         let snack = service::create_category(&c, "Snack R", "expense", "🍪", None, Some(&food.id)).unwrap();

@@ -73,6 +73,15 @@ describe("mock subcategories", () => {
       .rejects.toMatchObject({ code: "ValidationError" });
   });
 
+  it("set_category_parent rejects a sibling-name collision under the new parent", async () => {
+    const p1 = await expenseParent(`P1-${Math.random()}`);
+    const p2 = await expenseParent(`P2-${Math.random()}`);
+    const dupInP1 = await mockInvoke<Category>("create_category", { name: "Dup", kind: "expense", emoji: "🍔", color: null, parentId: p1.id });
+    await mockInvoke<Category>("create_category", { name: "Dup", kind: "expense", emoji: "🍔", color: null, parentId: p2.id });
+    await expect(mockInvoke("set_category_parent", { id: dupInP1.id, parentId: p2.id }))
+      .rejects.toMatchObject({ code: "Conflict" });
+  });
+
   it("dashboard rolls subcategory spend into the parent", async () => {
     const acc = await mockInvoke<{ id: string }>("create_account", { name: `Acc-${Math.random()}`, subtype: "cash", openingBalanceCents: 0, templateKey: null });
     const food = await expenseParent(`Food-${Math.random()}`);
