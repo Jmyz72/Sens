@@ -304,6 +304,30 @@ pub fn set_children_archived(conn: &Connection, parent_id: &str, archived: bool,
     Ok(())
 }
 
+pub fn count_children(conn: &Connection, parent_id: &str) -> AppResult<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM categories WHERE parent_id = ?1",
+        [parent_id],
+        |r| r.get(0),
+    )?)
+}
+
+pub fn count_transactions_for_category(conn: &Connection, category_id: &str) -> AppResult<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM transactions WHERE category_id = ?1",
+        [category_id],
+        |r| r.get(0),
+    )?)
+}
+
+pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
+    let n = conn.execute("DELETE FROM categories WHERE id = ?1", [id])?;
+    if n == 0 {
+        return Err(AppError::NotFound("Category not found".into()));
+    }
+    Ok(())
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 fn map_transaction(r: &Row) -> rusqlite::Result<Transaction> {

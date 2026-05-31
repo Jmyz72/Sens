@@ -93,6 +93,11 @@ pub fn restore_category(state: State<'_, DbState>, id: String) -> AppResult<Cate
     with_conn!(state, c => service::restore_category(&c, &id))
 }
 
+#[tauri::command]
+pub fn delete_category(state: State<'_, DbState>, id: String) -> AppResult<()> {
+    with_conn!(state, c => service::delete_category(&c, &id))
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 #[tauri::command]

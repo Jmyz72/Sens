@@ -193,6 +193,13 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       }
       return c as T;
     }
+    case "delete_category": {
+      const c = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
+      if (categories.some((x) => x.parentId === c.id)) fail("Conflict", "Remove or move its subcategories first");
+      if (txns.some((t) => t.categoryId === c.id)) fail("Conflict", "In use by transactions — archive it instead");
+      categories.splice(categories.indexOf(c), 1);
+      return undefined as T;
+    }
     case "create_income_transaction":
     case "create_expense_transaction": {
       const kind = command === "create_income_transaction" ? "income" : "expense";

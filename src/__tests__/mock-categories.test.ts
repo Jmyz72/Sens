@@ -32,6 +32,22 @@ describe("mock subcategories", () => {
     expect(all.find((c) => c.id === sub.id)!.isArchived).toBe(false);
   });
 
+  it("deletes an unused category but blocks ones with children or transactions", async () => {
+    const unused = await expenseParent(`Trash-${Math.random()}`);
+    await mockInvoke("delete_category", { id: unused.id });
+    const all = await mockInvoke<Category[]>("list_categories", { kind: null, includeArchived: true });
+    expect(all.some((c) => c.id === unused.id)).toBe(false);
+
+    const parent = await expenseParent(`HasKid-${Math.random()}`);
+    await mockInvoke<Category>("create_category", { name: "Kid", kind: "expense", emoji: "🧒", color: null, parentId: parent.id });
+    await expect(mockInvoke("delete_category", { id: parent.id })).rejects.toMatchObject({ code: "Conflict" });
+
+    const acc = await mockInvoke<{ id: string }>("create_account", { name: `A-${Math.random()}`, subtype: "cash", openingBalanceCents: 0, templateKey: null });
+    const used = await expenseParent(`Used-${Math.random()}`);
+    await mockInvoke("create_expense_transaction", { accountId: acc.id, categoryId: used.id, amountCents: 100, description: null, date: "2026-05-10" });
+    await expect(mockInvoke("delete_category", { id: used.id })).rejects.toMatchObject({ code: "Conflict" });
+  });
+
   it("dashboard rolls subcategory spend into the parent", async () => {
     const acc = await mockInvoke<{ id: string }>("create_account", { name: `Acc-${Math.random()}`, subtype: "cash", openingBalanceCents: 0, templateKey: null });
     const food = await expenseParent(`Food-${Math.random()}`);

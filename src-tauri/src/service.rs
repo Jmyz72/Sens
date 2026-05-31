@@ -206,6 +206,17 @@ pub fn restore_category(conn: &Connection, id: &str) -> AppResult<Category> {
     Ok(updated)
 }
 
+pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
+    repo::get_category(conn, id)?; // NotFound if missing
+    if repo::count_children(conn, id)? > 0 {
+        return Err(AppError::Conflict("Remove or move its subcategories first".into()));
+    }
+    if repo::count_transactions_for_category(conn, id)? > 0 {
+        return Err(AppError::Conflict("In use by transactions — archive it instead".into()));
+    }
+    repo::delete_category(conn, id)
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 /// Validate that a category exists and matches the required kind.

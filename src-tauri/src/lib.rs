@@ -52,6 +52,7 @@ pub fn run() {
             commands::update_category,
             commands::archive_category,
             commands::restore_category,
+            commands::delete_category,
             commands::create_income_transaction,
             commands::create_expense_transaction,
             commands::create_transfer_transaction,
@@ -336,6 +337,26 @@ mod tests {
             !s.spending_breakdown.iter().any(|b| b.category_id == coffee.id),
             "subcategory must not appear as its own bar"
         );
+    }
+
+    #[test]
+    fn delete_category_rules() {
+        let c = open_in_memory().unwrap();
+        // Unused leaf category: deletes fine.
+        let unused = service::create_category(&c, "Throwaway", "expense", "🗑️", None, None).unwrap();
+        service::delete_category(&c, &unused.id).unwrap();
+        assert!(service::list_categories(&c, None, true).unwrap().iter().all(|x| x.id != unused.id));
+
+        // Parent with a child: blocked.
+        let parent = service::create_category(&c, "Parent X", "expense", "📦", None, None).unwrap();
+        let _child = service::create_category(&c, "Child X", "expense", "📦", None, Some(&parent.id)).unwrap();
+        assert!(matches!(service::delete_category(&c, &parent.id), Err(AppError::Conflict(_))));
+
+        // Category referenced by a transaction: blocked.
+        let acc = service::create_account(&c, "Acc", "cash", 0, None).unwrap();
+        let used = service::create_category(&c, "Used Cat", "expense", "💳", None, None).unwrap();
+        service::create_expense(&c, &acc.id, &used.id, 1000, None, "2026-05-10").unwrap();
+        assert!(matches!(service::delete_category(&c, &used.id), Err(AppError::Conflict(_))));
     }
 
     #[test]
