@@ -54,9 +54,10 @@ pub fn create_account(
         repo::get_template(conn, key)?; // existence (NotFound if bogus)
     }
     let account_id = new_id();
-    repo::insert_account(conn, &account_id, template_key, &name, &subtype, &now())?;
+    let tx = conn.unchecked_transaction()?;
+    repo::insert_account(&tx, &account_id, template_key, &name, &subtype, &now())?;
     repo::insert_transaction(
-        conn,
+        &tx,
         &new_id(),
         KIND_OPENING,
         &account_id,
@@ -68,6 +69,7 @@ pub fn create_account(
         false,
         &now(),
     )?;
+    tx.commit()?;
     repo::get_account(conn, &account_id)
 }
 
@@ -348,6 +350,9 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
     let existing = repo::get_transaction(conn, &input.id)?;
     // Adjustments are not editable through the normal form and kind cannot be
     // changed into or out of 'adjustment'.
+    if existing.kind == KIND_OPENING || input.kind == KIND_OPENING {
+        return Err(AppError::Validation("The opening balance can't be edited here; change it from the account's opening balance field".into()));
+    }
     if existing.kind == KIND_ADJUSTMENT || input.kind == KIND_ADJUSTMENT {
         return Err(AppError::Validation("Adjustments cannot be edited; delete it and reconcile again".into()));
     }
@@ -395,6 +400,10 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
 }
 
 pub fn delete_transaction(conn: &Connection, id: &str) -> AppResult<()> {
+    let existing = repo::get_transaction(conn, id)?;
+    if existing.kind == KIND_OPENING {
+        return Err(AppError::Validation("The opening balance can't be deleted".into()));
+    }
     repo::delete_transaction(conn, id)
 }
 
