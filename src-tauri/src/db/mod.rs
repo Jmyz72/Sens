@@ -218,13 +218,13 @@ mod migration_tests {
         // exercises the WHEN account_type IN ('bank','digital_bank') THEN 'savings'
         // remap branch in migration 002.
         conn.execute_batch(
-            "INSERT INTO accounts (id,template_key,name,account_type,subtype,opening_balance_cents,currency,is_archived,created_at,updated_at) VALUES
-               ('1',NULL,'Bank','bank','savings',0,'MYR',0,'t','t'),
-               ('2',NULL,'BNPL','bnpl','bnpl',0,'MYR',0,'t','t'),
-               ('3',NULL,'Wallet','ewallet','ewallet',0,'MYR',0,'t','t'),
-               ('4',NULL,'Inv','investment','investment',0,'MYR',0,'t','t'),
-               ('5',NULL,'Weird','custom','totally-custom',0,'MYR',0,'t','t'),
-               ('6',NULL,'OldDigital','digital_bank','legacy-thing',0,'MYR',0,'t','t');",
+            "INSERT INTO accounts (id,template_key,name,account_type,subtype,currency,is_archived,created_at,updated_at) VALUES
+               ('1',NULL,'Bank','bank','savings','MYR',0,'t','t'),
+               ('2',NULL,'BNPL','bnpl','bnpl','MYR',0,'t','t'),
+               ('3',NULL,'Wallet','ewallet','ewallet','MYR',0,'t','t'),
+               ('4',NULL,'Inv','investment','investment','MYR',0,'t','t'),
+               ('5',NULL,'Weird','custom','totally-custom','MYR',0,'t','t'),
+               ('6',NULL,'OldDigital','digital_bank','legacy-thing','MYR',0,'t','t');",
         )
         .unwrap();
         // Apply v1.1.

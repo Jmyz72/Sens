@@ -110,8 +110,8 @@ mod tests {
     fn income_and_expense_affect_balance() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
-        service::create_income(&c, &a.id, &income_cat(&c), 5000, None, "2026-05-10").unwrap();
-        service::create_expense(&c, &a.id, &expense_cat(&c), 2000, None, "2026-05-11").unwrap();
+        service::create_income(&c, &a.id, &income_cat(&c), 5000, None, "2026-05-10", false).unwrap();
+        service::create_expense(&c, &a.id, &expense_cat(&c), 2000, None, "2026-05-11", false).unwrap();
         assert_eq!(service::get_account_balance(&c, &a.id).unwrap(), 3000);
     }
 
@@ -137,7 +137,7 @@ mod tests {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 1000);
         service::archive_account(&c, &a.id).unwrap();
-        assert!(service::create_expense(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10").is_err());
+        assert!(service::create_expense(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", false).is_err());
     }
 
     #[test]
@@ -145,7 +145,7 @@ mod tests {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
         // expense category used for income → rejected
-        assert!(service::create_income(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10").is_err());
+        assert!(service::create_income(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", false).is_err());
     }
 
     #[test]
@@ -161,7 +161,7 @@ mod tests {
     fn balance_correction_with_txns_inserts_adjustment() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
-        service::create_income(&c, &a.id, &income_cat(&c), 3350_00, None, "2026-05-10").unwrap();
+        service::create_income(&c, &a.id, &income_cat(&c), 3350_00, None, "2026-05-10", false).unwrap();
         let updated = service::set_account_balance(&c, &a.id, 3400_00).unwrap();
         assert_eq!(updated.opening_balance_cents, 0); // untouched
         assert_eq!(updated.balance_cents, 3400_00); // adjustment applied
@@ -171,7 +171,7 @@ mod tests {
     fn adjustments_excluded_from_dashboard_income_expense() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
-        service::create_income(&c, &a.id, &income_cat(&c), 1000, None, "2026-05-10").unwrap();
+        service::create_income(&c, &a.id, &income_cat(&c), 1000, None, "2026-05-10", false).unwrap();
         service::set_account_balance(&c, &a.id, 99999).unwrap(); // big adjustment this month
         let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
         assert_eq!(s.income_cents, 1000); // adjustment not counted as income
@@ -184,8 +184,8 @@ mod tests {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
         let ec = expense_cat(&c);
-        service::create_expense(&c, &a.id, &ec, 500, None, "2026-05-15").unwrap();
-        service::create_expense(&c, &a.id, &ec, 700, None, "2026-04-30").unwrap();
+        service::create_expense(&c, &a.id, &ec, 500, None, "2026-05-15", false).unwrap();
+        service::create_expense(&c, &a.id, &ec, 700, None, "2026-04-30", false).unwrap();
         let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
         assert_eq!(s.expense_cents, 500);
     }
@@ -331,8 +331,8 @@ mod tests {
         let food = service::create_category(&c, "Food P6", "expense", "🍔", None, None).unwrap();
         let coffee = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
         // one expense on the PARENT, one on the SUB — both should land in the parent bucket
-        service::create_expense(&c, &a.id, &food.id, 1000, None, "2026-05-10").unwrap();
-        service::create_expense(&c, &a.id, &coffee.id, 500, None, "2026-05-11").unwrap();
+        service::create_expense(&c, &a.id, &food.id, 1000, None, "2026-05-10", false).unwrap();
+        service::create_expense(&c, &a.id, &coffee.id, 500, None, "2026-05-11", false).unwrap();
 
         let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
         let row = s.spending_breakdown.iter().find(|b| b.category_id == food.id).unwrap();
@@ -359,7 +359,7 @@ mod tests {
         // Category referenced by a transaction: blocked.
         let acc = service::create_account(&c, "Acc", "cash", 0, None).unwrap();
         let used = service::create_category(&c, "Used Cat", "expense", "💳", None, None).unwrap();
-        service::create_expense(&c, &acc.id, &used.id, 1000, None, "2026-05-10").unwrap();
+        service::create_expense(&c, &acc.id, &used.id, 1000, None, "2026-05-10", false).unwrap();
         assert!(matches!(service::delete_category(&c, &used.id), Err(AppError::Conflict(_))));
     }
 
@@ -466,8 +466,14 @@ mod tests {
         // not silently vanish. Insert one directly to bypass service validation.
         let c = open_in_memory().unwrap();
         c.execute(
-            "INSERT INTO accounts (id, template_key, name, subtype, opening_balance_cents, currency, is_archived, created_at, updated_at)
-             VALUES ('orphan', NULL, 'Mystery', 'gone-subtype', 100, 'MYR', 0, 't', 't')",
+            "INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at)
+             VALUES ('orphan', NULL, 'Mystery', 'gone-subtype', 'MYR', 0, 't', 't')",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, created_at, updated_at)
+             VALUES ('orphan-open', 'opening', 'orphan', NULL, NULL, 100, 'Opening balance', '2026-05-01', 0, 't', 't')",
             [],
         )
         .unwrap();
@@ -486,7 +492,7 @@ mod tests {
         // Arrange: an account, a transaction, and a custom category.
         let a = acct(&c, "Wallet", 10_000);
         let cat = expense_cat(&c);
-        service::create_expense(&c, &a.id, &cat, 500, None, "2026-01-01").unwrap();
+        service::create_expense(&c, &a.id, &cat, 500, None, "2026-01-01", false).unwrap();
         service::create_category(&c, "Bespoke", "expense", "🦄", None, None).unwrap();
         let default_income = service::list_categories(&c, Some("income"), false).unwrap().len();
 

@@ -86,7 +86,6 @@ CREATE TABLE accounts (
   name                  TEXT NOT NULL,
   account_type          TEXT NOT NULL,
   subtype               TEXT NOT NULL,
-  opening_balance_cents INTEGER NOT NULL DEFAULT 0,
   currency              TEXT NOT NULL DEFAULT 'MYR' CHECK (currency = 'MYR'),
   is_archived           INTEGER NOT NULL DEFAULT 0 CHECK (is_archived IN (0, 1)),
   created_at            TEXT NOT NULL,
@@ -110,19 +109,21 @@ CREATE UNIQUE INDEX idx_categories_kind_name ON categories(kind, name);
 
 CREATE TABLE transactions (
   id               TEXT PRIMARY KEY,
-  kind             TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'transfer', 'adjustment')),
+  kind             TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'transfer', 'adjustment', 'opening')),
   account_id       TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
   to_account_id    TEXT REFERENCES accounts(id) ON DELETE RESTRICT,
   category_id      TEXT REFERENCES categories(id) ON DELETE RESTRICT,
   amount_cents     INTEGER NOT NULL,
   description      TEXT,
   transaction_date TEXT NOT NULL,
+  excluded_from_reporting INTEGER NOT NULL DEFAULT 0 CHECK (excluded_from_reporting IN (0, 1)),
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL,
   CHECK (
-    (kind IN ('income', 'expense') AND amount_cents > 0 AND to_account_id IS NULL AND category_id IS NOT NULL) OR
-    (kind = 'transfer'   AND amount_cents > 0 AND to_account_id IS NOT NULL AND to_account_id <> account_id) OR
-    (kind = 'adjustment' AND amount_cents <> 0 AND to_account_id IS NULL AND category_id IS NULL)
+    (kind IN ('income', 'expense') AND amount_cents > 0  AND to_account_id IS NULL     AND category_id IS NOT NULL) OR
+    (kind = 'transfer'   AND amount_cents > 0  AND to_account_id IS NOT NULL AND to_account_id <> account_id AND category_id IS NULL AND excluded_from_reporting = 0) OR
+    (kind = 'adjustment' AND amount_cents <> 0 AND to_account_id IS NULL     AND category_id IS NULL          AND excluded_from_reporting = 0) OR
+    (kind = 'opening'    AND                       to_account_id IS NULL     AND category_id IS NULL          AND excluded_from_reporting = 0)
   )
 );
 
