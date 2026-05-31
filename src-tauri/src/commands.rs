@@ -103,6 +103,11 @@ pub fn reorder_categories(state: State<'_, DbState>, ids: Vec<String>) -> AppRes
     with_conn!(state, c => service::reorder_categories(&c, &ids))
 }
 
+#[tauri::command]
+pub fn set_category_parent(state: State<'_, DbState>, id: String, parent_id: Option<String>) -> AppResult<Category> {
+    with_conn!(state, c => service::set_category_parent(&c, &id, parent_id.as_deref()))
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 #[tauri::command]

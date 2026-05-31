@@ -217,6 +217,31 @@ pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
     repo::delete_category(conn, id)
 }
 
+/// Reparent a category: move a leaf to another top-level parent, promote a
+/// subcategory to top-level (parent_id = None), or demote a childless top-level
+/// into a subcategory. Kind never changes; the new parent must be top-level and
+/// share the moved category's kind.
+pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>) -> AppResult<Category> {
+    let cat = repo::get_category(conn, id)?;
+    if let Some(pid) = parent_id {
+        if pid == id {
+            return Err(AppError::Validation("A category cannot be its own parent".into()));
+        }
+        let parent = repo::get_category(conn, pid)?; // NotFound if bogus
+        if parent.parent_id.is_some() {
+            return Err(AppError::Validation("The new parent must be a top-level category".into()));
+        }
+        if parent.kind != cat.kind {
+            return Err(AppError::Validation("Cannot move a category to a different kind".into()));
+        }
+        // Demoting/moving a top-level that still has children would create a third level.
+        if cat.parent_id.is_none() && repo::count_children(conn, id)? > 0 {
+            return Err(AppError::Validation("Empty this category's subcategories before making it a subcategory".into()));
+        }
+    }
+    repo::set_category_parent(conn, id, parent_id, &now())
+}
+
 /// Assign sort_order = index to each id. Caller (frontend) supplies one full
 /// sibling group (same parent + kind); we validate they are genuine siblings.
 pub fn reorder_categories(conn: &Connection, ids: &[String]) -> AppResult<()> {

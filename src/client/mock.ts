@@ -207,6 +207,28 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       });
       return undefined as T;
     }
+    case "set_category_parent": {
+      const cat = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
+      const pid: string | null = a.parentId ?? null;
+      if (pid != null) {
+        if (pid === cat.id) fail("ValidationError", "A category cannot be its own parent");
+        const parent = categories.find((x) => x.id === pid) ?? fail("NotFound", "Category not found");
+        if (parent.parentId != null) fail("ValidationError", "The new parent must be a top-level category");
+        if (parent.kind !== cat.kind) fail("ValidationError", "Cannot move a category to a different kind");
+        if (cat.parentId == null && categories.some((x) => x.parentId === cat.id)) {
+          fail("ValidationError", "Empty this category's subcategories before making it a subcategory");
+        }
+        // Sibling-name uniqueness under the new parent.
+        if (categories.some((x) => x.id !== cat.id && x.parentId === pid && x.name === cat.name)) {
+          fail("Conflict", "A category with this name already exists at this level");
+        }
+      } else if (categories.some((x) => x.id !== cat.id && x.parentId == null && x.kind === cat.kind && x.name === cat.name)) {
+        fail("Conflict", "A category with this name already exists at this level");
+      }
+      cat.parentId = pid;
+      cat.updatedAt = now();
+      return cat as T;
+    }
     case "create_income_transaction":
     case "create_expense_transaction": {
       const kind = command === "create_income_transaction" ? "income" : "expense";

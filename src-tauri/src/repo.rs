@@ -341,6 +341,15 @@ pub fn reorder_categories(conn: &Connection, ids: &[String], now: &str) -> AppRe
     Ok(())
 }
 
+pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>, now: &str) -> AppResult<Category> {
+    conn.execute(
+        "UPDATE categories SET parent_id = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, parent_id, now],
+    )
+    .map_err(map_unique)?;
+    get_category(conn, id)
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 fn map_transaction(r: &Row) -> rusqlite::Result<Transaction> {

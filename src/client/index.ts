@@ -42,6 +42,8 @@ export const client = {
   restoreCategory: (id: string) => dispatch<Category>("restore_category", { id }),
   deleteCategory: (id: string) => dispatch<void>("delete_category", { id }),
   reorderCategories: (ids: string[]) => dispatch<void>("reorder_categories", { ids }),
+  setCategoryParent: (id: string, parentId: string | null) =>
+    dispatch<Category>("set_category_parent", { id, parentId }),
 
   // Transactions
   createIncome: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string) =>

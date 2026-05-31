@@ -57,6 +57,22 @@ describe("mock subcategories", () => {
     expect(all.find((c) => c.id === a.id)!.sortOrder).toBe(1);
   });
 
+  it("set_category_parent moves, promotes, and rejects cross-kind", async () => {
+    const food = await expenseParent(`Food-SP-${Math.random()}`);
+    const fun = await expenseParent(`Fun-SP-${Math.random()}`);
+    const salary = await mockInvoke<Category>("create_category", { name: `Sal-SP-${Math.random()}`, kind: "income", emoji: "💰", color: null, parentId: null });
+    const coffee = await mockInvoke<Category>("create_category", { name: "Coffee SP", kind: "expense", emoji: "☕", color: null, parentId: food.id });
+
+    const moved = await mockInvoke<Category>("set_category_parent", { id: coffee.id, parentId: fun.id });
+    expect(moved.parentId).toBe(fun.id);
+
+    const promoted = await mockInvoke<Category>("set_category_parent", { id: coffee.id, parentId: null });
+    expect(promoted.parentId).toBe(null);
+
+    await expect(mockInvoke("set_category_parent", { id: coffee.id, parentId: salary.id }))
+      .rejects.toMatchObject({ code: "ValidationError" });
+  });
+
   it("dashboard rolls subcategory spend into the parent", async () => {
     const acc = await mockInvoke<{ id: string }>("create_account", { name: `Acc-${Math.random()}`, subtype: "cash", openingBalanceCents: 0, templateKey: null });
     const food = await expenseParent(`Food-${Math.random()}`);

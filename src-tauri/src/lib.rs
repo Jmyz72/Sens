@@ -54,6 +54,7 @@ pub fn run() {
             commands::restore_category,
             commands::delete_category,
             commands::reorder_categories,
+            commands::set_category_parent,
             commands::create_income_transaction,
             commands::create_expense_transaction,
             commands::create_transfer_transaction,
@@ -371,6 +372,45 @@ mod tests {
         let b2 = service::list_categories(&c, None, true).unwrap().into_iter().find(|x| x.id == b.id).unwrap();
         assert_eq!(b2.sort_order, 0);
         assert_eq!(a2.sort_order, 1);
+    }
+
+    #[test]
+    fn set_category_parent_move_promote_demote() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food MP", "expense", "🍔", None, None).unwrap();
+        let fun = service::create_category(&c, "Fun MP", "expense", "🎮", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee MP", "expense", "☕", None, Some(&food.id)).unwrap();
+
+        // Move sub to another parent.
+        let moved = service::set_category_parent(&c, &coffee.id, Some(&fun.id)).unwrap();
+        assert_eq!(moved.parent_id.as_deref(), Some(fun.id.as_str()));
+
+        // Promote sub to top-level.
+        let promoted = service::set_category_parent(&c, &coffee.id, None).unwrap();
+        assert_eq!(promoted.parent_id, None);
+        assert_eq!(promoted.kind, "expense");
+
+        // Demote a childless top-level under another parent.
+        let demoted = service::set_category_parent(&c, &coffee.id, Some(&food.id)).unwrap();
+        assert_eq!(demoted.parent_id.as_deref(), Some(food.id.as_str()));
+    }
+
+    #[test]
+    fn set_category_parent_rejects_invalid() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food R", "expense", "🍔", None, None).unwrap();
+        let salary = service::create_category(&c, "Salary R", "income", "💰", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee R", "expense", "☕", None, Some(&food.id)).unwrap();
+
+        // Cross-kind move rejected.
+        assert!(matches!(service::set_category_parent(&c, &coffee.id, Some(&salary.id)), Err(AppError::Validation(_))));
+
+        // Cannot demote a parent that still has children.
+        assert!(matches!(service::set_category_parent(&c, &food.id, Some(&salary.id)), Err(AppError::Validation(_))));
+
+        // New parent must be top-level (not a subcategory).
+        let snack = service::create_category(&c, "Snack R", "expense", "🍪", None, Some(&food.id)).unwrap();
+        assert!(matches!(service::set_category_parent(&c, &snack.id, Some(&coffee.id)), Err(AppError::Validation(_))));
     }
 
     #[test]
