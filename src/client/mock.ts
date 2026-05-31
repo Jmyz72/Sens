@@ -51,23 +51,42 @@ PROVIDER_GROUPS.forEach(({ group, defaultSubtype, providers }) =>
   ),
 );
 
+// Mirrors src-tauri/src/db/seed.rs CATEGORIES (append-only; no renames/removals
+// across versions). Saving/investing, loans/debt, reimbursements and credit-card
+// payments are deliberately NOT categories — dedicated features handle them.
 const CAT_SEED: [string, Category["kind"], string, string][] = [
-  ["Salary", "income", "💰", "#46d39a"], ["Bonus", "income", "🎉", "#3fcf8e"], ["Freelance", "income", "💻", "#5aa66d"], ["Gift", "income", "🎁", "#56b3c4"], ["Investments", "income", "📈", "#2fbf71"], ["Other Income", "income", "➕", "#7bbf8f"],
-  ["Food", "expense", "🍔", "#e0a13c"], ["Transport", "expense", "🚗", "#8b7bd8"], ["Bills", "expense", "🧾", "#56b3c4"], ["Shopping", "expense", "🛍️", "#d9728f"], ["Health", "expense", "🏥", "#f0708c"], ["Entertainment", "expense", "🎬", "#a78bfa"], ["Groceries", "expense", "🛒", "#5aa66d"], ["Education", "expense", "📚", "#5b8def"], ["Travel", "expense", "✈️", "#33c9d6"], ["Other Expense", "expense", "💸", "#9aa4b2"],
+  ["Salary", "income", "💰", "#46d39a"], ["Bonus", "income", "🎉", "#3fcf8e"], ["Freelance", "income", "💻", "#5aa66d"], ["Business", "income", "🏪", "#4bd699"], ["Rental Income", "income", "🏘️", "#5bddaa"], ["Government & Aid", "income", "🏛️", "#37c886"], ["Cashback & Rewards", "income", "🪙", "#66b079"], ["Gift", "income", "🎁", "#56b3c4"], ["Other Income", "income", "➕", "#7bbf8f"],
+  ["Food", "expense", "🍔", "#e0a13c"], ["Groceries", "expense", "🛒", "#5aa66d"], ["Transport", "expense", "🚗", "#8b7bd8"], ["Bills", "expense", "🧾", "#56b3c4"], ["Family & Dependents", "expense", "👪", "#e08a5c"], ["Kids", "expense", "🧸", "#f0a868"], ["Insurance & Protection", "expense", "🛡️", "#e96680"], ["Health", "expense", "🏥", "#f0708c"], ["Personal Care", "expense", "💈", "#d98fb0"], ["Shopping", "expense", "🛍️", "#d9728f"], ["Home & Living", "expense", "🏡", "#c98a6a"], ["Entertainment", "expense", "🎬", "#a78bfa"], ["Education", "expense", "📚", "#5b8def"], ["Travel", "expense", "✈️", "#33c9d6"], ["Donations & Religious", "expense", "🙏", "#b39bd8"], ["Government & Fees", "expense", "🏛️", "#7a93c4"], ["Pets", "expense", "🐾", "#9ab06a"], ["Fees & Charges", "expense", "💳", "#9aa4b2"], ["Other Expense", "expense", "💸", "#9aa4b2"],
   ["Transfer", "transfer", "🔄", "#9aa4b2"],
 ];
 const SUB_SEED: [string, Category["kind"], string, string, string][] = [
-  ["Food", "expense", "Dining out", "🍽️", "#e0a13c"], ["Food", "expense", "Coffee", "☕", "#c08a4a"], ["Food", "expense", "Delivery/Takeaway", "🛵", "#d99a3c"], ["Food", "expense", "Snacks", "🍪", "#e3b15c"],
-  ["Transport", "expense", "Fuel", "⛽", "#8b7bd8"], ["Transport", "expense", "Parking & Tolls", "🅿️", "#9a8be0"], ["Transport", "expense", "Ride-hailing", "🚕", "#7d6dd0"], ["Transport", "expense", "Public transit", "🚇", "#a89bea"], ["Transport", "expense", "Car maintenance", "🔧", "#6f5fc0"],
-  ["Bills", "expense", "Rent", "🏠", "#56b3c4"], ["Bills", "expense", "Electricity", "💡", "#5fbecf"], ["Bills", "expense", "Water", "🚿", "#4aa6b8"], ["Bills", "expense", "Internet", "📶", "#63c5d6"], ["Bills", "expense", "Mobile", "📱", "#52aebf"], ["Bills", "expense", "Subscriptions", "📺", "#48a2b4"],
+  ["Food", "expense", "Dining out", "🍽️", "#e0a13c"], ["Food", "expense", "Mamak/Kopitiam", "🍜", "#dba24a"], ["Food", "expense", "Coffee", "☕", "#c08a4a"], ["Food", "expense", "Bubble tea/Drinks", "🧋", "#e0b060"], ["Food", "expense", "Delivery/Takeaway", "🛵", "#d99a3c"], ["Food", "expense", "Snacks", "🍪", "#e3b15c"],
+  ["Groceries", "expense", "Supermarket", "🛒", "#5aa66d"], ["Groceries", "expense", "Wet market", "🐟", "#6cb47d"], ["Groceries", "expense", "Convenience store", "🏪", "#4f9862"],
+  ["Transport", "expense", "Fuel", "⛽", "#8b7bd8"], ["Transport", "expense", "TnG/Toll reload", "🛣️", "#9a8be0"], ["Transport", "expense", "Parking & Tolls", "🅿️", "#9a8be0"], ["Transport", "expense", "Ride-hailing", "🚕", "#7d6dd0"], ["Transport", "expense", "Public transit", "🚇", "#a89bea"], ["Transport", "expense", "Car maintenance", "🔧", "#6f5fc0"],
+  ["Bills", "expense", "Rent", "🏠", "#56b3c4"], ["Bills", "expense", "Electricity", "💡", "#5fbecf"], ["Bills", "expense", "Water", "🚿", "#4aa6b8"], ["Bills", "expense", "Internet", "📶", "#63c5d6"], ["Bills", "expense", "Mobile", "📱", "#52aebf"], ["Bills", "expense", "Astro/TV", "📡", "#4f9fb0"], ["Bills", "expense", "Subscriptions", "📺", "#48a2b4"],
+  ["Family & Dependents", "expense", "Parents' allowance", "👴", "#e08a5c"], ["Family & Dependents", "expense", "Childcare/Nursery", "👶", "#e6976c"], ["Family & Dependents", "expense", "School fees", "🏫", "#da7f50"], ["Family & Dependents", "expense", "Maid/Helper", "🧹", "#eba074"], ["Family & Dependents", "expense", "Pocket money", "💵", "#d97848"],
+  ["Kids", "expense", "Diapers/Milk", "🍼", "#f0a868"], ["Kids", "expense", "Toys", "🧸", "#f3b67e"], ["Kids", "expense", "Activities/Classes", "⚽", "#ed9a54"], ["Kids", "expense", "School supplies", "✏️", "#f5be8c"],
+  ["Insurance & Protection", "expense", "Life/Medical", "🏥", "#e96680"], ["Insurance & Protection", "expense", "Car (Takaful)", "🚗", "#ee7891"], ["Insurance & Protection", "expense", "Home", "🏠", "#e35a76"], ["Insurance & Protection", "expense", "Travel", "✈️", "#f0859b"],
+  ["Health", "expense", "Pharmacy", "💊", "#f0708c"], ["Health", "expense", "Clinic/Doctor", "🩺", "#f37e98"], ["Health", "expense", "Dental", "🦷", "#ee6a87"], ["Health", "expense", "Optical", "👓", "#f58aa2"], ["Health", "expense", "Mental health", "🧠", "#f0738e"], ["Health", "expense", "Fitness", "🏋️", "#f58aa2"],
+  ["Personal Care", "expense", "Haircut/Salon", "💇", "#d98fb0"], ["Personal Care", "expense", "Skincare/Cosmetics", "💄", "#e09cbb"], ["Personal Care", "expense", "Spa/Grooming", "💆", "#d385a8"], ["Personal Care", "expense", "Laundry", "🧺", "#e6a8c4"],
   ["Shopping", "expense", "Clothing", "👗", "#d9728f"], ["Shopping", "expense", "Electronics", "🔌", "#e07f9a"], ["Shopping", "expense", "Home", "🛋️", "#cf6685"], ["Shopping", "expense", "Gifts", "🎁", "#e58aa3"],
-  ["Health", "expense", "Pharmacy", "💊", "#f0708c"], ["Health", "expense", "Clinic/Doctor", "🩺", "#f37e98"], ["Health", "expense", "Insurance", "🛡️", "#e96680"], ["Health", "expense", "Fitness", "🏋️", "#f58aa2"],
+  ["Home & Living", "expense", "Furniture", "🛋️", "#c98a6a"], ["Home & Living", "expense", "Appliances", "🔌", "#d1977a"], ["Home & Living", "expense", "Repairs/Maintenance", "🔧", "#c08160"], ["Home & Living", "expense", "Cleaning supplies", "🧼", "#d9a288"], ["Home & Living", "expense", "Renovation", "🛠️", "#b87a58"],
   ["Entertainment", "expense", "Movies", "🎬", "#a78bfa"], ["Entertainment", "expense", "Games", "🎮", "#b39bfb"], ["Entertainment", "expense", "Events", "🎟️", "#9b7df9"], ["Entertainment", "expense", "Hobbies", "🎨", "#bfa9fc"],
   ["Education", "expense", "Courses", "🎓", "#5b8def"], ["Education", "expense", "Books", "📖", "#6b97f1"], ["Education", "expense", "Tuition", "🧑", "#4f83ed"],
   ["Travel", "expense", "Flights", "✈️", "#33c9d6"], ["Travel", "expense", "Accommodation", "🏨", "#45d0dc"], ["Travel", "expense", "Activities", "🏝️", "#28bdca"],
+  ["Donations & Religious", "expense", "Zakat", "🕌", "#b39bd8"], ["Donations & Religious", "expense", "Tithe/Offering", "⛪", "#bda8e0"], ["Donations & Religious", "expense", "Sedekah/Charity", "🤲", "#a78ed0"], ["Donations & Religious", "expense", "Temple/Church", "🛕", "#c7b3e8"],
+  ["Government & Fees", "expense", "Road tax", "🚗", "#7a93c4"], ["Government & Fees", "expense", "Saman/Summons", "🚨", "#8aa0cc"], ["Government & Fees", "expense", "JPJ/Immigration", "🛂", "#6f88bc"], ["Government & Fees", "expense", "Passport/Visa", "📘", "#97aad4"],
+  ["Pets", "expense", "Food", "🦴", "#9ab06a"], ["Pets", "expense", "Vet", "🐶", "#a8bb7c"], ["Pets", "expense", "Grooming", "✂️", "#8da55e"], ["Pets", "expense", "Supplies", "🐾", "#b3c48e"],
+  ["Fees & Charges", "expense", "Bank charges", "🏦", "#9aa4b2"], ["Fees & Charges", "expense", "ATM/transfer fees", "🏧", "#a6afbc"], ["Fees & Charges", "expense", "Late fees", "⏰", "#8e99a8"], ["Fees & Charges", "expense", "Service charge", "🧾", "#b2bac6"],
   ["Salary", "income", "Base pay", "💵", "#46d39a"], ["Salary", "income", "Overtime", "⏰", "#52d8a2"], ["Salary", "income", "Allowances", "🧾", "#3fcf8e"], ["Salary", "income", "Commission", "📊", "#5bddaa"],
+  ["Bonus", "income", "Annual bonus", "🎊", "#3fcf8e"], ["Bonus", "income", "Performance", "⭐", "#52d8a2"], ["Bonus", "income", "Festive/THR", "🧧", "#5bddaa"],
   ["Freelance", "income", "Projects", "💻", "#5aa66d"], ["Freelance", "income", "Consulting", "💼", "#66b079"],
-  ["Investments", "income", "Dividends", "💹", "#3fcf8e"], ["Investments", "income", "Interest", "🏦", "#4bd699"], ["Investments", "income", "Capital gains", "📈", "#37c886"],
+  ["Business", "income", "Sales", "💵", "#4bd699"], ["Business", "income", "Side hustle", "🛠️", "#5bddaa"], ["Business", "income", "Online/Dropship", "📦", "#3fcf8e"],
+  ["Rental Income", "income", "Property rent", "🏠", "#5bddaa"], ["Rental Income", "income", "Room rent", "🛏️", "#66e0b4"], ["Rental Income", "income", "Asset rent", "🚗", "#4fd6a4"],
+  ["Government & Aid", "income", "STR/BR1M", "🤲", "#37c886"], ["Government & Aid", "income", "Tax refund (LHDN)", "🧾", "#46d39a"], ["Government & Aid", "income", "Subsidies", "🎫", "#2fbf71"],
+  ["Cashback & Rewards", "income", "Card cashback", "💳", "#66b079"], ["Cashback & Rewards", "income", "e-Wallet rewards", "📲", "#73bb8a"], ["Cashback & Rewards", "income", "Points redeemed", "🎁", "#5aa66d"],
+  ["Gift", "income", "Cash gift", "💵", "#56b3c4"], ["Gift", "income", "Angpow/Duit raya", "🧧", "#63c0cf"],
+  ["Transfer", "transfer", "Own accounts", "🔄", "#9aa4b2"], ["Transfer", "transfer", "Savings transfer", "💰", "#a6afbc"],
 ];
 
 const categories: Category[] = [];

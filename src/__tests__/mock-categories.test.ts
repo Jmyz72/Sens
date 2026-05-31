@@ -92,11 +92,11 @@ describe("mock subcategories", () => {
     expect(all.find((c) => c.id === fun.id)!.isArchived).toBe(true);
   });
 
-  it("mock seeds Coffee under Food and an Investments income category", async () => {
+  it("mock seeds Coffee under Food and a Business income category", async () => {
     const all = await mockInvoke<Category[]>("list_categories", { kind: null, includeArchived: false });
     const food = all.find((c) => c.name === "Food" && c.parentId == null)!;
     expect(all.some((c) => c.name === "Coffee" && c.parentId === food.id)).toBe(true);
-    expect(all.some((c) => c.name === "Investments" && c.kind === "income" && c.parentId == null)).toBe(true);
+    expect(all.some((c) => c.name === "Business" && c.kind === "income" && c.parentId == null)).toBe(true);
   });
 
   it("dashboard rolls subcategory spend into the parent", async () => {
