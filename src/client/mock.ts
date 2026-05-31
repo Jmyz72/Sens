@@ -200,6 +200,13 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       categories.splice(categories.indexOf(c), 1);
       return undefined as T;
     }
+    case "reorder_categories": {
+      (a.ids as string[]).forEach((id, i) => {
+        const c = categories.find((x) => x.id === id);
+        if (c) { c.sortOrder = i; c.updatedAt = now(); }
+      });
+      return undefined as T;
+    }
     case "create_income_transaction":
     case "create_expense_transaction": {
       const kind = command === "create_income_transaction" ? "income" : "expense";

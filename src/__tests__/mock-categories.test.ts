@@ -48,6 +48,15 @@ describe("mock subcategories", () => {
     await expect(mockInvoke("delete_category", { id: used.id })).rejects.toMatchObject({ code: "Conflict" });
   });
 
+  it("reorder_categories assigns sort_order by index", async () => {
+    const a = await expenseParent(`Ord-A-${Math.random()}`);
+    const b = await expenseParent(`Ord-B-${Math.random()}`);
+    await mockInvoke("reorder_categories", { ids: [b.id, a.id] });
+    const all = await mockInvoke<Category[]>("list_categories", { kind: null, includeArchived: true });
+    expect(all.find((c) => c.id === b.id)!.sortOrder).toBe(0);
+    expect(all.find((c) => c.id === a.id)!.sortOrder).toBe(1);
+  });
+
   it("dashboard rolls subcategory spend into the parent", async () => {
     const acc = await mockInvoke<{ id: string }>("create_account", { name: `Acc-${Math.random()}`, subtype: "cash", openingBalanceCents: 0, templateKey: null });
     const food = await expenseParent(`Food-${Math.random()}`);

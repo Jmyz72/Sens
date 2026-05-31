@@ -328,6 +328,19 @@ pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
     Ok(())
 }
 
+pub fn reorder_categories(conn: &Connection, ids: &[String], now: &str) -> AppResult<()> {
+    for (i, id) in ids.iter().enumerate() {
+        let n = conn.execute(
+            "UPDATE categories SET sort_order = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, i as i64, now],
+        )?;
+        if n == 0 {
+            return Err(AppError::NotFound("Category not found".into()));
+        }
+    }
+    Ok(())
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 fn map_transaction(r: &Row) -> rusqlite::Result<Transaction> {

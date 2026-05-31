@@ -53,6 +53,7 @@ pub fn run() {
             commands::archive_category,
             commands::restore_category,
             commands::delete_category,
+            commands::reorder_categories,
             commands::create_income_transaction,
             commands::create_expense_transaction,
             commands::create_transfer_transaction,
@@ -357,6 +358,19 @@ mod tests {
         let used = service::create_category(&c, "Used Cat", "expense", "💳", None, None).unwrap();
         service::create_expense(&c, &acc.id, &used.id, 1000, None, "2026-05-10").unwrap();
         assert!(matches!(service::delete_category(&c, &used.id), Err(AppError::Conflict(_))));
+    }
+
+    #[test]
+    fn reorder_categories_sets_sort_order() {
+        let c = open_in_memory().unwrap();
+        let a = service::create_category(&c, "AA", "expense", "🅰️", None, None).unwrap();
+        let b = service::create_category(&c, "BB", "expense", "🅱️", None, None).unwrap();
+        // Put b before a.
+        service::reorder_categories(&c, &[b.id.clone(), a.id.clone()]).unwrap();
+        let a2 = service::list_categories(&c, None, true).unwrap().into_iter().find(|x| x.id == a.id).unwrap();
+        let b2 = service::list_categories(&c, None, true).unwrap().into_iter().find(|x| x.id == b.id).unwrap();
+        assert_eq!(b2.sort_order, 0);
+        assert_eq!(a2.sort_order, 1);
     }
 
     #[test]

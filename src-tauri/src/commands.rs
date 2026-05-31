@@ -98,6 +98,11 @@ pub fn delete_category(state: State<'_, DbState>, id: String) -> AppResult<()> {
     with_conn!(state, c => service::delete_category(&c, &id))
 }
 
+#[tauri::command]
+pub fn reorder_categories(state: State<'_, DbState>, ids: Vec<String>) -> AppResult<()> {
+    with_conn!(state, c => service::reorder_categories(&c, &ids))
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 #[tauri::command]

@@ -217,6 +217,22 @@ pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
     repo::delete_category(conn, id)
 }
 
+/// Assign sort_order = index to each id. Caller (frontend) supplies one full
+/// sibling group (same parent + kind); we validate they are genuine siblings.
+pub fn reorder_categories(conn: &Connection, ids: &[String]) -> AppResult<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let first = repo::get_category(conn, &ids[0])?;
+    for id in &ids[1..] {
+        let cat = repo::get_category(conn, id)?;
+        if cat.kind != first.kind || cat.parent_id != first.parent_id {
+            return Err(AppError::Validation("Can only reorder categories within one group".into()));
+        }
+    }
+    repo::reorder_categories(conn, ids, &now())
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 /// Validate that a category exists and matches the required kind.
