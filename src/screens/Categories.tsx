@@ -337,7 +337,7 @@ export function Categories() {
                 Archive ({selected.size})
               </Btn>
               <Btn variant="outline" size="sm" icon="restore" disabled={selected.size === 0} onClick={() => bulkArchive(false)}>
-                Restore
+                Restore ({selected.size})
               </Btn>
             </div>
           )}
@@ -357,10 +357,10 @@ export function Categories() {
               ) : (
                 nodes.map((node) => {
                   const c = node.category;
-                  const on = c.id === selectedId;
+                  const on = !selectMode && c.id === selectedId;
                   return (
                     <button key={c.id} className="sens-row" onClick={() => selectMode ? toggleSelected(c.id) : setSelectedId(c.id)}
-                      draggable
+                      draggable={!selectMode}
                       onDragStart={(e) => e.dataTransfer.setData("text/plain", c.id)}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => {
