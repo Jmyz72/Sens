@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] — 2026-05-31
+
 ### Added
 - **Categories: action menu** — per-category and per-subcategory actions are now
   grouped in a "⋯" dropdown (`src/components/ActionMenu.tsx`). Delete is always
