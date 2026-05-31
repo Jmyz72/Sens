@@ -20,6 +20,18 @@ them by hand.**
 
 ## Cutting a release
 
+There are two equivalent paths; both end with the **Release** workflow building and
+publishing the macOS + Windows bundles. Pick whichever fits the moment:
+
+- **One-click (Actions tab):** the **Cut release** workflow — quickest when you
+  already know the level. See [One-click release](#one-click-release-cut-release).
+- **Local (guided):** the `npm run release` script from your terminal — gives you a
+  pre-flight look at the changelog and a level recommendation. See
+  [Local release](#local-release).
+
+Both call the same `scripts/release.mjs` to bump versions, roll the changelog,
+commit, and tag — they never diverge on the version mechanics.
+
 Before cutting updater-enabled releases, make sure the repository has these
 GitHub Actions secrets:
 
@@ -30,6 +42,23 @@ GitHub Actions secrets:
 The matching public key is committed in `src-tauri/tauri.conf.json`. Keep the
 private key backed up; losing it means already-installed apps cannot accept future
 updates.
+
+### One-click release (Cut release)
+
+1. Confirm the `## [Unreleased]` section in `CHANGELOG.md` lists everything in this
+   release (the workflow rolls it as-is — it can't draft entries for you).
+2. GitHub → **Actions** → **Cut release** → **Run workflow**. Pick the bump level
+   (`patch` / `minor` / `major`) and run it. (CLI equivalent:
+   `gh workflow run "Cut release" -f level=minor`.)
+
+The **`tag`** job checks out `main`, runs `npm run release -- <level>` (same script
+as below), and pushes the `chore: release vX.Y.Z` commit + tag. The **`build`** job
+then calls the **Release** workflow directly to build and publish. (It calls it
+rather than relying on the tag push, because a tag pushed with the workflow's
+`GITHUB_TOKEN` deliberately does not re-fire the tag trigger.) Watch the run finish
+and confirm the GitHub Release has the macOS, Windows, and `latest.json` artifacts.
+
+### Local release
 
 1. Make sure `main` is green (the **CI** workflow passes) and you are on `main`
    with a clean working tree.
