@@ -74,8 +74,8 @@ const CATEGORIES: &[(&str, &str, &str, &str, i64)] = &[
     ("Bonus", "income", "\u{1F389}", "#3fcf8e", 1),
     ("Freelance", "income", "\u{1F4BB}", "#5aa66d", 2),
     ("Gift", "income", "\u{1F381}", "#56b3c4", 3),
-    ("Other Income", "income", "\u{2795}", "#7bbf8f", 4),
-    ("Investments", "income", "\u{1F4C8}", "#2fbf71", 5),
+    ("Investments", "income", "\u{1F4C8}", "#2fbf71", 4),
+    ("Other Income", "income", "\u{2795}", "#7bbf8f", 5),
     // Expense
     ("Food", "expense", "\u{1F354}", "#e0a13c", 10),
     ("Transport", "expense", "\u{1F697}", "#8b7bd8", 11),

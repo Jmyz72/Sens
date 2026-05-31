@@ -52,8 +52,7 @@ PROVIDER_GROUPS.forEach(({ group, defaultSubtype, providers }) =>
 );
 
 const CAT_SEED: [string, Category["kind"], string, string][] = [
-  ["Salary", "income", "💰", "#46d39a"], ["Bonus", "income", "🎉", "#3fcf8e"], ["Freelance", "income", "💻", "#5aa66d"], ["Gift", "income", "🎁", "#56b3c4"], ["Other Income", "income", "➕", "#7bbf8f"],
-  ["Investments", "income", "📈", "#2fbf71"],
+  ["Salary", "income", "💰", "#46d39a"], ["Bonus", "income", "🎉", "#3fcf8e"], ["Freelance", "income", "💻", "#5aa66d"], ["Gift", "income", "🎁", "#56b3c4"], ["Investments", "income", "📈", "#2fbf71"], ["Other Income", "income", "➕", "#7bbf8f"],
   ["Food", "expense", "🍔", "#e0a13c"], ["Transport", "expense", "🚗", "#8b7bd8"], ["Bills", "expense", "🧾", "#56b3c4"], ["Shopping", "expense", "🛍️", "#d9728f"], ["Health", "expense", "🏥", "#f0708c"], ["Entertainment", "expense", "🎬", "#a78bfa"], ["Groceries", "expense", "🛒", "#5aa66d"], ["Education", "expense", "📚", "#5b8def"], ["Travel", "expense", "✈️", "#33c9d6"], ["Other Expense", "expense", "💸", "#9aa4b2"],
   ["Transfer", "transfer", "🔄", "#9aa4b2"],
 ];

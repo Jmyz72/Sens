@@ -448,6 +448,17 @@ mod tests {
     }
 
     #[test]
+    fn other_income_sorts_after_investments() {
+        let c = open_in_memory().unwrap();
+        let income = service::list_categories(&c, Some("income"), false).unwrap();
+        let pos = |name: &str| income.iter().position(|x| x.name == name).unwrap();
+        assert!(
+            pos("Other Income") > pos("Investments"),
+            "Other Income must come after Investments by default"
+        );
+    }
+
+    #[test]
     fn account_with_unknown_subtype_still_lists() {
         // An account whose subtype isn't in the taxonomy (e.g. a future rename or
         // a direct DB edit) must stay visible via the LEFT JOIN + COALESCE fallback,
