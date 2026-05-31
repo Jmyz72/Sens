@@ -15,6 +15,7 @@ import { useAppData } from "../store";
 import { useToast } from "../components/Toast";
 import { categoryTree, reorderIds, moveTargets, type CategoryNode } from "../lib/categories";
 import { EmojiPicker } from "../components/EmojiPicker";
+import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
 
 // ── Preset colour palette (data constant, acceptable hardcoded hex) ─────────
 
@@ -519,17 +520,20 @@ function CategoryDetail({
             {KIND_LABELS[c.kind]} · {node.children.length} {node.children.length === 1 ? "subcategory" : "subcategories"}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 4 }}>
-          <Btn variant="outline" size="sm" icon="pencil" onClick={onEdit}>Edit</Btn>
-          <Btn variant="outline" size="sm" icon="swap" onClick={onMove}>Move</Btn>
-          {c.isArchived
-            ? <Btn variant="outline" size="sm" icon="restore" onClick={onRestore}>Restore</Btn>
-            : <Btn variant="outline" size="sm" icon="archive" onClick={onArchive}>Archive</Btn>
-          }
-          {node.children.length === 0 && (
-            <Btn variant="danger" size="sm" icon="trash" onClick={onDelete}>Delete</Btn>
-          )}
-        </div>
+        <ActionMenuButton items={[
+          { label: "Edit", icon: "pencil", onSelect: onEdit },
+          { label: "Move", icon: "swap", onSelect: onMove },
+          c.isArchived
+            ? { label: "Restore", icon: "restore", onSelect: onRestore }
+            : { label: "Archive", icon: "archive", onSelect: onArchive },
+          {
+            label: "Delete", icon: "trash", danger: true, onSelect: onDelete,
+            disabled: node.children.length > 0,
+            tooltip: node.children.length > 0
+              ? "Archive instead — categories with subcategories or linked transactions can't be deleted."
+              : undefined,
+          },
+        ]} />
       </div>
 
       {/* Subcategories */}
@@ -559,14 +563,14 @@ function CategoryDetail({
                   {child.name}
                   {child.isArchived && <Tag tone={t.faint}>Archived</Tag>}
                 </span>
-                <div style={{ display: "flex", gap: 4 }}>
-                  <Btn variant="outline" size="sm" icon="pencil" onClick={() => onEditChild(child)}>Edit</Btn>
-                  <Btn variant="outline" size="sm" icon="swap" onClick={() => onMoveChild(child)}>Move</Btn>
-                  {child.isArchived
-                    ? <Btn variant="outline" size="sm" icon="restore" onClick={() => onRestoreChild(child)}>Restore</Btn>
-                    : <Btn variant="outline" size="sm" icon="archive" onClick={() => onArchiveChild(child)}>Archive</Btn>}
-                  <Btn variant="danger" size="sm" icon="trash" onClick={() => onDeleteChild(child)}>Delete</Btn>
-                </div>
+                <ActionMenuButton items={[
+                  { label: "Edit", icon: "pencil", onSelect: () => onEditChild(child) },
+                  { label: "Move", icon: "swap", onSelect: () => onMoveChild(child) },
+                  child.isArchived
+                    ? { label: "Restore", icon: "restore", onSelect: () => onRestoreChild(child) }
+                    : { label: "Archive", icon: "archive", onSelect: () => onArchiveChild(child) },
+                  { label: "Delete", icon: "trash", danger: true, onSelect: () => onDeleteChild(child) },
+                ]} />
               </div>
             ))}
           </div>
@@ -577,6 +581,22 @@ function CategoryDetail({
         )}
       </div>
     </Card>
+  );
+}
+
+function ActionMenuButton({ items }: { items: ActionMenuItem[] }) {
+  const t = useTheme();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button ref={ref} className="sens-icon-btn" onClick={() => setOpen((o) => !o)}
+        title="Actions"
+        style={{ width: 30, height: 30, color: t.dim, borderRadius: 8 }}>
+        <Icon name="dots" size={18} />
+      </button>
+      {open && <ActionMenu items={items} anchorRef={ref} onClose={() => setOpen(false)} />}
+    </>
   );
 }
 
