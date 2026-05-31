@@ -243,20 +243,24 @@ pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>)
 }
 
 /// Bulk archive or restore. Reuses the per-id archive/restore so the top-level
-/// child cascade is applied to each.
+/// child cascade is applied to each. Wrapped in one transaction so a failure
+/// partway leaves nothing half-applied (all-or-nothing).
 pub fn set_categories_archived(conn: &Connection, ids: &[String], archived: bool) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
     for id in ids {
         if archived {
-            archive_category(conn, id)?;
+            archive_category(&tx, id)?;
         } else {
-            restore_category(conn, id)?;
+            restore_category(&tx, id)?;
         }
     }
+    tx.commit()?;
     Ok(())
 }
 
 /// Assign sort_order = index to each id. Caller (frontend) supplies one full
-/// sibling group (same parent + kind); we validate they are genuine siblings.
+/// sibling group (same parent + kind); we validate they are genuine siblings,
+/// then apply every update in a single transaction (all-or-nothing).
 pub fn reorder_categories(conn: &Connection, ids: &[String]) -> AppResult<()> {
     if ids.is_empty() {
         return Ok(());
@@ -268,7 +272,10 @@ pub fn reorder_categories(conn: &Connection, ids: &[String]) -> AppResult<()> {
             return Err(AppError::Validation("Can only reorder categories within one group".into()));
         }
     }
-    repo::reorder_categories(conn, ids, &now())
+    let tx = conn.unchecked_transaction()?;
+    repo::reorder_categories(&tx, ids, &now())?;
+    tx.commit()?;
+    Ok(())
 }
 
 // ── Transactions ─────────────────────────────────────────────────────────────

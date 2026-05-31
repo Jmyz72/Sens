@@ -229,6 +229,7 @@ export function Categories() {
   const [addingSubTo, setAddingSubTo] = useState<Category | null>(null);
   const [editing, setEditing] = useState<Category | null>(null);
   const [moving, setMoving] = useState<Category | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<Category | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -294,12 +295,22 @@ export function Categories() {
     setEditing(null);
   }
 
-  async function commitReorder(siblings: Category[], fromId: string, toId: string) {
-    const ids = siblings.map((c) => c.id);
-    const from = ids.indexOf(fromId);
-    const to = ids.indexOf(toId);
-    if (from < 0 || to < 0 || from === to) return;
-    const next = reorderIds(ids, from, to);
+  // Persist a drag-reorder. We rebuild the *full* sibling group (same kind +
+  // parent, archived rows included) from `all` so sort_order stays a clean
+  // 0..n with no collisions even when archived rows are hidden from the drag.
+  async function commitReorder(fromId: string, toId: string) {
+    if (fromId === toId) return;
+    const from = all.find((c) => c.id === fromId);
+    const to = all.find((c) => c.id === toId);
+    if (!from || !to) return;
+    const sameGroup =
+      from.kind === to.kind && (from.parentId ?? null) === (to.parentId ?? null);
+    if (!sameGroup) return; // a stray cross-group drop is a no-op
+    const ids = all
+      .filter((c) => c.kind === from.kind && (c.parentId ?? null) === (from.parentId ?? null))
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((c) => c.id);
+    const next = reorderIds(ids, ids.indexOf(fromId), ids.indexOf(toId));
     try { await client.reorderCategories(next); await reload(); }
     catch (e) { notify((e as { message?: string })?.message ?? "Failed to reorder", "error"); }
   }
@@ -366,7 +377,7 @@ export function Categories() {
                       onDrop={(e) => {
                         e.preventDefault();
                         const fromId = e.dataTransfer.getData("text/plain");
-                        if (fromId) commitReorder(nodes.map((n) => n.category), fromId, c.id);
+                        if (fromId) commitReorder(fromId, c.id);
                       }}
                       style={{
                         width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "8px 16px",
@@ -407,9 +418,9 @@ export function Categories() {
             onEditChild={(child) => setEditing(child)}
             onArchiveChild={(child) => archive(child)}
             onRestoreChild={(child) => restore(child)}
-            onDelete={() => del(selectedNode.category)}
-            onDeleteChild={(child) => del(child)}
-            onReorderChildren={(fromId, toId) => commitReorder(selectedNode.children, fromId, toId)}
+            onDelete={() => setConfirmingDelete(selectedNode.category)}
+            onDeleteChild={(child) => setConfirmingDelete(child)}
+            onReorderChildren={(fromId, toId) => commitReorder(fromId, toId)}
             onMove={() => setMoving(selectedNode.category)}
             onMoveChild={(child) => setMoving(child)}
           />
@@ -430,6 +441,26 @@ export function Categories() {
       )}
       {moving && (
         <MoveCategoryModal category={moving} all={all} onClose={() => setMoving(null)} onDone={() => { setMoving(null); reload(); }} />
+      )}
+      {confirmingDelete && (
+        <Modal onClose={() => setConfirmingDelete(null)} width={360}>
+          <div style={{ padding: "16px 20px", borderBottom: `0.5px solid ${t.divider}`, fontSize: 15, fontWeight: 700 }}>
+            Delete "{confirmingDelete.name}"?
+          </div>
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ fontSize: 12.5, color: t.dim, lineHeight: 1.5 }}>
+              This permanently removes the category. It can't be undone. A category still used by
+              transactions can't be deleted — archive it instead.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Btn variant="outline" size="md" onClick={() => setConfirmingDelete(null)}>Cancel</Btn>
+              <Btn variant="danger" size="md" icon="trash"
+                onClick={async () => { const c = confirmingDelete; setConfirmingDelete(null); await del(c); }}>
+                Delete
+              </Btn>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
