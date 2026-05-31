@@ -13,7 +13,7 @@ import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { useAppData } from "../store";
 import { useToast } from "../components/Toast";
-import { categoryTree, type CategoryNode } from "../lib/categories";
+import { categoryTree, reorderIds, type CategoryNode } from "../lib/categories";
 
 // ── Preset colour palette (data constant, acceptable hardcoded hex) ─────────
 
@@ -221,6 +221,18 @@ export function Categories() {
     setEditing(null);
   }
 
+  const [dragId, setDragId] = useState<string | null>(null);
+
+  async function commitReorder(siblings: Category[], fromId: string, toId: string) {
+    const ids = siblings.map((c) => c.id);
+    const from = ids.indexOf(fromId);
+    const to = ids.indexOf(toId);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = reorderIds(ids, from, to);
+    try { await client.reorderCategories(next); await reload(); }
+    catch (e) { notify((e as { message?: string })?.message ?? "Failed to reorder", "error"); }
+  }
+
   const activeCount = all.filter((c) => !c.isArchived).length;
   const hasArchived = all.some((c) => c.isArchived);
 
@@ -262,6 +274,10 @@ export function Categories() {
                   const on = c.id === selectedId;
                   return (
                     <button key={c.id} className="sens-row" onClick={() => setSelectedId(c.id)}
+                      draggable
+                      onDragStart={() => setDragId(c.id)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => { if (dragId) commitReorder(nodes.map((n) => n.category), dragId, c.id); setDragId(null); }}
                       style={{
                         width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "8px 16px",
                         background: on ? t.panel2 : "transparent", border: "none", cursor: "pointer",
@@ -298,6 +314,7 @@ export function Categories() {
             onRestoreChild={(child) => restore(child)}
             onDelete={() => del(selectedNode.category)}
             onDeleteChild={(child) => del(child)}
+            onReorderChildren={(fromId, toId) => commitReorder(selectedNode.children, fromId, toId)}
           />
         ) : (
           <Card><Empty icon="filter" title="No categories yet" hint="Create one with the New button." /></Card>
@@ -321,7 +338,7 @@ export function Categories() {
 // ── Detail pane ──────────────────────────────────────────────────────────────
 
 function CategoryDetail({
-  node, onEdit, onArchive, onRestore, onAddSub, onEditChild, onArchiveChild, onRestoreChild, onDelete, onDeleteChild,
+  node, onEdit, onArchive, onRestore, onAddSub, onEditChild, onArchiveChild, onRestoreChild, onDelete, onDeleteChild, onReorderChildren,
 }: {
   node: CategoryNode;
   onEdit: () => void;
@@ -333,9 +350,11 @@ function CategoryDetail({
   onRestoreChild: (c: Category) => void;
   onDelete: () => void;
   onDeleteChild: (c: Category) => void;
+  onReorderChildren: (fromId: string, toId: string) => void;
 }) {
   const t = useTheme();
   const c = node.category;
+  const [dragChild, setDragChild] = useState<string | null>(null);
 
   return (
     <Card pad={0} style={{ overflow: "hidden" }}>
@@ -375,6 +394,10 @@ function CategoryDetail({
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
             {node.children.map((child) => (
               <div key={child.id} className="sens-row"
+                draggable
+                onDragStart={() => setDragChild(child.id)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => { if (dragChild) onReorderChildren(dragChild, child.id); setDragChild(null); }}
                 style={{ display: "flex", alignItems: "center", gap: 11, padding: "8px 10px",
                   border: `0.5px solid ${t.border}`, borderRadius: 9, opacity: child.isArchived ? 0.55 : 1 }}>
                 <GlyphTile tone={child.color ?? t.accent} size={28} emoji={child.emoji} radius={8} />
