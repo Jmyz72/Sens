@@ -436,6 +436,18 @@ mod tests {
     }
 
     #[test]
+    fn seeds_subcategories_under_food() {
+        let c = open_in_memory().unwrap();
+        let all = service::list_categories(&c, Some("expense"), false).unwrap();
+        let food = all.iter().find(|x| x.name == "Food" && x.parent_id.is_none()).unwrap();
+        let coffee = all.iter().find(|x| x.name == "Coffee" && x.parent_id.as_deref() == Some(food.id.as_str()));
+        assert!(coffee.is_some(), "expected a seeded 'Coffee' subcategory under Food");
+        // New income top-level.
+        let inc = service::list_categories(&c, Some("income"), false).unwrap();
+        assert!(inc.iter().any(|x| x.name == "Investments" && x.parent_id.is_none()), "expected seeded 'Investments' income category");
+    }
+
+    #[test]
     fn account_with_unknown_subtype_still_lists() {
         // An account whose subtype isn't in the taxonomy (e.g. a future rename or
         // a direct DB edit) must stay visible via the LEFT JOIN + COALESCE fallback,

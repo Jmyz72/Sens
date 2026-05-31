@@ -10,6 +10,7 @@ use rusqlite::Connection;
 use std::path::Path;
 
 const FIRST_RUN_KEY: &str = "seeded";
+const DEFAULTS_V2_KEY: &str = "defaults_v2_seeded";
 
 /// Open the database, enforce foreign keys, run migrations, and seed once.
 pub fn open(path: &Path) -> AppResult<Connection> {
@@ -18,6 +19,7 @@ pub fn open(path: &Path) -> AppResult<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     run_migrations(&conn)?;
     seed_once(&conn)?;
+    backfill_defaults(&conn)?;
     Ok(conn)
 }
 
@@ -28,6 +30,7 @@ pub fn open_in_memory() -> AppResult<Connection> {
     conn.pragma_update(None, "foreign_keys", "ON")?;
     run_migrations(&conn)?;
     seed_once(&conn)?;
+    backfill_defaults(&conn)?;
     Ok(conn)
 }
 
@@ -79,6 +82,41 @@ fn seed_once(conn: &Connection) -> AppResult<()> {
         conn.execute(
             "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, '1', ?2)",
             rusqlite::params![FIRST_RUN_KEY, now],
+        )?;
+        Ok(())
+    })();
+    match res {
+        Ok(()) => conn.execute_batch("COMMIT")?,
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
+/// Backfill the richer default category tree for existing users. Gated by its
+/// own flag so it runs once; INSERT OR IGNORE means it never duplicates rows a
+/// fresh install already has, and never resurrects a default the user deleted
+/// after this has run.
+fn backfill_defaults(conn: &Connection) -> AppResult<()> {
+    let done: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM app_settings WHERE key = ?1)",
+            [DEFAULTS_V2_KEY],
+            |r| r.get(0),
+        )
+        .unwrap_or(false);
+    if done {
+        return Ok(());
+    }
+    let now = crate::now();
+    conn.execute_batch("BEGIN")?;
+    let res = (|| -> AppResult<()> {
+        seed::seed_categories(conn, &now)?;
+        conn.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, '1', ?2)",
+            rusqlite::params![DEFAULTS_V2_KEY, now],
         )?;
         Ok(())
     })();
