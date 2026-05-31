@@ -342,11 +342,15 @@ pub fn reorder_categories(conn: &Connection, ids: &[String], now: &str) -> AppRe
 }
 
 pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>, now: &str) -> AppResult<Category> {
-    conn.execute(
-        "UPDATE categories SET parent_id = ?2, updated_at = ?3 WHERE id = ?1",
-        params![id, parent_id, now],
-    )
-    .map_err(map_unique)?;
+    let n = conn
+        .execute(
+            "UPDATE categories SET parent_id = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, parent_id, now],
+        )
+        .map_err(map_unique)?;
+    if n == 0 {
+        return Err(AppError::NotFound("Category not found".into()));
+    }
     get_category(conn, id)
 }
 
