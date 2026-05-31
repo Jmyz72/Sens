@@ -3,7 +3,7 @@
 // count; selecting one shows it in the detail pane alongside an editable list
 // of its subcategories. Two-level hierarchy only (see the subcategories spec).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Category, CategoryKind } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
@@ -14,6 +14,7 @@ import { client } from "../client";
 import { useAppData } from "../store";
 import { useToast } from "../components/Toast";
 import { categoryTree, reorderIds, moveTargets, type CategoryNode } from "../lib/categories";
+import { EmojiPicker } from "../components/EmojiPicker";
 
 // ── Preset colour palette (data constant, acceptable hardcoded hex) ─────────
 
@@ -56,6 +57,8 @@ function CategoryForm({ initial, parent, defaultKind = "expense", onClose, onDon
   const [color, setColor] = useState<string | null>(initial?.color ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const emojiBtnRef = useRef<HTMLButtonElement>(null);
 
   const canSubmit = name.trim().length > 0 && emoji.trim().length > 0;
   const title = parent ? "New subcategory" : isEdit ? "Edit category" : "New category";
@@ -121,9 +124,16 @@ function CategoryForm({ initial, parent, defaultKind = "expense", onClose, onDon
 
         <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10 }}>
           <Field label="Emoji">
-            <input className="sens-input" value={emoji} maxLength={4}
-              onChange={(e) => setEmoji(e.target.value)} placeholder="😀"
-              style={{ ...inputStyle(t), textAlign: "center", fontSize: 20 }} />
+            <button ref={emojiBtnRef} type="button" className="sens-btn"
+              onClick={() => setPickerOpen((o) => !o)}
+              style={{ ...inputStyle(t), display: "flex", alignItems: "center",
+                justifyContent: "center", fontSize: 20, cursor: "pointer" }}>
+              {emoji || <span style={{ fontSize: 13, color: t.faint }}>Pick</span>}
+            </button>
+            {pickerOpen && (
+              <EmojiPicker value={emoji} anchorRef={emojiBtnRef}
+                onSelect={setEmoji} onClose={() => setPickerOpen(false)} />
+            )}
           </Field>
           <Field label="Name">
             <input className="sens-input" value={name} onChange={(e) => setName(e.target.value)}
@@ -406,8 +416,13 @@ export function Categories() {
         </Card>
       </div>
 
-      {/* DETAIL PANE */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* DETAIL PANE — sticky so it follows the screen as the left list scrolls.
+          Capped to the viewport with its own scroll so a long subcategory list
+          can never run off-screen. SHELL_OFFSET ≈ TopBar + scroller padding. */}
+      <div style={{
+        flex: 1, minWidth: 0, position: "sticky", top: 0,
+        maxHeight: "calc(100vh - 104px)", overflow: "auto",
+      }}>
         {selectedNode ? (
           <CategoryDetail
             node={selectedNode}
@@ -490,8 +505,10 @@ function CategoryDetail({
 
   return (
     <Card pad={0} style={{ overflow: "hidden" }}>
-      {/* Hero */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: 18, borderBottom: `0.5px solid ${t.divider}` }}>
+      {/* Hero — pinned to the top of the scrolling pane */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: 18,
+        borderBottom: `0.5px solid ${t.divider}`, position: "sticky", top: 0,
+        background: t.panel, zIndex: 2 }}>
         <GlyphTile tone={c.color ?? t.accent} size={48} emoji={c.emoji} radius={12} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

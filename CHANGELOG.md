@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Searchable emoji picker** for categories: a popover over the full Unicode
+  catalog with keyword search, recent, and finance-suggested rows, replacing the
+  plain emoji text field.
+
+### Changed
+- Categories: the subcategories pane now stays on-screen (sticky, with its own
+  internal scroll and a pinned header) while the category list scrolls, so it no
+  longer disappears off the bottom on long lists.
+
 ## [0.4.2] — 2026-05-31
 
 ### Fixed
