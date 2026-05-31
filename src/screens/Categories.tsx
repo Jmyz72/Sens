@@ -229,6 +229,28 @@ export function Categories() {
   const [addingSubTo, setAddingSubTo] = useState<Category | null>(null);
   const [editing, setEditing] = useState<Category | null>(null);
   const [moving, setMoving] = useState<Category | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkArchive(archived: boolean) {
+    if (selected.size === 0) return;
+    try {
+      await client.setCategoriesArchived([...selected], archived);
+      setSelected(new Set());
+      setSelectMode(false);
+      await reload();
+    } catch (e) {
+      notify((e as { message?: string })?.message ?? "Bulk action failed", "error");
+    }
+  }
 
   useEffect(() => {
     client.listCategories(undefined, true).then(setAll).catch(() => {});
@@ -295,12 +317,27 @@ export function Categories() {
               <div style={{ fontSize: 13.5, fontWeight: 500, color: t.text }}>{activeCount} active</div>
               <div style={{ fontSize: 12, color: t.faint, marginTop: 2 }}>Categories &amp; subcategories</div>
             </div>
-            <Btn variant="primary" icon="plus" size="md" onClick={() => setCreating("expense")}>New</Btn>
+            <div style={{ display: "flex", gap: 6 }}>
+              <Btn variant="outline" size="md" onClick={() => { setSelectMode((s) => !s); setSelected(new Set()); }}>
+                {selectMode ? "Done" : "Select"}
+              </Btn>
+              <Btn variant="primary" icon="plus" size="md" onClick={() => setCreating("expense")}>New</Btn>
+            </div>
           </div>
           {hasArchived && (
             <div style={{ marginTop: 10 }}>
               <Btn variant="outline" size="sm" onClick={() => setShowArchived((s) => !s)}>
                 {showArchived ? "Hide archived" : "Show archived"}
+              </Btn>
+            </div>
+          )}
+          {selectMode && (
+            <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+              <Btn variant="outline" size="sm" icon="archive" disabled={selected.size === 0} onClick={() => bulkArchive(true)}>
+                Archive ({selected.size})
+              </Btn>
+              <Btn variant="outline" size="sm" icon="restore" disabled={selected.size === 0} onClick={() => bulkArchive(false)}>
+                Restore
               </Btn>
             </div>
           )}
@@ -322,7 +359,7 @@ export function Categories() {
                   const c = node.category;
                   const on = c.id === selectedId;
                   return (
-                    <button key={c.id} className="sens-row" onClick={() => setSelectedId(c.id)}
+                    <button key={c.id} className="sens-row" onClick={() => selectMode ? toggleSelected(c.id) : setSelectedId(c.id)}
                       draggable
                       onDragStart={(e) => e.dataTransfer.setData("text/plain", c.id)}
                       onDragOver={(e) => e.preventDefault()}
@@ -337,6 +374,11 @@ export function Categories() {
                         opacity: c.isArchived ? 0.55 : 1, textAlign: "left",
                         borderLeft: `2px solid ${on ? (c.color ?? t.accent) : "transparent"}`,
                       }}>
+                      {selectMode && (
+                        <span style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${selected.has(c.id) ? t.accent : t.border}`, background: selected.has(c.id) ? t.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {selected.has(c.id) && <Icon name="check" size={11} color={t.onAccent} />}
+                        </span>
+                      )}
                       <GlyphTile tone={c.color ?? t.accent} size={28} emoji={c.emoji} radius={8} />
                       <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: on ? 650 : 550, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {c.name}
