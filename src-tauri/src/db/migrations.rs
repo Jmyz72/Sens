@@ -3,7 +3,60 @@
 //! CHECK constraints, and indexes per the design spec's Database Design.
 
 /// Ordered list of `(version, sql)`. Append-only — never edit a shipped one.
-pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004)];
+pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005)];
+
+// v0.5.0 — non-cashflow transactions. Opening balance becomes a structural
+// `opening` transaction (one per account) and income/expense gain an
+// `excluded_from_reporting` flag. Data-preserving: every existing account's
+// opening balance is backfilled as an `opening` row before the column is
+// dropped, so older databases upgrade automatically with no data loss.
+//
+// The `transactions` table must be REBUILT (a table-level CHECK can't be
+// altered in place) to add the `opening` kind + the new column. This is FK-safe
+// because nothing references `transactions`. Order matters: rebuild first (so
+// `opening` rows are legal), THEN backfill, THEN drop the now-redundant column.
+const MIGRATION_005: &str = r#"
+CREATE TABLE transactions_new (
+  id               TEXT PRIMARY KEY,
+  kind             TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'transfer', 'adjustment', 'opening')),
+  account_id       TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  to_account_id    TEXT REFERENCES accounts(id) ON DELETE RESTRICT,
+  category_id      TEXT REFERENCES categories(id) ON DELETE RESTRICT,
+  amount_cents     INTEGER NOT NULL,
+  description      TEXT,
+  transaction_date TEXT NOT NULL,
+  excluded_from_reporting INTEGER NOT NULL DEFAULT 0 CHECK (excluded_from_reporting IN (0, 1)),
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL,
+  CHECK (
+    (kind IN ('income', 'expense') AND amount_cents > 0  AND to_account_id IS NULL     AND category_id IS NOT NULL) OR
+    (kind = 'transfer'   AND amount_cents > 0  AND to_account_id IS NOT NULL AND to_account_id <> account_id AND category_id IS NULL AND excluded_from_reporting = 0) OR
+    (kind = 'adjustment' AND amount_cents <> 0 AND to_account_id IS NULL     AND category_id IS NULL          AND excluded_from_reporting = 0) OR
+    (kind = 'opening'    AND                       to_account_id IS NULL     AND category_id IS NULL          AND excluded_from_reporting = 0)
+  )
+);
+
+INSERT INTO transactions_new
+  (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, created_at, updated_at)
+  SELECT id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, 0, created_at, updated_at
+  FROM transactions;
+
+DROP TABLE transactions;
+ALTER TABLE transactions_new RENAME TO transactions;
+
+CREATE INDEX idx_tx_date ON transactions(transaction_date);
+CREATE INDEX idx_tx_account ON transactions(account_id);
+CREATE INDEX idx_tx_to_account ON transactions(to_account_id);
+CREATE INDEX idx_tx_category ON transactions(category_id);
+CREATE INDEX idx_tx_kind ON transactions(kind);
+
+INSERT INTO transactions
+  (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, created_at, updated_at)
+  SELECT 'opening-' || id, 'opening', id, NULL, NULL, opening_balance_cents, 'Opening balance', substr(created_at, 1, 10), 0, created_at, updated_at
+  FROM accounts;
+
+ALTER TABLE accounts DROP COLUMN opening_balance_cents;
+"#;
 
 const MIGRATION_004: &str = r#"
 ALTER TABLE categories DROP COLUMN is_system;

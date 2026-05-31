@@ -53,7 +53,24 @@ pub fn create_account(
     if let Some(key) = template_key {
         repo::get_template(conn, key)?; // existence (NotFound if bogus)
     }
-    repo::insert_account(conn, &new_id(), template_key, &name, &subtype, opening_balance_cents, &now())
+    let account_id = new_id();
+    let tx = conn.unchecked_transaction()?;
+    repo::insert_account(&tx, &account_id, template_key, &name, &subtype, &now())?;
+    repo::insert_transaction(
+        &tx,
+        &new_id(),
+        KIND_OPENING,
+        &account_id,
+        None,
+        None,
+        opening_balance_cents,
+        Some("Opening balance"),
+        &crate::today(),
+        false,
+        &now(),
+    )?;
+    tx.commit()?;
+    repo::get_account(conn, &account_id)
 }
 
 pub fn list_accounts(conn: &Connection, include_archived: bool) -> AppResult<Vec<Account>> {
@@ -97,8 +114,9 @@ pub fn set_account_balance(conn: &Connection, account_id: &str, real_balance_cen
     if acc.is_archived {
         return Err(AppError::Conflict("Cannot reconcile an archived account".into()));
     }
-    if !repo::account_has_transactions(conn, account_id)? {
-        return repo::update_account_fields(conn, account_id, None, None, Some(real_balance_cents), &now());
+    if !repo::account_has_nonopening_activity(conn, account_id)? {
+        // Only the opening row exists — edit it so the balance equals the target.
+        return repo::set_opening_amount(conn, account_id, real_balance_cents, &now());
     }
     let diff = real_balance_cents - acc.balance_cents;
     if diff == 0 {
@@ -115,6 +133,7 @@ pub fn set_account_balance(conn: &Connection, account_id: &str, real_balance_cen
         diff,
         Some("Balance adjustment"),
         &today,
+        false,
         &now(),
     )?;
     repo::get_account(conn, account_id)
@@ -299,18 +318,18 @@ fn validate_positive(amount_cents: i64) -> AppResult<()> {
     Ok(())
 }
 
-pub fn create_income(conn: &Connection, account_id: &str, category_id: &str, amount_cents: i64, description: Option<&str>, date: &str) -> AppResult<Transaction> {
+pub fn create_income(conn: &Connection, account_id: &str, category_id: &str, amount_cents: i64, description: Option<&str>, date: &str, excluded_from_reporting: bool) -> AppResult<Transaction> {
     validate_positive(amount_cents)?;
     ensure_active_account(conn, account_id, "selected")?;
     validate_category_for(conn, category_id, KIND_INCOME)?;
-    repo::insert_transaction(conn, &new_id(), KIND_INCOME, account_id, None, Some(category_id), amount_cents, description, date, &now())
+    repo::insert_transaction(conn, &new_id(), KIND_INCOME, account_id, None, Some(category_id), amount_cents, description, date, excluded_from_reporting, &now())
 }
 
-pub fn create_expense(conn: &Connection, account_id: &str, category_id: &str, amount_cents: i64, description: Option<&str>, date: &str) -> AppResult<Transaction> {
+pub fn create_expense(conn: &Connection, account_id: &str, category_id: &str, amount_cents: i64, description: Option<&str>, date: &str, excluded_from_reporting: bool) -> AppResult<Transaction> {
     validate_positive(amount_cents)?;
     ensure_active_account(conn, account_id, "selected")?;
     validate_category_for(conn, category_id, KIND_EXPENSE)?;
-    repo::insert_transaction(conn, &new_id(), KIND_EXPENSE, account_id, None, Some(category_id), amount_cents, description, date, &now())
+    repo::insert_transaction(conn, &new_id(), KIND_EXPENSE, account_id, None, Some(category_id), amount_cents, description, date, excluded_from_reporting, &now())
 }
 
 pub fn create_transfer(conn: &Connection, from_account_id: &str, to_account_id: &str, amount_cents: i64, description: Option<&str>, date: &str) -> AppResult<Transaction> {
@@ -320,7 +339,7 @@ pub fn create_transfer(conn: &Connection, from_account_id: &str, to_account_id: 
     }
     ensure_active_account(conn, from_account_id, "source")?;
     ensure_active_account(conn, to_account_id, "destination")?;
-    repo::insert_transaction(conn, &new_id(), KIND_TRANSFER, from_account_id, Some(to_account_id), None, amount_cents, description, date, &now())
+    repo::insert_transaction(conn, &new_id(), KIND_TRANSFER, from_account_id, Some(to_account_id), None, amount_cents, description, date, false, &now())
 }
 
 pub fn list_transactions(conn: &Connection, filters: TransactionFilters) -> AppResult<Vec<Transaction>> {
@@ -331,6 +350,9 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
     let existing = repo::get_transaction(conn, &input.id)?;
     // Adjustments are not editable through the normal form and kind cannot be
     // changed into or out of 'adjustment'.
+    if existing.kind == KIND_OPENING || input.kind == KIND_OPENING {
+        return Err(AppError::Validation("The opening balance can't be edited here; change it from the account's opening balance field".into()));
+    }
     if existing.kind == KIND_ADJUSTMENT || input.kind == KIND_ADJUSTMENT {
         return Err(AppError::Validation("Adjustments cannot be edited; delete it and reconcile again".into()));
     }
@@ -360,6 +382,8 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
         other => return Err(AppError::Validation(format!("Invalid transaction kind: {other}"))),
     };
 
+    let excluded = matches!(input.kind.as_str(), KIND_INCOME | KIND_EXPENSE) && input.excluded_from_reporting;
+
     repo::update_transaction_row(
         conn,
         &input.id,
@@ -370,11 +394,16 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
         input.amount_cents,
         input.description.as_deref(),
         &input.transaction_date,
+        excluded,
         &now(),
     )
 }
 
 pub fn delete_transaction(conn: &Connection, id: &str) -> AppResult<()> {
+    let existing = repo::get_transaction(conn, id)?;
+    if existing.kind == KIND_OPENING {
+        return Err(AppError::Validation("The opening balance can't be deleted".into()));
+    }
     repo::delete_transaction(conn, id)
 }
 

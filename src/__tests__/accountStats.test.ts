@@ -17,7 +17,8 @@ function tx(kind: TransactionKind, accountId: string, amountCents: number, date:
   seq += 1;
   return {
     id: `t${seq}`, kind, accountId, toAccountId, categoryId: null, amountCents,
-    description: null, transactionDate: date, createdAt: `${date}T00:00:0${seq % 10}`, updatedAt: `${date}T00:00:00`,
+    description: null, transactionDate: date, excludedFromReporting: false,
+    createdAt: `${date}T00:00:0${seq % 10}`, updatedAt: `${date}T00:00:00`,
   };
 }
 
@@ -51,6 +52,19 @@ describe("computeAccountStats (own account)", () => {
   });
   it("averages monthly outflow over active months", () => {
     expect(s.avgMonthlyOutCents).toBe(2000); // one active month
+  });
+});
+
+describe("computeAccountStats (opening row not double-counted)", () => {
+  it("does not double-count the opening transaction (already in openingBalanceCents)", () => {
+    const a = acct({ id: "o1", openingBalanceCents: 10000 });
+    const all = [
+      tx("opening", "o1", 10000, "2026-01-01"),
+      tx("income", "o1", 5000, "2026-05-10"),
+    ];
+    const s = computeAccountStats(a, all, "2026-05-30");
+    expect(s.currentBalanceCents).toBe(15000); // not 25000
+    expect(s.txnCount).toBe(1); // opening isn't counted as activity
   });
 });
 

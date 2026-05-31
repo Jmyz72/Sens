@@ -14,7 +14,7 @@ import { fmtDate, dateGroupLabel } from "../lib/format";
 import { KIND_META, kindColor, signedFor } from "../lib/kinds";
 import { AddTransaction } from "../modals/AddTransaction";
 
-const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "adjustment"];
+const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "adjustment", "opening"];
 
 export function Transactions({ initialAccountId }: { initialAccountId?: string | null }) {
   const t = useTheme();

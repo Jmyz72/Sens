@@ -218,13 +218,13 @@ mod migration_tests {
         // exercises the WHEN account_type IN ('bank','digital_bank') THEN 'savings'
         // remap branch in migration 002.
         conn.execute_batch(
-            "INSERT INTO accounts (id,template_key,name,account_type,subtype,opening_balance_cents,currency,is_archived,created_at,updated_at) VALUES
-               ('1',NULL,'Bank','bank','savings',0,'MYR',0,'t','t'),
-               ('2',NULL,'BNPL','bnpl','bnpl',0,'MYR',0,'t','t'),
-               ('3',NULL,'Wallet','ewallet','ewallet',0,'MYR',0,'t','t'),
-               ('4',NULL,'Inv','investment','investment',0,'MYR',0,'t','t'),
-               ('5',NULL,'Weird','custom','totally-custom',0,'MYR',0,'t','t'),
-               ('6',NULL,'OldDigital','digital_bank','legacy-thing',0,'MYR',0,'t','t');",
+            "INSERT INTO accounts (id,template_key,name,account_type,subtype,currency,is_archived,created_at,updated_at) VALUES
+               ('1',NULL,'Bank','bank','savings','MYR',0,'t','t'),
+               ('2',NULL,'BNPL','bnpl','bnpl','MYR',0,'t','t'),
+               ('3',NULL,'Wallet','ewallet','ewallet','MYR',0,'t','t'),
+               ('4',NULL,'Inv','investment','investment','MYR',0,'t','t'),
+               ('5',NULL,'Weird','custom','totally-custom','MYR',0,'t','t'),
+               ('6',NULL,'OldDigital','digital_bank','legacy-thing','MYR',0,'t','t');",
         )
         .unwrap();
         // Apply v1.1.
@@ -269,6 +269,72 @@ mod migration_tests {
         assert_eq!(idx("idx_categories_top_kind_name"), 1, "top-level partial index");
         assert_eq!(idx("idx_categories_sub_parent_name"), 1, "sibling partial index");
         assert_eq!(idx("idx_categories_kind_name"), 0, "old global index should be dropped");
+    }
+
+    #[test]
+    fn migration_005_upgrades_old_db_without_data_loss() {
+        // Simulate an existing pre-v0.5.0 database: apply 001–004 with the same
+        // foreign-keys-ON + per-migration-transaction discipline as the real
+        // runner, seed old-shape data, then apply 005 and verify the opening
+        // balance is preserved as a transaction and the column is gone.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        let apply = |sql: &str| {
+            conn.execute_batch("BEGIN").unwrap();
+            conn.execute_batch(sql).unwrap();
+            conn.execute_batch("COMMIT").unwrap();
+        };
+        for i in 0..4 {
+            apply(MIGRATIONS[i].1); // 001–004
+        }
+
+        // Old-shape rows: an account with a non-zero opening balance and a real
+        // transaction (an adjustment needs no category FK).
+        apply(
+            "INSERT INTO accounts (id, template_key, name, subtype, opening_balance_cents, currency, is_archived, created_at, updated_at)
+               VALUES ('a1', NULL, 'Bank', 'savings', 5000, 'MYR', 0, '2026-03-01T00:00:00+00:00', '2026-03-01T00:00:00+00:00');
+             INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, created_at, updated_at)
+               VALUES ('t1', 'adjustment', 'a1', NULL, NULL, 1000, 'Adj', '2026-04-01', '2026-04-01T00:00:00+00:00', '2026-04-01T00:00:00+00:00');",
+        );
+
+        // Upgrade.
+        apply(MIGRATIONS[4].1); // 005
+
+        // The opening balance became exactly one 'opening' transaction, dated the
+        // account's creation day, carrying the old column value.
+        let open_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions WHERE account_id='a1' AND kind='opening'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(open_count, 1, "exactly one opening row backfilled");
+        let (amt, date): (i64, String) = conn
+            .query_row(
+                "SELECT amount_cents, transaction_date FROM transactions WHERE account_id='a1' AND kind='opening'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(amt, 5000, "opening amount preserved");
+        assert_eq!(date, "2026-03-01", "opening dated the account's creation day");
+
+        // The pre-existing transaction survived and gained the new flag column.
+        let (desc, excluded): (String, i64) = conn
+            .query_row(
+                "SELECT description, excluded_from_reporting FROM transactions WHERE id='t1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(desc, "Adj", "existing transaction preserved");
+        assert_eq!(excluded, 0, "excluded_from_reporting defaults to 0");
+
+        // Balance reconciles to opening + history: 5000 + 1000 = 6000.
+        let total: i64 = conn
+            .query_row("SELECT COALESCE(SUM(amount_cents), 0) FROM transactions WHERE account_id='a1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(total, 6000);
+
+        // The redundant column is gone.
+        assert!(conn.prepare("SELECT opening_balance_cents FROM accounts").is_err());
     }
 
     #[test]

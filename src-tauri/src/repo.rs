@@ -9,8 +9,8 @@ use rusqlite::{params, Connection, Row};
 /// balance plus signed transaction history. `{a}` is the accounts-table alias.
 fn balance_expr(a: &str) -> String {
     format!(
-        "{a}.opening_balance_cents \
-         + COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='income'     AND account_id={a}.id),0) \
+        "COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='income'     AND account_id={a}.id),0) \
+         + COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='opening'    AND account_id={a}.id),0) \
          + COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='transfer'   AND to_account_id={a}.id),0) \
          + COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='adjustment' AND account_id={a}.id),0) \
          - COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='expense'    AND account_id={a}.id),0) \
@@ -119,21 +119,22 @@ pub fn insert_account(
     template_key: Option<&str>,
     name: &str,
     subtype: &str,
-    opening_balance_cents: i64,
     now: &str,
 ) -> AppResult<Account> {
     conn.execute(
         "INSERT INTO accounts
-           (id, template_key, name, subtype, opening_balance_cents, currency, is_archived, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 'MYR', 0, ?6, ?6)",
-        params![id, template_key, name, subtype, opening_balance_cents, now],
+           (id, template_key, name, subtype, currency, is_archived, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, 'MYR', 0, ?5, ?5)",
+        params![id, template_key, name, subtype, now],
     )?;
     get_account(conn, id)
 }
 
 pub fn get_account(conn: &Connection, id: &str) -> AppResult<Account> {
     let sql = format!(
-        "SELECT a.*, COALESCE(s.type, 'fund') AS account_type, COALESCE(s.account_group, 'own') AS \"group\", ({}) AS balance_cents \
+        "SELECT a.*, COALESCE(s.type, 'fund') AS account_type, COALESCE(s.account_group, 'own') AS \"group\", \
+         COALESCE((SELECT amount_cents FROM transactions WHERE account_id = a.id AND kind = 'opening' LIMIT 1), 0) AS opening_balance_cents, \
+         ({}) AS balance_cents \
          FROM accounts a LEFT JOIN account_subtypes s ON s.key = a.subtype WHERE a.id = ?1",
         balance_expr("a")
     );
@@ -146,7 +147,9 @@ pub fn get_account(conn: &Connection, id: &str) -> AppResult<Account> {
 
 pub fn list_accounts(conn: &Connection, include_archived: bool) -> AppResult<Vec<Account>> {
     let sql = format!(
-        "SELECT a.*, COALESCE(s.type, 'fund') AS account_type, COALESCE(s.account_group, 'own') AS \"group\", ({}) AS balance_cents \
+        "SELECT a.*, COALESCE(s.type, 'fund') AS account_type, COALESCE(s.account_group, 'own') AS \"group\", \
+         COALESCE((SELECT amount_cents FROM transactions WHERE account_id = a.id AND kind = 'opening' LIMIT 1), 0) AS opening_balance_cents, \
+         ({}) AS balance_cents \
          FROM accounts a LEFT JOIN account_subtypes s ON s.key = a.subtype {} ORDER BY a.created_at",
         balance_expr("a"),
         if include_archived { "" } else { "WHERE a.is_archived = 0" }
@@ -156,12 +159,23 @@ pub fn list_accounts(conn: &Connection, include_archived: bool) -> AppResult<Vec
     Ok(rows)
 }
 
-pub fn account_has_transactions(conn: &Connection, id: &str) -> AppResult<bool> {
+pub fn account_has_nonopening_activity(conn: &Connection, id: &str) -> AppResult<bool> {
     Ok(conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM transactions WHERE account_id = ?1 OR to_account_id = ?1)",
+        "SELECT EXISTS(SELECT 1 FROM transactions WHERE kind <> 'opening' AND (account_id = ?1 OR to_account_id = ?1))",
         [id],
         |r| r.get(0),
     )?)
+}
+
+pub fn set_opening_amount(conn: &Connection, account_id: &str, amount_cents: i64, now: &str) -> AppResult<Account> {
+    let n = conn.execute(
+        "UPDATE transactions SET amount_cents = ?2, updated_at = ?3 WHERE account_id = ?1 AND kind = 'opening'",
+        params![account_id, amount_cents, now],
+    )?;
+    if n == 0 {
+        return Err(AppError::NotFound("Opening transaction not found".into()));
+    }
+    get_account(conn, account_id)
 }
 
 pub fn update_account_fields(
@@ -179,7 +193,10 @@ pub fn update_account_fields(
         conn.execute("UPDATE accounts SET subtype = ?2, updated_at = ?3 WHERE id = ?1", params![id, s, now])?;
     }
     if let Some(o) = opening_balance_cents {
-        conn.execute("UPDATE accounts SET opening_balance_cents = ?2, updated_at = ?3 WHERE id = ?1", params![id, o, now])?;
+        conn.execute(
+            "UPDATE transactions SET amount_cents = ?2, updated_at = ?3 WHERE id = (SELECT id FROM transactions WHERE account_id = ?1 AND kind = 'opening' LIMIT 1)",
+            params![id, o, now],
+        )?;
     }
     get_account(conn, id)
 }
@@ -366,6 +383,7 @@ fn map_transaction(r: &Row) -> rusqlite::Result<Transaction> {
         amount_cents: r.get("amount_cents")?,
         description: r.get("description")?,
         transaction_date: r.get("transaction_date")?,
+        excluded_from_reporting: r.get::<_, i64>("excluded_from_reporting")? != 0,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
@@ -382,13 +400,14 @@ pub fn insert_transaction(
     amount_cents: i64,
     description: Option<&str>,
     transaction_date: &str,
+    excluded_from_reporting: bool,
     now: &str,
 ) -> AppResult<Transaction> {
     conn.execute(
         "INSERT INTO transactions
-           (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
-        params![id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, now],
+           (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+        params![id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting as i64, now],
     )
     .map_err(map_check)?;
     get_transaction(conn, id)
@@ -413,13 +432,14 @@ pub fn update_transaction_row(
     amount_cents: i64,
     description: Option<&str>,
     transaction_date: &str,
+    excluded_from_reporting: bool,
     now: &str,
 ) -> AppResult<Transaction> {
     let n = conn
         .execute(
             "UPDATE transactions SET kind=?2, account_id=?3, to_account_id=?4, category_id=?5,
-               amount_cents=?6, description=?7, transaction_date=?8, updated_at=?9 WHERE id=?1",
-            params![id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, now],
+               amount_cents=?6, description=?7, transaction_date=?8, excluded_from_reporting=?9, updated_at=?10 WHERE id=?1",
+            params![id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting as i64, now],
         )
         .map_err(map_check)?;
     if n == 0 {
@@ -480,7 +500,7 @@ pub fn list_transactions(conn: &Connection, f: &TransactionFilters) -> AppResult
 pub fn sum_kind_in_range(conn: &Connection, kind: &str, from: &str, to: &str) -> AppResult<i64> {
     Ok(conn.query_row(
         "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions
-         WHERE kind = ?1 AND transaction_date >= ?2 AND transaction_date < ?3",
+         WHERE kind = ?1 AND excluded_from_reporting = 0 AND transaction_date >= ?2 AND transaction_date < ?3",
         params![kind, from, to],
         |r| r.get(0),
     )?)
@@ -492,7 +512,7 @@ pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<
          FROM transactions t
          JOIN categories c  ON c.id = t.category_id
          JOIN categories pc ON pc.id = COALESCE(c.parent_id, c.id)
-         WHERE t.kind = 'expense' AND t.transaction_date >= ?1 AND t.transaction_date < ?2
+         WHERE t.kind = 'expense' AND t.excluded_from_reporting = 0 AND t.transaction_date >= ?1 AND t.transaction_date < ?2
          GROUP BY group_id ORDER BY total DESC",
     )?;
     let rows = stmt

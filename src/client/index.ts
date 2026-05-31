@@ -48,10 +48,10 @@ export const client = {
     dispatch<void>("set_categories_archived", { ids, archived }),
 
   // Transactions
-  createIncome: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string) =>
-    dispatch<Transaction>("create_income_transaction", { accountId, categoryId, amountCents, description, date }),
-  createExpense: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string) =>
-    dispatch<Transaction>("create_expense_transaction", { accountId, categoryId, amountCents, description, date }),
+  createIncome: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string, excludedFromReporting = false) =>
+    dispatch<Transaction>("create_income_transaction", { accountId, categoryId, amountCents, description, date, excludedFromReporting }),
+  createExpense: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string, excludedFromReporting = false) =>
+    dispatch<Transaction>("create_expense_transaction", { accountId, categoryId, amountCents, description, date, excludedFromReporting }),
   createTransfer: (fromAccountId: string, toAccountId: string, amountCents: number, description: string | null, date: string) =>
     dispatch<Transaction>("create_transfer_transaction", { fromAccountId, toAccountId, amountCents, description, date }),
   listTransactions: (filters?: TransactionFilters) =>

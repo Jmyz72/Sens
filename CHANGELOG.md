@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Opening balances are real transactions.** Every account now starts with a
+  dedicated **Opening balance** transaction, so its history fully reconciles to its
+  balance — no more "phantom" starting money that appears in the balance but nowhere
+  in the ledger. It's a structural row (one per account, can't be edited or deleted
+  here; change it from the account's opening-balance field).
+- **Money-movement flag on income/expense.** Mark an income or expense as **money
+  movement** to keep it out of your income/expense/cashflow/spending reports while it
+  still moves the account balance — for reimbursements and claims (money back, not new
+  income) or repaying someone (money out, not a new expense). The transactions log
+  shows an **Excluded** badge on these, and **Opening balance** is now a filterable
+  kind.
+
+### Changed
+- **Schema upgrade (automatic, non-destructive):** dropped the stored
+  `opening_balance_cents` column, added the `opening` transaction kind and an
+  `excluded_from_reporting` flag. Existing databases **upgrade automatically** on first
+  launch via migration 005 — every account's opening balance is backfilled as an
+  `opening` transaction before the column is dropped, so all accounts and transactions
+  are preserved with identical balances. No action required when upgrading from any
+  earlier version.
+
 ## [0.4.7] — 2026-05-31
 
 ### Added

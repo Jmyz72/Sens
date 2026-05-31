@@ -11,6 +11,7 @@ pub const KIND_INCOME: &str = "income";
 pub const KIND_EXPENSE: &str = "expense";
 pub const KIND_TRANSFER: &str = "transfer";
 pub const KIND_ADJUSTMENT: &str = "adjustment";
+pub const KIND_OPENING: &str = "opening";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +82,7 @@ pub struct Transaction {
     pub amount_cents: i64,
     pub description: Option<String>,
     pub transaction_date: String,
+    pub excluded_from_reporting: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -129,6 +131,8 @@ pub struct UpdateTransactionInput {
     pub amount_cents: i64,
     pub description: Option<String>,
     pub transaction_date: String,
+    #[serde(default)]
+    pub excluded_from_reporting: bool,
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────

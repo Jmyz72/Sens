@@ -23,6 +23,7 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
   const [kind, setKind] = useState<TransactionKind>(editing?.kind ?? "expense");
   const [amount, setAmount] = useState(editing ? (editing.amountCents / 100).toFixed(2) : "");
   const [desc, setDesc] = useState(editing?.description ?? "");
+  const [excluded, setExcluded] = useState(editing?.excludedFromReporting ?? false);
   const [date, setDate] = useState(editing?.transactionDate ?? todayISO());
   const [accountId, setAccountId] = useState(editing?.accountId ?? active[0]?.id ?? "");
   const [toAccountId, setToAccountId] = useState(editing?.toAccountId ?? active.find((a) => a.id !== accountId)?.id ?? "");
@@ -47,11 +48,12 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
           toAccountId: kind === "transfer" ? toAccountId : null,
           categoryId: kind === "transfer" ? null : effectiveCat,
           amountCents: cents, description: desc.trim() || null, transactionDate: date,
+          excludedFromReporting: kind === "transfer" ? false : excluded,
         });
       } else if (kind === "income") {
-        await client.createIncome(accountId, effectiveCat, cents, desc.trim() || null, date);
+        await client.createIncome(accountId, effectiveCat, cents, desc.trim() || null, date, excluded);
       } else if (kind === "expense") {
-        await client.createExpense(accountId, effectiveCat, cents, desc.trim() || null, date);
+        await client.createExpense(accountId, effectiveCat, cents, desc.trim() || null, date, excluded);
       } else {
         await client.createTransfer(accountId, toAccountId, cents, desc.trim() || null, date);
       }
@@ -137,6 +139,19 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
         <Field label="Date">
           <input className="sens-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle(t)} />
         </Field>
+
+        {kind !== "transfer" && (
+          <button type="button" onClick={() => setExcluded((v) => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 9, border: `0.5px solid ${t.border}`, background: excluded ? hexA(t.opening, 0.12) : t.panel2, cursor: "pointer", textAlign: "left" }}>
+            <span style={{ width: 18, height: 18, borderRadius: 5, display: "grid", placeItems: "center", background: excluded ? t.opening : "transparent", border: `1.5px solid ${excluded ? t.opening : t.faint}`, flexShrink: 0 }}>
+              {excluded && <Icon name="check" size={12} color="#fff" stroke={3} />}
+            </span>
+            <span style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>Money movement</div>
+              <div style={{ fontSize: 11, color: t.faint }}>Affects balances but excluded from income/expense reports</div>
+            </span>
+          </button>
+        )}
 
         {error && <div style={{ fontSize: 12.5, color: t.expense, background: hexA(t.expense, 0.1), padding: "8px 12px", borderRadius: 8 }}>{error}</div>}
 

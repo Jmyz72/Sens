@@ -118,50 +118,61 @@ const mkTx = (overrides: Partial<Transaction> & { id: string }): Transaction => 
   amountCents: 1000,
   description: null,
   transactionDate: "2026-01-01",
+  excludedFromReporting: false,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
   ...overrides,
 });
 
+// An `opening` row that sorts first and seeds the starting balance. The running
+// total now starts at 0, so the opening transaction carries the opening value.
+const mkOpening = (amountCents: number, accountId = "acc1"): Transaction =>
+  mkTx({
+    id: "open", kind: "opening", accountId, categoryId: null, amountCents,
+    description: "Opening balance", transactionDate: "2025-12-31",
+    createdAt: "2025-12-31T00:00:00Z", updatedAt: "2025-12-31T00:00:00Z",
+  });
+
 describe("computeRunningBalances", () => {
   it("empty transaction list returns empty map", () => {
-    const result = computeRunningBalances([], "acc1", 50000);
+    const result = computeRunningBalances([], "acc1");
     expect(result.size).toBe(0);
   });
 
   it("single income transaction: balance = opening + amount", () => {
     const tx = mkTx({ id: "t1", kind: "income", amountCents: 5000, accountId: "acc1" });
-    const result = computeRunningBalances([tx], "acc1", 10000);
+    const result = computeRunningBalances([mkOpening(10000), tx], "acc1");
+    expect(result.get("open")).toBe(10000);
     expect(result.get("t1")).toBe(15000);
   });
 
   it("single expense transaction: balance = opening - amount", () => {
     const tx = mkTx({ id: "t1", kind: "expense", amountCents: 3000, accountId: "acc1" });
-    const result = computeRunningBalances([tx], "acc1", 10000);
+    const result = computeRunningBalances([mkOpening(10000), tx], "acc1");
     expect(result.get("t1")).toBe(7000);
   });
 
   it("transfer as source: balance decreases", () => {
     const tx = mkTx({ id: "t1", kind: "transfer", amountCents: 2000, accountId: "acc1", toAccountId: "acc2" });
-    const result = computeRunningBalances([tx], "acc1", 10000);
+    const result = computeRunningBalances([mkOpening(10000), tx], "acc1");
     expect(result.get("t1")).toBe(8000);
   });
 
   it("transfer as destination: balance increases", () => {
     const tx = mkTx({ id: "t1", kind: "transfer", amountCents: 2000, accountId: "acc2", toAccountId: "acc1" });
-    const result = computeRunningBalances([tx], "acc1", 10000);
+    const result = computeRunningBalances([mkOpening(10000), tx], "acc1");
     expect(result.get("t1")).toBe(12000);
   });
 
   it("positive adjustment: balance increases", () => {
     const tx = mkTx({ id: "t1", kind: "adjustment", amountCents: 500, accountId: "acc1" });
-    const result = computeRunningBalances([tx], "acc1", 10000);
+    const result = computeRunningBalances([mkOpening(10000), tx], "acc1");
     expect(result.get("t1")).toBe(10500);
   });
 
   it("negative adjustment: balance decreases", () => {
     const tx = mkTx({ id: "t1", kind: "adjustment", amountCents: -500, accountId: "acc1" });
-    const result = computeRunningBalances([tx], "acc1", 10000);
+    const result = computeRunningBalances([mkOpening(10000), tx], "acc1");
     expect(result.get("t1")).toBe(9500);
   });
 
@@ -170,7 +181,7 @@ describe("computeRunningBalances", () => {
     const t3 = mkTx({ id: "t3", kind: "expense", amountCents: 300, transactionDate: "2026-01-03", createdAt: "2026-01-03T00:00:00Z" });
     const t1 = mkTx({ id: "t1", kind: "income", amountCents: 1000, transactionDate: "2026-01-01", createdAt: "2026-01-01T00:00:00Z" });
     const t2 = mkTx({ id: "t2", kind: "expense", amountCents: 200, transactionDate: "2026-01-02", createdAt: "2026-01-02T00:00:00Z" });
-    const result = computeRunningBalances([t3, t1, t2], "acc1", 0);
+    const result = computeRunningBalances([t3, t1, t2], "acc1");
     // After t1: 0 + 1000 = 1000
     expect(result.get("t1")).toBe(1000);
     // After t2: 1000 - 200 = 800
@@ -180,12 +191,39 @@ describe("computeRunningBalances", () => {
   });
 
   it("uses createdAt as stable tiebreaker when transactionDate is identical", () => {
+    const open = mkOpening(500);
     const t1 = mkTx({ id: "t1", kind: "income", amountCents: 1000, transactionDate: "2026-01-01", createdAt: "2026-01-01T08:00:00Z" });
     const t2 = mkTx({ id: "t2", kind: "expense", amountCents: 400, transactionDate: "2026-01-01", createdAt: "2026-01-01T10:00:00Z" });
-    const result = computeRunningBalances([t2, t1], "acc1", 500);
+    const result = computeRunningBalances([t2, t1, open], "acc1");
     // t1 first (earlier createdAt): 500 + 1000 = 1500
     expect(result.get("t1")).toBe(1500);
     // t2 second: 1500 - 400 = 1100
     expect(result.get("t2")).toBe(1100);
+  });
+});
+
+// ── opening kind ──────────────────────────────────────────────────────────────
+
+describe("opening kind", () => {
+  it("signedFor returns the opening amount as-is (already signed)", () => {
+    expect(signedFor("opening", 5000)).toBe(5000);
+    expect(signedFor("opening", -5000)).toBe(-5000);
+  });
+
+  it("computeRunningBalances starts at 0 with the opening row first", () => {
+    const mk = (over: Partial<Transaction>): Transaction => ({
+      id: "x", kind: "expense", accountId: "a", toAccountId: null, categoryId: "c",
+      amountCents: 0, description: null, transactionDate: "2026-05-01",
+      excludedFromReporting: false, createdAt: "1", updatedAt: "1", ...over,
+    });
+    const txns = [
+      mk({ id: "open", kind: "opening", categoryId: null, amountCents: 10000, transactionDate: "2026-05-01", createdAt: "1" }),
+      mk({ id: "inc", kind: "income", categoryId: "c", amountCents: 2500, transactionDate: "2026-05-02", createdAt: "2" }),
+      mk({ id: "exp", kind: "expense", categoryId: "c", amountCents: 500, transactionDate: "2026-05-03", createdAt: "3" }),
+    ];
+    const map = computeRunningBalances(txns, "a");
+    expect(map.get("open")).toBe(10000);
+    expect(map.get("inc")).toBe(12500);
+    expect(map.get("exp")).toBe(12000);
   });
 });
