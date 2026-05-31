@@ -157,6 +157,11 @@ pub fn set_setting(state: State<'_, DbState>, key: String, value: String) -> App
     with_conn!(state, c => service::set_setting(&c, &key, &value))
 }
 
+#[tauri::command]
+pub fn reset_app(state: State<'_, DbState>) -> AppResult<()> {
+    with_conn!(state, c => service::reset_app(&c))
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
