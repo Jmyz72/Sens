@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Delete categories**: any category or subcategory with no subcategories and no
+  transactions can now be permanently deleted; categories still referenced by
+  transactions can be archived instead.
+- **Reorder** top-level categories and subcategories by drag-and-drop.
+- **Move & convert** categories: move a subcategory to another parent, promote a
+  subcategory to top-level, or demote a childless top-level into a subcategory.
+- **Bulk archive/restore** multiple categories at once via a selection mode.
+- **Richer default categories**: a two-level starter tree (subcategories under Food,
+  Transport, Bills, Shopping, Health, Entertainment, Education, Travel, Salary,
+  Freelance, and a new Investments income category). Existing users are backfilled
+  these defaults once; any you delete won't come back.
+
 ### Changed
+- Categories are now fully user-managed: the `is_system` flag was removed, so every
+  category can be edited, archived, or deleted.
 - macOS release builds are now ad-hoc signed (`APPLE_SIGNING_IDENTITY: "-"`) so the
   bundle's resources are sealed. This replaces the misleading _"Sens is damaged and
   can't be opened"_ Gatekeeper error with the normal _"unidentified developer"_ prompt

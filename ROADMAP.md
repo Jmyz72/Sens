@@ -9,7 +9,7 @@ This file is the index; the specs and plans hold the detail.
 The project is **pre-1.0**. In `0.x`, the **minor** carries feature releases and the
 **patch** carries fixes/follow-ups. **`1.0.0` is reserved for feature-complete.**
 
-**Last shipped:** `v0.4.0` — Subcategories ·
+**Last shipped:** `v0.4.1` — Category management & richer defaults ·
 **Next:** `v0.5.0` — Credit & debt behavior ·
 **Later:** the climb to `v1.0.0`
 
@@ -27,12 +27,11 @@ Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
 | 🟢 `v0.3.0` | Accounts screen redesign + collapsible app shell, new brand mark |
 | 🟢 `v0.3.1` | Two-step New Account modal + provider logos |
 | 🟢 `v0.4.0` | Two-level subcategories + master–detail Categories screen |
+| 🟢 `v0.4.1` | Category management (delete, reorder, move/convert, bulk archive) + richer default tree; dropped the system-category flag — spec: `docs/superpowers/specs/2026-05-31-category-management-richer-defaults-design.md` |
 
 ## In progress
 
-_Nothing in flight — `v0.5.0` is next up. The `v0.4.0` subcategories work shipped;
-its design lives at
-`docs/superpowers/specs/2026-05-31-categories-subcategories-redesign-design.md`._
+_Nothing in flight — `v0.5.0` is next up. `v0.4.1` (category management & richer defaults) is a deliberately feature-weight patch — a tight follow-up to `v0.4.0` — with spec at `docs/superpowers/specs/2026-05-31-category-management-richer-defaults-design.md`. The `v0.4.0` subcategories work spec lives at `docs/superpowers/specs/2026-05-31-categories-subcategories-redesign-design.md`._
 
 ## Planned — the climb to 1.0
 
