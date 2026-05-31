@@ -55,6 +55,19 @@ describe("computeAccountStats (own account)", () => {
   });
 });
 
+describe("computeAccountStats (opening row not double-counted)", () => {
+  it("does not double-count the opening transaction (already in openingBalanceCents)", () => {
+    const a = acct({ id: "o1", openingBalanceCents: 10000 });
+    const all = [
+      tx("opening", "o1", 10000, "2026-01-01"),
+      tx("income", "o1", 5000, "2026-05-10"),
+    ];
+    const s = computeAccountStats(a, all, "2026-05-30");
+    expect(s.currentBalanceCents).toBe(15000); // not 25000
+    expect(s.txnCount).toBe(1); // opening isn't counted as activity
+  });
+});
+
 describe("computeAccountStats (owe account — debt shrinking is positive)", () => {
   const a = acct({ id: "d1", group: "owe", accountType: "credit", subtype: "credit-card", openingBalanceCents: -50000 });
   const s = computeAccountStats(a, [tx("adjustment", "d1", 10000, "2026-05-15")], "2026-05-30");

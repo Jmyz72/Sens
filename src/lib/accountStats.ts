@@ -27,9 +27,12 @@ export function txnDelta(tx: Transaction, accountId: string): number {
   return signedFor(tx.kind, tx.amountCents, tx.toAccountId === accountId);
 }
 
-/** Every transaction that touches an account (as source or destination). */
+/** Every NON-opening transaction that touches an account (as source or destination).
+ *  The `opening` row is excluded — its amount is already carried by the derived
+ *  `account.openingBalanceCents` that every accumulator here seeds from, so including
+ *  it would double-count. */
 export function accountTxns(all: Transaction[], accountId: string): Transaction[] {
-  return all.filter((tx) => tx.accountId === accountId || tx.toAccountId === accountId);
+  return all.filter((tx) => tx.kind !== "opening" && (tx.accountId === accountId || tx.toAccountId === accountId));
 }
 
 function sortByDate(txns: Transaction[]): Transaction[] {
@@ -80,7 +83,7 @@ export function periodFromDate(period: ChartPeriod, today: string): string {
  * `fromDate === ""` means "from the beginning". X-axis is index-based.
  */
 export function balanceSeries(account: Account, txns: Transaction[], fromDate: string, maxPoints = 48): number[] {
-  const sorted = sortByDate(txns);
+  const sorted = sortByDate(txns.filter((t) => t.kind !== "opening"));
   let bal = account.openingBalanceCents;
   const series: number[] = [];
   let seeded = false;
@@ -179,7 +182,7 @@ function netWorthSeries(active: Account[], allTxns: Transaction[], fromDate: str
   const total = () => { let s = 0; for (const v of bal.values()) s += v; return s; };
   const ids = new Set(active.map((a) => a.id));
   const events = sortByDate(
-    allTxns.filter((tx) => tx.transactionDate >= fromDate && (ids.has(tx.accountId) || (tx.toAccountId !== null && ids.has(tx.toAccountId)))),
+    allTxns.filter((tx) => tx.kind !== "opening" && tx.transactionDate >= fromDate && (ids.has(tx.accountId) || (tx.toAccountId !== null && ids.has(tx.toAccountId)))),
   );
   const series = [total()];
   for (const tx of events) {
