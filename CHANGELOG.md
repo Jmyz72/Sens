@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Categories: action menu** — per-category and per-subcategory actions are now
+  grouped in a "⋯" dropdown (`src/components/ActionMenu.tsx`). Delete is always
+  shown but disabled (with an explanatory tooltip) when a top-level category still
+  has subcategories.
+- **Settings: Reset app to defaults** — a "Danger zone" section lets you wipe all
+  accounts, transactions, and categories and restore the seeded defaults, guarded by
+  a type-`RESET`-to-confirm prompt.
+
+### Changed
+- Default category order: "Other Income" now sorts last in the Income group (applies
+  to fresh installs and after a reset).
+
 ## [0.4.4] — 2026-05-31
 
 ### Fixed
