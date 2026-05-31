@@ -358,7 +358,7 @@ function CategoryDetail({
             : <Btn variant="outline" size="sm" icon="archive" onClick={onArchive}>Archive</Btn>
           }
           {node.children.length === 0 && (
-            <Btn variant="outline" size="sm" icon="trash" onClick={onDelete}>Delete</Btn>
+            <Btn variant="danger" size="sm" icon="trash" onClick={onDelete}>Delete</Btn>
           )}
         </div>
       </div>
@@ -387,7 +387,7 @@ function CategoryDetail({
                   {child.isArchived
                     ? <Btn variant="outline" size="sm" icon="restore" onClick={() => onRestoreChild(child)}>Restore</Btn>
                     : <Btn variant="outline" size="sm" icon="archive" onClick={() => onArchiveChild(child)}>Archive</Btn>}
-                  <Btn variant="outline" size="sm" icon="trash" onClick={() => onDeleteChild(child)}>Delete</Btn>
+                  <Btn variant="danger" size="sm" icon="trash" onClick={() => onDeleteChild(child)}>Delete</Btn>
                 </div>
               </div>
             ))}
