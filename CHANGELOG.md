@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-05-31
+
 ### Added
 - **Searchable emoji picker** for categories: a popover over the full Unicode
   catalog with keyword search, recent, and finance-suggested rows, replacing the
