@@ -9,8 +9,8 @@ This file is the index; the specs and plans hold the detail.
 The project is **pre-1.0**. In `0.x`, the **minor** carries feature releases and the
 **patch** carries fixes/follow-ups. **`1.0.0` is reserved for feature-complete.**
 
-**Last shipped:** `v0.4.1` — Category management & richer defaults ·
-**Next:** `v0.5.0` — Credit & debt behavior ·
+**Last shipped:** `v0.4.6` — Richer Malaysia-focused default categories ·
+**Next:** `v0.5.0` — Non-cashflow transactions ·
 **Later:** the climb to `v1.0.0`
 
 Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
@@ -27,53 +27,76 @@ Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
 | 🟢 `v0.3.0` | Accounts screen redesign + collapsible app shell, new brand mark |
 | 🟢 `v0.3.1` | Two-step New Account modal + provider logos |
 | 🟢 `v0.4.0` | Two-level subcategories + master–detail Categories screen |
-| 🟢 `v0.4.1` | Category management (delete, reorder, move/convert, bulk archive) + richer default tree; dropped the system-category flag — spec: `docs/superpowers/specs/2026-05-31-category-management-richer-defaults-design.md` |
+| 🟢 `v0.4.1` | Category management (delete, reorder, move/convert, bulk archive); dropped the system-category flag — spec: `docs/superpowers/specs/2026-05-31-category-management-richer-defaults-design.md` |
+| 🟢 `v0.4.2` | Full-window-width layout fix across all screens |
+| 🟢 `v0.4.3` | Searchable emoji picker + sticky subcategories pane — spec: `docs/superpowers/specs/2026-06-01-categories-emoji-picker-sticky-pane-design.md` |
+| 🟢 `v0.4.4` | Desktop drag-to-reorder fix (`dragDropEnabled: false`) |
+| 🟢 `v0.4.5` | Categories action menu (⋯) + Settings → factory reset + default reorder — spec: `docs/superpowers/specs/2026-06-01-categories-action-menu-and-factory-reset-design.md` |
+| 🟢 `v0.4.6` | Richer Malaysia-focused default category tree (`defaults_v3_seeded` backfill); dropped the Investments income default |
 
 ## In progress
 
-_Nothing in flight — `v0.5.0` is next up. `v0.4.1` (category management & richer defaults) is a deliberately feature-weight patch — a tight follow-up to `v0.4.0` — with spec at `docs/superpowers/specs/2026-05-31-category-management-richer-defaults-design.md`. The `v0.4.0` subcategories work spec lives at `docs/superpowers/specs/2026-05-31-categories-subcategories-redesign-design.md`._
+_Nothing in flight — `v0.5.0` is next up. The `v0.4.x` line (`v0.4.1`–`v0.4.6`) was a deliberately feature-weight patch series of tight follow-ups to `v0.4.0`, all shipped: category management, the emoji picker & sticky pane, the action menu, factory reset, and the richer Malaysia-focused default tree. Key specs: category management at `docs/superpowers/specs/2026-05-31-category-management-richer-defaults-design.md`, the action menu & factory reset at `docs/superpowers/specs/2026-06-01-categories-action-menu-and-factory-reset-design.md`, and the `v0.4.0` subcategories work at `docs/superpowers/specs/2026-05-31-categories-subcategories-redesign-design.md`._
 
 ## Planned — the climb to 1.0
 
-### ⚪ v0.5.0 — Credit & debt behavior
+### ⚪ v0.5.0 — Non-cashflow transactions (excluded from income/expense)
+Let an income/expense transaction be flagged as **money movement, not real
+income/expense** — so it affects balances only and is excluded from the dashboard's
+income/expense/net-cashflow/spending-breakdown, the same way `transfer` and
+`adjustment` already are. This is the groundwork the **v0.6.0** credit & debt
+behavior leans on: a credit-card payment, loan repayment, or BNPL installment moves
+money and pays down a balance but is **not** a new expense; reimbursements/claims are
+money back, not new income.
+- [ ] mark an income/expense transaction as non-cashflow (excluded from reporting)
+- [ ] dashboard + spending breakdown honor the exclusion (extends the existing
+      transfer/adjustment exclusion in `repo.rs` / `mock.ts`)
+- [ ] credit-card payments and loan/BNPL repayments recorded as money movement
+      rather than income/expense
+- [ ] reimbursements & claims — money back that offsets an original expense (or is
+      excluded from income) rather than counting as new income
+— spec: _TBD_
+
+### ⚪ v0.6.0 — Credit & debt behavior
 Credit limits + utilization (credit-card, BNPL); installment/payoff schedules and
-interest for loans (personal-loan, mortgage, car-loan, borrowed).
+interest for loans (personal-loan, mortgage, car-loan, borrowed). Builds on the
+**v0.5.0** non-cashflow flag so repayments move money without polluting income/expense.
 - [ ] credit limit + utilization % + available credit
 - [ ] installment / payoff schedules
 - [ ] interest + principal-vs-interest split
 — spec: _TBD_
 
-### ⚪ v0.6.0 — Investment value
+### ⚪ v0.7.0 — Investment value
 Completes the deferred taxonomy work.
 - [ ] cost basis vs current value
 - [ ] unrealized gain/loss (investment, unit-trust, crypto)
 - [ ] fixed-deposit maturity
 — spec: _TBD_
 
-### ⚪ v0.7.0 — Budgets & goals
+### ⚪ v0.8.0 — Budgets & goals
 - [ ] monthly budget per category
 - [ ] budget-vs-actual + overspend warnings
 - [ ] savings goals (target amounts + progress)
 — spec: _TBD_
 
-### ⚪ v0.8.0 — Recurring & reminders
+### ⚪ v0.9.0 — Recurring & reminders
 - [ ] recurring/scheduled transactions
 - [ ] upcoming list + one-tap post
 - [ ] bill due-date reminders
 — spec: _TBD_
 
-### ⚪ v0.9.0 — Search, filter & tags
+### ⚪ v0.10.0 — Search, filter & tags
 - [ ] full transaction search
 - [ ] advanced filters (date / account / kind / amount)
 - [ ] free-form tags
 — spec: _TBD_
 
-### ⚪ v0.10.0 — Reports & insights
+### ⚪ v0.11.0 — Reports & insights
 - [ ] spending & cashflow trends/charts beyond the dashboard
 - [ ] net-worth history over time
 — spec: _TBD_
 
-### ⚪ v0.11.0 — Data integrity & ownership
+### ⚪ v0.12.0 — Data integrity & ownership
 - [ ] CSV import/export
 - [ ] full backup & restore
 - [ ] account reconciliation against a statement balance
@@ -139,7 +162,7 @@ App setup uses `.expect()` (`src-tauri/src/lib.rs`); a corrupt or unreachable
 app-data DB panics on launch with no user-facing message. Normal operation already
 surfaces `AppError` cleanly — only startup is exposed.
 - [ ] graceful startup error path with a recovery dialog
-- _Note:_ pairs naturally with backup/restore in **v0.11.0 — Data integrity &
+- _Note:_ pairs naturally with backup/restore in **v0.12.0 — Data integrity &
   ownership**.
 — spec: _TBD_
 

@@ -64,7 +64,7 @@ Each account stores a single classifier, **`subtype`** (16 of them: cash/ewallet
 - **Providers are branding only:** a template's `group_name` just organizes the provider picker and `default_subtype` is a *suggestion* — the template no longer determines type. Same provider (e.g. Maybank) can back a savings account *or* a credit card.
 - **Frontend:** display helpers `TYPE_LABEL` / `TYPE_ORDER` / `balanceDisplay` / `toneColor` live in `src/lib/accounts.ts`; the Accounts screen groups by type, AddAccount/EditAccount pick type → subtype.
 
-Per-subtype **behavior** (credit limits & utilization, installment/payoff schedules, interest, investment cost-vs-value) is **deferred** to later phases — v0.2.0 is classification + net worth only. See `ROADMAP.md` for the phase plan (these land in v0.5.0/v0.6.0).
+Per-subtype **behavior** (credit limits & utilization, installment/payoff schedules, interest, investment cost-vs-value) is **deferred** to later phases — v0.2.0 is classification + net worth only. See `ROADMAP.md` for the phase plan (credit & debt behavior in v0.6.0; investment cost-vs-value in v0.7.0).
 
 ### Frontend conventions
 - Theming: `src/theme/tokens.ts` defines semantic tokens for **dark (default) + light**; `ThemeProvider.tsx` injects base CSS and persists the mode to `localStorage`. **Never hardcode colors in components** — use `useTheme()` tokens. The only allowed raw hex is data constants (`src/lib/brand.ts` provider brand colors, category color palettes).
