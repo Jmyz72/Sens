@@ -82,6 +82,16 @@ describe("mock subcategories", () => {
       .rejects.toMatchObject({ code: "Conflict" });
   });
 
+  it("set_categories_archived archives many with cascade", async () => {
+    const food = await expenseParent(`Food-BA-${Math.random()}`);
+    const coffee = await mockInvoke<Category>("create_category", { name: "Coffee BA", kind: "expense", emoji: "☕", color: null, parentId: food.id });
+    const fun = await expenseParent(`Fun-BA-${Math.random()}`);
+    await mockInvoke("set_categories_archived", { ids: [food.id, fun.id], archived: true });
+    const all = await mockInvoke<Category[]>("list_categories", { kind: null, includeArchived: true });
+    expect(all.find((c) => c.id === coffee.id)!.isArchived).toBe(true);
+    expect(all.find((c) => c.id === fun.id)!.isArchived).toBe(true);
+  });
+
   it("dashboard rolls subcategory spend into the parent", async () => {
     const acc = await mockInvoke<{ id: string }>("create_account", { name: `Acc-${Math.random()}`, subtype: "cash", openingBalanceCents: 0, templateKey: null });
     const food = await expenseParent(`Food-${Math.random()}`);

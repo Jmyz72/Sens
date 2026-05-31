@@ -207,6 +207,19 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       });
       return undefined as T;
     }
+    case "set_categories_archived": {
+      const archiving = a.archived === true;
+      (a.ids as string[]).forEach((id) => {
+        const c = categories.find((x) => x.id === id);
+        if (!c) return;
+        c.isArchived = archiving;
+        c.updatedAt = now();
+        if (c.parentId == null) {
+          categories.forEach((x) => { if (x.parentId === c.id) { x.isArchived = archiving; x.updatedAt = now(); } });
+        }
+      });
+      return undefined as T;
+    }
     case "set_category_parent": {
       const cat = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
       const pid: string | null = a.parentId ?? null;

@@ -44,6 +44,8 @@ export const client = {
   reorderCategories: (ids: string[]) => dispatch<void>("reorder_categories", { ids }),
   setCategoryParent: (id: string, parentId: string | null) =>
     dispatch<Category>("set_category_parent", { id, parentId }),
+  setCategoriesArchived: (ids: string[], archived: boolean) =>
+    dispatch<void>("set_categories_archived", { ids, archived }),
 
   // Transactions
   createIncome: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string) =>

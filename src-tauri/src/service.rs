@@ -242,6 +242,19 @@ pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>)
     repo::set_category_parent(conn, id, parent_id, &now())
 }
 
+/// Bulk archive or restore. Reuses the per-id archive/restore so the top-level
+/// child cascade is applied to each.
+pub fn set_categories_archived(conn: &Connection, ids: &[String], archived: bool) -> AppResult<()> {
+    for id in ids {
+        if archived {
+            archive_category(conn, id)?;
+        } else {
+            restore_category(conn, id)?;
+        }
+    }
+    Ok(())
+}
+
 /// Assign sort_order = index to each id. Caller (frontend) supplies one full
 /// sibling group (same parent + kind); we validate they are genuine siblings.
 pub fn reorder_categories(conn: &Connection, ids: &[String]) -> AppResult<()> {

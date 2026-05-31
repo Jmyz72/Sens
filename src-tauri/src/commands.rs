@@ -108,6 +108,11 @@ pub fn set_category_parent(state: State<'_, DbState>, id: String, parent_id: Opt
     with_conn!(state, c => service::set_category_parent(&c, &id, parent_id.as_deref()))
 }
 
+#[tauri::command]
+pub fn set_categories_archived(state: State<'_, DbState>, ids: Vec<String>, archived: bool) -> AppResult<()> {
+    with_conn!(state, c => service::set_categories_archived(&c, &ids, archived))
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 #[tauri::command]

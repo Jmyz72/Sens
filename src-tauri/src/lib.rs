@@ -55,6 +55,7 @@ pub fn run() {
             commands::delete_category,
             commands::reorder_categories,
             commands::set_category_parent,
+            commands::set_categories_archived,
             commands::create_income_transaction,
             commands::create_expense_transaction,
             commands::create_transfer_transaction,
@@ -413,6 +414,25 @@ mod tests {
         // New parent must be top-level (not a subcategory).
         let snack = service::create_category(&c, "Snack R", "expense", "🍪", None, Some(&food.id)).unwrap();
         assert!(matches!(service::set_category_parent(&c, &snack.id, Some(&coffee.id)), Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn set_categories_archived_bulk_with_cascade() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food B", "expense", "🍔", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee B", "expense", "☕", None, Some(&food.id)).unwrap();
+        let fun = service::create_category(&c, "Fun B", "expense", "🎮", None, None).unwrap();
+
+        service::set_categories_archived(&c, &[food.id.clone(), fun.id.clone()], true).unwrap();
+        let all = service::list_categories(&c, None, true).unwrap();
+        assert!(all.iter().find(|x| x.id == food.id).unwrap().is_archived);
+        assert!(all.iter().find(|x| x.id == fun.id).unwrap().is_archived);
+        // Cascade archived the child too.
+        assert!(all.iter().find(|x| x.id == coffee.id).unwrap().is_archived);
+
+        service::set_categories_archived(&c, &[food.id.clone()], false).unwrap();
+        let all = service::list_categories(&c, None, true).unwrap();
+        assert!(!all.iter().find(|x| x.id == coffee.id).unwrap().is_archived);
     }
 
     #[test]
