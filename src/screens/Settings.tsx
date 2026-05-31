@@ -4,9 +4,11 @@
 import { useEffect, useState } from "react";
 import { useTheme, useThemeMode } from "../theme/ThemeProvider";
 import { hexA, ThemeMode } from "../theme/tokens";
-import { Btn, Card, SectionTitle } from "../components/ui";
+import { Btn, Card, SectionTitle, Modal, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
+import { useAppData } from "../store";
+import { useToast } from "../components/Toast";
 import { formatLastChecked, updatePanelCopy, type useUpdater } from "../lib/updater";
 
 // ─── Segmented control (reusable 2-option) ───────────────────────────────────
@@ -124,6 +126,63 @@ function Divider() {
   return <div style={{ height: 0.5, background: t.divider }} />;
 }
 
+// ─── Reset modal ─────────────────────────────────────────────────────────────
+
+function ResetModal({ onClose }: { onClose: () => void }) {
+  const t = useTheme();
+  const { mode, toggle } = useThemeMode();
+  const { reload } = useAppData();
+  const { notify } = useToast();
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const armed = confirm.trim().toUpperCase() === "RESET";
+
+  async function run() {
+    if (!armed || busy) return;
+    setBusy(true);
+    try {
+      await client.resetApp();
+      // Reset client-only preferences to defaults.
+      localStorage.removeItem("sens.sidebar");
+      if (mode === "light") toggle(); // back to dark default
+      await reload();
+      notify("App reset to defaults", "info");
+      onClose();
+    } catch (e) {
+      notify((e as { message?: string })?.message ?? "Reset failed", "error");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal onClose={onClose} width={400}>
+      <div style={{ padding: "16px 20px", borderBottom: `0.5px solid ${t.divider}`, fontSize: 15, fontWeight: 700 }}>
+        Reset app to defaults?
+      </div>
+      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ fontSize: 12.5, color: t.dim, lineHeight: 1.5 }}>
+          This permanently deletes all accounts, transactions, and categories, then
+          restores the default categories. Appearance and dashboard preferences are
+          reset too. This cannot be undone.
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: t.faint, marginBottom: 6 }}>
+            Type <strong style={{ color: t.text, fontFamily: t.mono }}>RESET</strong> to confirm
+          </div>
+          <input className="sens-input" value={confirm} onChange={(e) => setConfirm(e.target.value)}
+            placeholder="RESET" style={inputStyle(t)} autoFocus />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <Btn variant="outline" size="md" onClick={onClose}>Cancel</Btn>
+          <Btn variant="danger" size="md" icon="trash" disabled={!armed || busy} onClick={run}>
+            {busy ? "Resetting…" : "Reset everything"}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── Settings screen ─────────────────────────────────────────────────────────
 
 export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }) {
@@ -133,6 +192,7 @@ export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }
   // remember_month preference — tri-state: null = loading, then boolean
   const [rememberMonth, setRememberMonth] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
 
   useEffect(() => {
     client
@@ -277,6 +337,22 @@ export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }
           </div>
         </div>
       </Card>
+
+      {/* Danger zone */}
+      <Card>
+        <SectionTitle>Danger zone</SectionTitle>
+        <SettingRow
+          label="Reset app to defaults"
+          hint="Erase all data and restore the default categories"
+          right={
+            <Btn variant="danger" size="md" icon="trash" onClick={() => setResetOpen(true)}>
+              Reset
+            </Btn>
+          }
+        />
+      </Card>
+
+      {resetOpen && <ResetModal onClose={() => setResetOpen(false)} />}
     </div>
   );
 }
