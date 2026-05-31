@@ -1,0 +1,63 @@
+name: Cut release
+
+# One-click release: pick a semver level and this bumps the version, rolls the
+# changelog, tags, pushes, and builds — the same end-to-end flow as the /release
+# skill, run from the Actions tab instead of your terminal. The version mechanics
+# live in scripts/release.mjs (shared with the skill); this workflow only adds the
+# CI plumbing around it. See RELEASING.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: "Semver bump level"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      # ref: main + full history/tags so release.mjs's guards (must be on main,
+      # tag-not-already-present) see the real branch state.
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      # cargo is needed for the script's `cargo update -p sens` lockfile refresh.
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - run: npm ci
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Bump version, roll changelog, commit, tag
+        id: release
+        run: |
+          npm run release -- ${{ inputs.level }}
+          echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Push commit + tag
+        run: git push --follow-tags
+
+  build:
+    needs: tag
+    permissions:
+      contents: write
+    # secrets: inherit passes the Tauri signing secrets through to the reusable
+    # release workflow (workflow_call does not inherit them automatically).
+    secrets: inherit
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}

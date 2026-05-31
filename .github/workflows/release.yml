@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  # Allow the Cut release workflow to build a freshly-tagged commit directly.
+  # A tag pushed by a workflow's GITHUB_TOKEN does NOT re-fire the push trigger
+  # above, so cut-release.yml calls this workflow instead of relying on the tag.
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to build and release (e.g. v0.5.0)"
+        required: false
+        type: string
 
 jobs:
   release:
@@ -20,8 +29,13 @@ jobs:
             target: ""
             args: ""
     runs-on: ${{ matrix.platform }}
+    # The tag to build: provided by workflow_call, else the pushed tag ref.
+    env:
+      REL_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -44,8 +58,8 @@ jobs:
           # (Not a Developer ID — the build is still un-notarized.)
           APPLE_SIGNING_IDENTITY: "-"
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Sens ${{ github.ref_name }}"
+          tagName: ${{ env.REL_TAG }}
+          releaseName: "Sens ${{ env.REL_TAG }}"
           releaseBody: |
             See CHANGELOG.md for details.
 
