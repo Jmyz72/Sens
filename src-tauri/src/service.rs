@@ -390,6 +390,11 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
     repo::set_setting(conn, &key, value, &now())
 }
 
+/// Factory reset — wipe user data and restore seeded defaults.
+pub fn reset_app(conn: &Connection) -> AppResult<()> {
+    crate::db::reset_to_defaults(conn)
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 pub fn get_account_balance(conn: &Connection, account_id: &str) -> AppResult<i64> {

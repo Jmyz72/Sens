@@ -130,6 +130,40 @@ fn backfill_defaults(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
+/// Factory reset: wipe all user data and re-run the idempotent seed so the
+/// database returns to a fresh-install state. Done in one transaction. The
+/// `account_subtypes` reference table and `schema_migrations` are preserved;
+/// `account_templates` are reseeded by `seed::seed` (INSERT OR IGNORE).
+pub fn reset_to_defaults(conn: &Connection) -> AppResult<()> {
+    let now = crate::now();
+    conn.execute_batch("BEGIN")?;
+    let res = (|| -> AppResult<()> {
+        // Order respects ON DELETE RESTRICT FKs: transactions reference
+        // accounts + categories; categories self-reference via parent_id.
+        conn.execute("DELETE FROM transactions", [])?;
+        conn.execute("DELETE FROM categories WHERE parent_id IS NOT NULL", [])?;
+        conn.execute("DELETE FROM categories", [])?;
+        conn.execute("DELETE FROM accounts", [])?;
+        conn.execute("DELETE FROM app_settings", [])?;
+        seed::seed(conn, &now)?;
+        for key in [FIRST_RUN_KEY, DEFAULTS_V2_KEY] {
+            conn.execute(
+                "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, '1', ?2)",
+                rusqlite::params![key, now],
+            )?;
+        }
+        Ok(())
+    })();
+    match res {
+        Ok(()) => conn.execute_batch("COMMIT")?,
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod migration_tests {
     use super::migrations::MIGRATIONS;

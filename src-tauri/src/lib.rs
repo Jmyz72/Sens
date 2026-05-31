@@ -67,6 +67,7 @@ pub fn run() {
             commands::get_account_balances,
             commands::get_setting,
             commands::set_setting,
+            commands::reset_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sens");
@@ -448,6 +449,17 @@ mod tests {
     }
 
     #[test]
+    fn other_income_sorts_after_investments() {
+        let c = open_in_memory().unwrap();
+        let income = service::list_categories(&c, Some("income"), false).unwrap();
+        let pos = |name: &str| income.iter().position(|x| x.name == name).unwrap();
+        assert!(
+            pos("Other Income") > pos("Investments"),
+            "Other Income must come after Investments by default"
+        );
+    }
+
+    #[test]
     fn account_with_unknown_subtype_still_lists() {
         // An account whose subtype isn't in the taxonomy (e.g. a future rename or
         // a direct DB edit) must stay visible via the LEFT JOIN + COALESCE fallback,
@@ -466,5 +478,32 @@ mod tests {
         // get_account must resolve (not a misleading NotFound) and net worth includes it.
         assert_eq!(service::get_account_balance(&c, "orphan").unwrap(), 100);
         assert_eq!(service::get_dashboard_summary(&c, "2026-05").unwrap().net_worth_cents, 100);
+    }
+
+    #[test]
+    fn reset_app_wipes_data_and_reseeds_defaults() {
+        let c = open_in_memory().unwrap();
+        // Arrange: an account, a transaction, and a custom category.
+        let a = acct(&c, "Wallet", 10_000);
+        let cat = expense_cat(&c);
+        service::create_expense(&c, &a.id, &cat, 500, None, "2026-01-01").unwrap();
+        service::create_category(&c, "Bespoke", "expense", "🦄", None, None).unwrap();
+        let default_income = service::list_categories(&c, Some("income"), false).unwrap().len();
+
+        // Act
+        service::reset_app(&c).unwrap();
+
+        // Assert: user data gone, defaults restored.
+        assert!(service::list_accounts(&c, true).unwrap().is_empty(), "accounts wiped");
+        assert!(
+            service::list_transactions(&c, TransactionFilters::default()).unwrap().is_empty(),
+            "transactions wiped"
+        );
+        let income = service::list_categories(&c, Some("income"), false).unwrap();
+        assert_eq!(income.len(), default_income, "default income categories reseeded");
+        assert!(
+            !service::list_categories(&c, Some("expense"), true).unwrap().iter().any(|x| x.name == "Bespoke"),
+            "custom category removed"
+        );
     }
 }

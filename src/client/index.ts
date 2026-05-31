@@ -67,4 +67,5 @@ export const client = {
   // Settings
   getSetting: (key: string) => dispatch<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => dispatch<void>("set_setting", { key, value }),
+  resetApp: () => dispatch<void>("reset_app"),
 };
