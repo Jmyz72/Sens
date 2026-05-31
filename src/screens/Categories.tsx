@@ -416,8 +416,13 @@ export function Categories() {
         </Card>
       </div>
 
-      {/* DETAIL PANE */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* DETAIL PANE — sticky so it follows the screen as the left list scrolls.
+          Capped to the viewport with its own scroll so a long subcategory list
+          can never run off-screen. SHELL_OFFSET ≈ TopBar + scroller padding. */}
+      <div style={{
+        flex: 1, minWidth: 0, position: "sticky", top: 0,
+        maxHeight: "calc(100vh - 104px)", overflow: "auto",
+      }}>
         {selectedNode ? (
           <CategoryDetail
             node={selectedNode}
@@ -500,8 +505,10 @@ function CategoryDetail({
 
   return (
     <Card pad={0} style={{ overflow: "hidden" }}>
-      {/* Hero */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: 18, borderBottom: `0.5px solid ${t.divider}` }}>
+      {/* Hero — pinned to the top of the scrolling pane */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: 18,
+        borderBottom: `0.5px solid ${t.divider}`, position: "sticky", top: 0,
+        background: t.panel, zIndex: 2 }}>
         <GlyphTile tone={c.color ?? t.accent} size={48} emoji={c.emoji} radius={12} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
