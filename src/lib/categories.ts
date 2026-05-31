@@ -57,8 +57,9 @@ export function reorderIds(ids: string[], from: number, to: number): string[] {
 }
 
 /** Valid top-level parents a category may be moved under: same kind, top-level,
- *  not itself, not its current parent. A top-level that still has children
- *  cannot be moved (would create a third level), so it returns []. */
+ *  active (not archived), not itself, not its current parent. A top-level that
+ *  still has children cannot be moved (would create a third level), so it
+ *  returns []. */
 export function moveTargets(cats: Category[], category: Category): Category[] {
   const hasChildren = cats.some((c) => c.parentId === category.id);
   if (category.parentId == null && hasChildren) return [];
@@ -66,6 +67,7 @@ export function moveTargets(cats: Category[], category: Category): Category[] {
     (c) =>
       c.parentId == null &&
       c.kind === category.kind &&
+      !c.isArchived &&
       c.id !== category.id &&
       c.id !== category.parentId,
   );

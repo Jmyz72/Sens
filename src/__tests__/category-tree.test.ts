@@ -80,4 +80,9 @@ describe("moveTargets", () => {
   it("for a top-level WITH children: returns empty (must empty it first)", () => {
     expect(moveTargets(all, food)).toEqual([]);
   });
+  it("excludes archived parents as destinations", () => {
+    const archivedFun = mkCat({ id: "fun", name: "Fun", kind: "expense", isArchived: true });
+    const targets = moveTargets([food, archivedFun, salary, coffee], coffee).map((c) => c.id);
+    expect(targets).not.toContain("fun"); // archived parent must not be offered
+  });
 });

@@ -179,6 +179,7 @@ function MoveCategoryModal({ category, all, onClose, onDone }: {
   const [busy, setBusy] = useState(false);
   const targets = moveTargets(all, category);
   const isSub = category.parentId != null;
+  const hasChildren = all.some((c) => c.parentId === category.id);
 
   async function move(parentId: string | null) {
     setBusy(true);
@@ -200,7 +201,9 @@ function MoveCategoryModal({ category, all, onClose, onDone }: {
         )}
         {targets.length === 0 && !isSub && (
           <div style={{ fontSize: 12.5, color: t.faint }}>
-            No eligible destination. Empty this category's subcategories first, or add another top-level category of the same kind.
+            {hasChildren
+              ? "Empty this category's subcategories first to make it a subcategory."
+              : `No other ${KIND_LABELS[category.kind].toLowerCase()} category to move under — create one first.`}
           </div>
         )}
         {targets.map((p) => (
