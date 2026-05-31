@@ -8,9 +8,14 @@
 
 **Tech Stack:** Tauri v2 (Rust, rusqlite), React 19 + TypeScript + Vite, SQLite. Tests: `cargo test --lib`, Vitest.
 
-> **Breaking change.** Migration 001 is edited in place (deliberately overriding the append-only convention — safe because there are no production users). Old local databases must be deleted before running v0.5.0; an in-app factory reset does NOT reshape tables.
+> **Schema upgrade (automatic, non-destructive).** Existing databases upgrade automatically via a data-preserving `MIGRATION_005`; no DB deletion or user action. See the *Implementation update* below — this superseded the plan's original "edit migration 001 in place" approach.
 
 > **Seam rule (CLAUDE.md):** every backend behavior change lands in BOTH the Rust chain and `src/client/mock.ts`. The frontend block enforces this.
+
+> **Implementation update (post-execution — what diverged from this plan).** This plan was executed as written except for three changes made during review; the spec and code are the source of truth:
+> 1. **Migration approach reversed → data-preserving.** Instead of editing migration 001 in place (Task 1 Steps 1–2) and forcing a factory reset, migration 001 stays untouched and all schema changes live in a new append-only **`MIGRATION_005`**: rebuild `transactions` (new CHECK + `excluded_from_reporting`), backfill one `opening` row per account from `opening_balance_cents`, then `DROP COLUMN`. Older DBs upgrade automatically with no data loss. A `migration_005_upgrades_old_db_without_data_loss` test covers it. (Steps 1–2 and 18 below describe the *target schema*, which is still correct; only the *mechanism* moved to migration 005.)
+> 2. **Opening row protected.** `service::create_account` wraps the account + opening insert in one transaction; `update_transaction`/`delete_transaction` reject the `opening` kind (mirrored in the mock). Not in the original Task 1 steps — added in review.
+> 3. **`accountStats.ts` double-count fixed.** That module keeps its own running-balance logic; it now excludes the `opening` row from iteration (seeding from the derived `openingBalanceCents`). Not anticipated by the plan — caught by the final holistic review.
 
 ---
 
@@ -50,7 +55,9 @@ Rust will not compile until all layers agree, so this is one task ending green. 
 - Modify: `src-tauri/src/commands.rs:119-125`
 - Modify: `src-tauri/src/lib.rs:468-473`, `src-tauri/src/db/mod.rs:220-228` (raw test INSERTs)
 
-- [ ] **Step 1: Edit `accounts` CREATE — drop the column**
+> **As-built note (migration mechanism).** Steps 1–2 below were NOT applied to migration 001. The same end schema is produced by a new append-only **`MIGRATION_005`** (added to the `MIGRATIONS` list) that rebuilds the `transactions` table to the target shape shown in Step 2, backfills opening rows, and drops the column — see the *Implementation update* at the top and the *Migration* section of the spec. Treat the SQL in Steps 1–2 as the **target schema definition** (correct); just realize it lands via 005, not by editing 001. The `lib.rs` / `db/mod.rs` test-insert fixes in Step 18 still apply because the final schema is identical.
+
+- [ ] **Step 1: Edit `accounts` CREATE — drop the column** *(as-built: accounts column is dropped by `MIGRATION_005`, not removed from 001 — see note above)*
 
 In `src-tauri/src/db/migrations.rs`, remove this line from the `accounts` table (line 89):
 
@@ -1089,7 +1096,7 @@ In the "Money, balances, and transaction kinds" section, update:
 - State that **opening balance is a transaction** (the `opening` kind — exactly one per account, signed, never-deletable) and that `accounts.opening_balance_cents` was **dropped**; `Account.openingBalanceCents` is now **derived** from the opening row. Balances are opening + signed history with no stored column.
 - Add the **`excludedFromReporting`** flag: an `income`/`expense` row flagged as money movement is excluded from dashboard income/expense/net-cashflow/spending, like transfer/adjustment.
 - Note `set_account_balance` now edits the opening row on accounts with no non-opening activity, else inserts an adjustment.
-- Add a note that **v0.5.0 is a breaking schema change** (migration 001 edited in place; old DBs must be deleted).
+- Describe the data-preserving **`MIGRATION_005`** (rebuild `transactions` → backfill opening rows → drop the column) so older DBs upgrade automatically with no data loss.
 
 - [ ] **Step 2: Update `ROADMAP.md`**
 
@@ -1108,10 +1115,11 @@ Add a `[Unreleased]` entry (the release script rolls it):
   balances but excluded from income/expense/cashflow/spending reports.
 
 ### Changed
-- **BREAKING (schema):** dropped `accounts.opening_balance_cents`; added the `opening`
-  transaction kind and `transactions.excluded_from_reporting`. No upgrade path from
-  pre-0.5.0 — delete the local database (an in-app factory reset does not reshape
-  tables) before running this version.
+- **Schema upgrade (automatic, non-destructive):** dropped `accounts.opening_balance_cents`;
+  added the `opening` transaction kind and `transactions.excluded_from_reporting`.
+  Existing databases upgrade automatically via `MIGRATION_005` (opening balances
+  backfilled as `opening` transactions before the column is dropped) — no data loss,
+  no user action.
 ```
 
 - [ ] **Step 4: Full verification**
@@ -1146,7 +1154,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - **Pillar 1 (opening kind):** Task 1 steps 1-2, 6-15; tests in Task 2; frontend in Tasks 3-5.
 - **Pillar 2 (flag):** Task 1 steps 2, 4-5, 11-12, 14, 16-17; tests in Task 2/6; UI in Task 5.
 - **Derived `openingBalanceCents`:** Task 1 step 7 (Rust) + Task 4 step 1 (mock).
-- **Breaking migration:** Task 1 steps 1-2, 18; docs in Task 7.
+- **Migration:** target schema in Task 1 steps 1-2, 18 — delivered as-built by the data-preserving `MIGRATION_005` (see *Implementation update* at top); docs in Task 7.
 - **Seam parity:** Task 4 mirrors every Task 1 backend behavior.
 - **Type consistency:** `excluded_from_reporting`/`excludedFromReporting` and `KIND_OPENING`/`"opening"` used consistently across layers; `insert_transaction` gains its flag param everywhere it is called (create_income/expense/transfer in service, create_account + set_account_balance adjustment).
 - **Release** (separate, user-triggered): cut `v0.5.0` via the `release` skill after this lands.

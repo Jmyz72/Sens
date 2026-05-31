@@ -299,5 +299,5 @@ Every backend change above must land in **both** the Rust chain and `src/client/
   `opening` kind; `excludedFromReporting`; dashboard exclusion now also honors the
   flag).
 - `ROADMAP.md` — flip `v0.5.0` to 🟢, record the tag, link this spec.
-- `CHANGELOG.md` — feature entry **plus** a prominent breaking-change note (delete the
-  local DB when upgrading from a pre-v0.5.0 build).
+- `CHANGELOG.md` — feature entry **plus** a note that existing databases upgrade
+  automatically (non-destructive `MIGRATION_005`) with no data loss or user action.
