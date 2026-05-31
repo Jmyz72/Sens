@@ -210,6 +210,10 @@ export function Categories() {
     try { await client.restoreCategory(c.id); await reload(); }
     catch (e) { notify((e as { message?: string })?.message ?? "Failed to restore category", "error"); }
   }
+  async function del(c: Category) {
+    try { await client.deleteCategory(c.id); await reload(); }
+    catch (e) { notify((e as { message?: string })?.message ?? "Failed to delete category", "error"); }
+  }
   async function afterMutation() {
     await reload();
     setCreating(null);
@@ -292,6 +296,8 @@ export function Categories() {
             onEditChild={(child) => setEditing(child)}
             onArchiveChild={(child) => archive(child)}
             onRestoreChild={(child) => restore(child)}
+            onDelete={() => del(selectedNode.category)}
+            onDeleteChild={(child) => del(child)}
           />
         ) : (
           <Card><Empty icon="filter" title="No categories yet" hint="Create one with the New button." /></Card>
@@ -315,7 +321,7 @@ export function Categories() {
 // ── Detail pane ──────────────────────────────────────────────────────────────
 
 function CategoryDetail({
-  node, onEdit, onArchive, onRestore, onAddSub, onEditChild, onArchiveChild, onRestoreChild,
+  node, onEdit, onArchive, onRestore, onAddSub, onEditChild, onArchiveChild, onRestoreChild, onDelete, onDeleteChild,
 }: {
   node: CategoryNode;
   onEdit: () => void;
@@ -325,6 +331,8 @@ function CategoryDetail({
   onEditChild: (c: Category) => void;
   onArchiveChild: (c: Category) => void;
   onRestoreChild: (c: Category) => void;
+  onDelete: () => void;
+  onDeleteChild: (c: Category) => void;
 }) {
   const t = useTheme();
   const c = node.category;
@@ -349,6 +357,9 @@ function CategoryDetail({
             ? <Btn variant="outline" size="sm" icon="restore" onClick={onRestore}>Restore</Btn>
             : <Btn variant="outline" size="sm" icon="archive" onClick={onArchive}>Archive</Btn>
           }
+          {node.children.length === 0 && (
+            <Btn variant="outline" size="sm" icon="trash" onClick={onDelete}>Delete</Btn>
+          )}
         </div>
       </div>
 
@@ -376,6 +387,7 @@ function CategoryDetail({
                   {child.isArchived
                     ? <Btn variant="outline" size="sm" icon="restore" onClick={() => onRestoreChild(child)}>Restore</Btn>
                     : <Btn variant="outline" size="sm" icon="archive" onClick={() => onArchiveChild(child)}>Archive</Btn>}
+                  <Btn variant="outline" size="sm" icon="trash" onClick={() => onDeleteChild(child)}>Delete</Btn>
                 </div>
               </div>
             ))}
