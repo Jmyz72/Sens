@@ -74,10 +74,15 @@ const SUB_SEED: [string, Category["kind"], string, string, string][] = [
   ["Freelance", "income", "Projects", "💻", "#5aa66d"], ["Freelance", "income", "Consulting", "💼", "#66b079"],
   ["Investments", "income", "Dividends", "💹", "#3fcf8e"], ["Investments", "income", "Interest", "🏦", "#4bd699"], ["Investments", "income", "Capital gains", "📈", "#37c886"],
 ];
-SUB_SEED.forEach(([parentName, kind, childName, emoji, color], i) => {
+// Per-parent sort_order (0,1,2… within each parent), matching the Rust seed's
+// SUBCATEGORIES values rather than the flat array index.
+const subSortByParent: Record<string, number> = {};
+SUB_SEED.forEach(([parentName, kind, childName, emoji, color]) => {
   const parent = categories.find((c) => c.name === parentName && c.kind === kind && c.parentId == null);
   if (parent) {
-    categories.push({ id: uid(), name: childName, kind, emoji, color, parentId: parent.id, sortOrder: i, isArchived: false, createdAt: now(), updatedAt: now() });
+    const sort = subSortByParent[parent.id] ?? 0;
+    subSortByParent[parent.id] = sort + 1;
+    categories.push({ id: uid(), name: childName, kind, emoji, color, parentId: parent.id, sortOrder: sort, isArchived: false, createdAt: now(), updatedAt: now() });
   }
 });
 
