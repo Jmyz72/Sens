@@ -2,7 +2,7 @@
 // All money is integer MYR cents. Field names are camelCase to match the
 // backend's serde(rename_all = "camelCase").
 
-export type TransactionKind = "income" | "expense" | "transfer" | "adjustment";
+export type TransactionKind = "income" | "expense" | "transfer" | "adjustment" | "opening";
 export type CategoryKind = "income" | "expense" | "transfer";
 export type AccountGroup = "own" | "owe";
 export type AccountTypeName = "fund" | "financial" | "receivable" | "payable" | "credit";
@@ -64,6 +64,7 @@ export interface Transaction {
   amountCents: number;
   description: string | null;
   transactionDate: string;
+  excludedFromReporting: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -87,6 +88,7 @@ export interface UpdateTransactionInput {
   amountCents: number;
   description: string | null;
   transactionDate: string;
+  excludedFromReporting: boolean;
 }
 
 export interface CategoryBreakdown {

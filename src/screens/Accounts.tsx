@@ -179,7 +179,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
 
                     {/* expanded panel */}
                     {isOpen && (() => {
-                      const running = txns.length > 0 ? computeRunningBalances(txns, a.id, a.openingBalanceCents) : new Map<string, number>();
+                      const running = txns.length > 0 ? computeRunningBalances(txns, a.id) : new Map<string, number>();
                       const recent = [...txns].sort((x, y) => { const kx = txnSortKey(x), ky = txnSortKey(y); return ky < kx ? -1 : ky > kx ? 1 : 0; }).slice(0, ACTIVITY_DISPLAY_LIMIT);
                       const hidden = txns.length - recent.length;
                       const chart = balanceSeries(a, txns, periodFromDate(period, today), 64);
