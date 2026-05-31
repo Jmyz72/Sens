@@ -6,7 +6,7 @@ function cat(p: Partial<Category> & { id: string; name: string }): Category {
   return {
     id: p.id, name: p.name, kind: p.kind ?? "expense", emoji: p.emoji ?? "•",
     color: p.color ?? null, parentId: p.parentId ?? null, sortOrder: p.sortOrder ?? 0,
-    isSystem: p.isSystem ?? false, isArchived: p.isArchived ?? false,
+    isArchived: p.isArchived ?? false,
     createdAt: "t", updatedAt: "t",
   };
 }

@@ -57,7 +57,7 @@ const CAT_SEED: [string, Category["kind"], string, string][] = [
   ["Transfer", "transfer", "🔄", "#9aa4b2"],
 ];
 const categories: Category[] = CAT_SEED.map(([name, kind, emoji, color], i) => ({
-  id: uid(), name, kind, emoji, color, parentId: null, sortOrder: i, isSystem: true, isArchived: false, createdAt: now(), updatedAt: now(),
+  id: uid(), name, kind, emoji, color, parentId: null, sortOrder: i, isArchived: false, createdAt: now(), updatedAt: now(),
 }));
 
 const accounts: Account[] = [];
@@ -178,7 +178,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         (a.parentId != null ? x.parentId === a.parentId : x.parentId == null && x.kind === kind),
       );
       if (clash) fail("Conflict", "A category with this name already exists at this level");
-      const cat: Category = { id: uid(), name, kind, emoji: a.emoji, color: a.color ?? null, parentId: a.parentId ?? null, sortOrder: 100, isSystem: false, isArchived: false, createdAt: now(), updatedAt: now() };
+      const cat: Category = { id: uid(), name, kind, emoji: a.emoji, color: a.color ?? null, parentId: a.parentId ?? null, sortOrder: 100, isArchived: false, createdAt: now(), updatedAt: now() };
       categories.push(cat);
       return cat as T;
     }
@@ -186,7 +186,6 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "restore_category": {
       const c = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
       const archiving = command === "archive_category";
-      if (archiving && c.isSystem) fail("Conflict", "System categories cannot be archived");
       c.isArchived = archiving;
       c.updatedAt = now();
       if (c.parentId == null) {

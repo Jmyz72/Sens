@@ -337,7 +337,6 @@ function CategoryDetail({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {c.name}
-            {c.isSystem && <Tag tone={t.accent}>System</Tag>}
             {c.isArchived && <Tag tone={t.faint}>Archived</Tag>}
           </div>
           <div style={{ fontSize: 12.5, color: t.dim, marginTop: 3 }}>
@@ -346,10 +345,10 @@ function CategoryDetail({
         </div>
         <div style={{ display: "flex", gap: 4 }}>
           <Btn variant="outline" size="sm" icon="pencil" onClick={onEdit}>Edit</Btn>
-          {!c.isSystem && (c.isArchived
+          {c.isArchived
             ? <Btn variant="outline" size="sm" icon="restore" onClick={onRestore}>Restore</Btn>
             : <Btn variant="outline" size="sm" icon="archive" onClick={onArchive}>Archive</Btn>
-          )}
+          }
         </div>
       </div>
 
