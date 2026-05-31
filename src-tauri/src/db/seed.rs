@@ -103,8 +103,8 @@ pub fn seed(conn: &Connection, now: &str) -> AppResult<()> {
         let id = uuid::Uuid::new_v4().to_string();
         conn.execute(
             "INSERT OR IGNORE INTO categories
-               (id, name, kind, emoji, color, sort_order, is_system, is_archived, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, 0, ?7, ?7)",
+               (id, name, kind, emoji, color, sort_order, is_archived, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?7)",
             rusqlite::params![id, name, kind, emoji, color, sort, now],
         )?;
     }

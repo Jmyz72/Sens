@@ -217,13 +217,12 @@ mod tests {
     }
 
     #[test]
-    fn cannot_archive_system_category() {
+    fn seeded_categories_can_be_archived() {
         let c = open_in_memory().unwrap();
-        // All seeded categories are is_system=1; pick the first one.
-        let sys = service::list_categories(&c, None, false).unwrap().into_iter().next().unwrap();
-        assert!(sys.is_system, "expected a system category");
-        let result = service::archive_category(&c, &sys.id);
-        assert!(result.is_err(), "archiving a system category should fail");
+        // After dropping is_system, every seeded category is archivable.
+        let cat = service::list_categories(&c, None, false).unwrap().into_iter().next().unwrap();
+        let updated = service::archive_category(&c, &cat.id).unwrap();
+        assert!(updated.is_archived, "seeded category should archive successfully");
     }
 
     #[test]

@@ -206,7 +206,6 @@ fn map_category(r: &Row) -> rusqlite::Result<Category> {
         color: r.get("color")?,
         parent_id: r.get("parent_id")?,
         sort_order: r.get("sort_order")?,
-        is_system: r.get::<_, i64>("is_system")? != 0,
         is_archived: r.get::<_, i64>("is_archived")? != 0,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
@@ -253,8 +252,8 @@ pub fn insert_category(
     now: &str,
 ) -> AppResult<Category> {
     conn.execute(
-        "INSERT INTO categories (id, name, kind, emoji, color, parent_id, sort_order, is_system, is_archived, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 100, 0, 0, ?7, ?7)",
+        "INSERT INTO categories (id, name, kind, emoji, color, parent_id, sort_order, is_archived, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 100, 0, ?7, ?7)",
         params![id, name, kind, emoji, color, parent_id, now],
     )
     .map_err(map_unique)?;

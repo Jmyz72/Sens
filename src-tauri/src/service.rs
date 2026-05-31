@@ -184,9 +184,6 @@ pub fn update_category(conn: &Connection, input: UpdateCategoryInput) -> AppResu
 
 pub fn archive_category(conn: &Connection, id: &str) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
-    if cat.is_system {
-        return Err(AppError::Conflict("System categories cannot be archived".into()));
-    }
     let now = now();
     let updated = repo::set_category_archived(conn, id, true, &now)?;
     if cat.parent_id.is_none() {
