@@ -21,10 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kind.
 
 ### Changed
-- **BREAKING (database schema):** dropped the stored `opening_balance_cents` column,
-  added the `opening` transaction kind and an `excluded_from_reporting` flag. There is
-  **no upgrade path** from a pre-0.5.0 database — delete the local database (an in-app
-  factory reset does **not** reshape tables) before running this version.
+- **Schema upgrade (automatic, non-destructive):** dropped the stored
+  `opening_balance_cents` column, added the `opening` transaction kind and an
+  `excluded_from_reporting` flag. Existing databases **upgrade automatically** on first
+  launch via migration 005 — every account's opening balance is backfilled as an
+  `opening` transaction before the column is dropped, so all accounts and transactions
+  are preserved with identical balances. No action required when upgrading from any
+  earlier version.
 
 ## [0.4.7] — 2026-05-31
 

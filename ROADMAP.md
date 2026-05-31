@@ -36,7 +36,7 @@ Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
 
 ## In progress
 
-_`v0.5.0` — Non-cashflow transactions is **implemented on `feat/v0.5.0-non-cashflow-transactions`, pending its release tag**. Opening balances became real `opening` transactions (the `accounts.opening_balance_cents` column was dropped; balance reconciles to a pure sum of signed history) and income/expense gained an `excludedFromReporting` flag. **Breaking schema change** (migration 001 edited in place) — no upgrade path from pre-0.5.0; delete the local DB. Spec: `docs/superpowers/specs/2026-06-01-non-cashflow-transactions-design.md`; plan: `docs/superpowers/plans/2026-06-01-non-cashflow-transactions.md`._
+_`v0.5.0` — Non-cashflow transactions is **implemented on `feat/v0.5.0-non-cashflow-transactions`, pending its release tag**. Opening balances became real `opening` transactions (the `accounts.opening_balance_cents` column was dropped; balance reconciles to a pure sum of signed history) and income/expense gained an `excludedFromReporting` flag. Existing databases **upgrade automatically** via the data-preserving `MIGRATION_005` (no data loss, no user action). Spec: `docs/superpowers/specs/2026-06-01-non-cashflow-transactions-design.md`; plan: `docs/superpowers/plans/2026-06-01-non-cashflow-transactions.md`._
 
 ## Planned — the climb to 1.0
 
@@ -48,7 +48,7 @@ income/expense/net-cashflow/spending-breakdown, the same way `transfer` and
 behavior leans on: a credit-card payment, loan repayment, or BNPL installment moves
 money and pays down a balance but is **not** a new expense; reimbursements/claims are
 money back, not new income. **Foundational pillar:** opening balances became real
-`opening` transactions (column dropped; full reconciliation) — a breaking schema change.
+`opening` transactions (column dropped; full reconciliation), with a data-preserving auto-migration (`MIGRATION_005`) so existing databases upgrade with no data loss.
 - [x] mark an income/expense transaction as non-cashflow (`excludedFromReporting`)
 - [x] dashboard + spending breakdown honor the exclusion (extends the existing
       transfer/adjustment exclusion in `repo.rs` / `mock.ts`)

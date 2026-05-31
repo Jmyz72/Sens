@@ -26,13 +26,13 @@ This phase has **two pillars**:
    external party (money out, not a new expense). It is the groundwork **v0.6.0**
    (credit & debt behavior) leans on.
 
-> **Breaking change — no upgrade path.** This phase changes the database schema and
-> **does not migrate data from older versions**. The `accounts.opening_balance_cents`
-> column is removed and the `transactions` `kind` CHECK changes. Anyone on a pre-v0.5.0
-> local database must start fresh: **delete the app-data database file** (an in-app
-> factory reset is *not* sufficient — `reset_to_defaults` only deletes rows, it does
-> not reshape tables). This is acceptable because the project is pre-1.0 with no
-> production users.
+> **Schema change — automatic, non-destructive upgrade.** This phase changes the
+> database schema (the `accounts.opening_balance_cents` column is removed; the
+> `transactions` `kind` CHECK gains `opening`; an `excluded_from_reporting` column is
+> added). Existing databases **upgrade automatically** on first launch via the
+> data-preserving `MIGRATION_005` — every account's opening balance is backfilled as an
+> `opening` transaction before the column is dropped, so all data is preserved with
+> identical balances and **no user action is required** (see *Migration* below).
 
 ## Why a flag, not new kinds (decision record)
 
@@ -214,31 +214,40 @@ Mirror all of the above in `mock.ts`'s dashboard computation.
 
 ---
 
-## Migration (breaking, no data preserved)
+## Migration (data-preserving, append-only)
 
-The migration runner (`db::run_migrations`) applies any `MIGRATIONS` entry whose
-version exceeds the max recorded in `schema_migrations`, with **no checksums**. Because
-we have no users to preserve and an in-app factory reset cannot reshape tables, we make
-the change by **editing the base schema in migration 001 directly**:
+> **Decision update (implemented):** the original draft proposed editing migration 001
+> in place and forcing a factory reset for pre-0.5.0 databases. That was reversed in
+> favour of a **data-preserving auto-upgrade** so existing databases carry forward with
+> no data loss and no user action. Migration 001 stays untouched; all changes live in a
+> new **`MIGRATION_005`**, honouring the append-only convention.
 
-1. Remove `opening_balance_cents` from the `accounts` `CREATE TABLE`.
-2. Add the `excluded_from_reporting` column to the `transactions` `CREATE TABLE`.
-3. Replace the `transactions` `kind` CHECK with the four-clause version above
-   (adds `opening`, pins the flag to `0` on non-income/expense).
+The migration runner (`db::run_migrations`) sets `PRAGMA foreign_keys = ON`, then
+applies any `MIGRATIONS` entry whose version exceeds the max recorded in
+`schema_migrations`, each wrapped in its own `BEGIN…COMMIT`. `MIGRATION_005` runs once
+for every database (fresh or existing) and does, **in this order**:
 
-This **deliberately overrides the "append-only — never edit a shipped migration"
-convention** in `migrations.rs`. It is safe *only because* this is a declared breaking
-change with no real users; the convention exists to protect shipped data, which we
-have agreed does not exist. A fresh install builds the clean schema in one shot; an old
-local DB is unsupported and must be deleted.
+1. **Rebuild `transactions`** into `transactions_new` with the new four-clause `kind`
+   CHECK (adds `opening`, pins the flag to `0` on non-income/expense) plus the
+   `excluded_from_reporting` column; `INSERT … SELECT` all existing rows (flag
+   defaulted `0`); `DROP TABLE transactions`; `ALTER TABLE transactions_new RENAME TO
+   transactions`; recreate the five `idx_tx_*` indexes. A table-level CHECK can't be
+   altered in place, so the rebuild is required — and it is **FK-safe** because nothing
+   references `transactions` (only it references `accounts`/`categories`).
+2. **Backfill** one `opening` transaction per existing account
+   (`INSERT … SELECT 'opening-' || id, 'opening', id, …, opening_balance_cents, …,
+   substr(created_at,1,10), …  FROM accounts`), dated the account's creation day. This
+   runs **after** the rebuild so `opening` rows are legal under the new CHECK.
+3. **Drop the column**: `ALTER TABLE accounts DROP COLUMN opening_balance_cents`
+   (supported here — migration 002 already drops a column the same way).
 
-No migration 005 is added. (The alternative — a table-rebuild migration 005 that
-backfills opening transactions and drops the column — is rejected: it is more SQL and
-exists solely to protect users we have agreed don't exist.)
-
-Update the test/seed inserts that reference the dropped column:
-`src-tauri/src/lib.rs:469`, `src-tauri/src/db/mod.rs:221`, and any `#[cfg(test)]`
-account inserts.
+Because migrations are cumulative, a database at **any** prior version (v0.1.0 onward)
+upgrades automatically by running its pending migrations up through 005, preserving all
+accounts and transactions with identical balances. A fresh install runs 001→005 to the
+same end schema (step 2 is a no-op with zero accounts). A migration test
+(`migration_005_upgrades_old_db_without_data_loss` in `db/mod.rs`) mirrors the runner's
+FK-on, per-migration-transaction discipline and asserts the opening row is backfilled,
+the existing transaction survives, balances reconcile, and the column is gone.
 
 ## The Tauri/mock seam — parity checklist
 
