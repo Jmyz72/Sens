@@ -329,7 +329,8 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "update_transaction": {
       const i = txns.findIndex((t) => t.id === a.input.id);
       if (i < 0) fail("NotFound", "Transaction not found");
-      if (txns[i].kind === "adjustment" || txns[i].kind === "opening" || a.input.kind === "adjustment" || a.input.kind === "opening") fail("ValidationError", "Adjustments cannot be edited");
+      if (txns[i].kind === "opening" || a.input.kind === "opening") fail("ValidationError", "The opening balance can't be edited here; change it from the account's opening balance field");
+      if (txns[i].kind === "adjustment" || a.input.kind === "adjustment") fail("ValidationError", "Adjustments cannot be edited; delete it and reconcile again");
       const excluded = (a.input.kind === "income" || a.input.kind === "expense") && !!a.input.excludedFromReporting;
       txns[i] = { ...txns[i], ...a.input, excludedFromReporting: excluded, updatedAt: now() };
       return txns[i] as T;

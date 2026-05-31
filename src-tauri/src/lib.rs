@@ -203,6 +203,25 @@ mod tests {
     }
 
     #[test]
+    fn toggling_excluded_from_reporting_reclassifies_in_dashboard() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Checking", 0);
+        let tx = service::create_expense(&c, &a.id, &expense_cat(&c), 800, None, "2026-05-12", false).unwrap();
+        assert_eq!(service::get_dashboard_summary(&c, "2026-05").unwrap().expense_cents, 800);
+        // Flip it to money movement via update_transaction → it drops out of the dashboard.
+        let updated = service::update_transaction(&c, UpdateTransactionInput {
+            id: tx.id.clone(), kind: "expense".into(), account_id: a.id.clone(),
+            to_account_id: None, category_id: tx.category_id.clone(), amount_cents: 800,
+            description: Some("Reimbursement".into()), transaction_date: "2026-05-12".into(),
+            excluded_from_reporting: true,
+        }).unwrap();
+        assert!(updated.excluded_from_reporting);
+        assert_eq!(service::get_dashboard_summary(&c, "2026-05").unwrap().expense_cents, 0);
+        // Balance is unaffected by the flag.
+        assert_eq!(service::get_account_balance(&c, &a.id).unwrap(), -800);
+    }
+
+    #[test]
     fn check_rejects_flag_on_non_income_expense() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
