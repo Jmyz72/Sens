@@ -113,9 +113,10 @@ const txns: Transaction[] = [];
 const settings = new Map<string, string>();
 
 function balanceOf(a: Account): number {
-  let b = a.openingBalanceCents;
+  let b = 0;
   for (const t of txns) {
-    if (t.kind === "income" && t.accountId === a.id) b += t.amountCents;
+    if (t.kind === "opening" && t.accountId === a.id) b += t.amountCents;
+    else if (t.kind === "income" && t.accountId === a.id) b += t.amountCents;
     else if (t.kind === "expense" && t.accountId === a.id) b -= t.amountCents;
     else if (t.kind === "adjustment" && t.accountId === a.id) b += t.amountCents;
     else if (t.kind === "transfer") {
@@ -125,25 +126,28 @@ function balanceOf(a: Account): number {
   }
   return b;
 }
+const openingOf = (id: string): number => txns.find((t) => t.kind === "opening" && t.accountId === id)?.amountCents ?? 0;
 const hydrate = (a: Account): Account => {
   const s = subtypeOf(a.subtype);
-  return { ...a, accountType: s?.type ?? "fund", group: s?.group ?? "own", balanceCents: balanceOf(a) };
+  return { ...a, accountType: s?.type ?? "fund", group: s?.group ?? "own", openingBalanceCents: openingOf(a.id), balanceCents: balanceOf(a) };
 };
-const hasTxns = (id: string) => txns.some((t) => t.accountId === id || t.toAccountId === id);
+const hasActivity = (id: string) => txns.some((t) => t.kind !== "opening" && (t.accountId === id || t.toAccountId === id));
 
 function seedDemo() {
   if (accounts.length) return;
   const mk = (key: string, name: string, opening: number) => {
     const t = templates.find((x) => x.key === key)!;
     const s = subtypeOf(t.defaultSubtype)!;
-    accounts.push({ id: uid(), templateKey: key, name, accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: opening, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
+    const id = uid();
+    accounts.push({ id, templateKey: key, name, accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: opening, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
+    txns.push({ id: uid(), kind: "opening", accountId: id, toAccountId: null, categoryId: null, amountCents: opening, description: "Opening balance", transactionDate: "2026-01-01", createdAt: now(), updatedAt: now(), excludedFromReporting: false });
   };
   mk("maybank", "Maybank Savings", 842000);
   mk("tng-ewallet", "Touch 'n Go", 12750);
   mk("stashaway", "StashAway", 1860000);
   const cat = (n: string) => categories.find((c) => c.name === n)!.id;
   const add = (kind: Transaction["kind"], acc: number, amt: number, catName: string | null, desc: string, date: string, to?: number) =>
-    txns.push({ id: uid(), kind, accountId: accounts[acc].id, toAccountId: to != null ? accounts[to].id : null, categoryId: catName ? cat(catName) : null, amountCents: amt, description: desc, transactionDate: date, createdAt: now(), updatedAt: now() });
+    txns.push({ id: uid(), kind, accountId: accounts[acc].id, toAccountId: to != null ? accounts[to].id : null, categoryId: catName ? cat(catName) : null, amountCents: amt, description: desc, transactionDate: date, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
   const d = (n: number) => { const x = new Date(); x.setDate(x.getDate() - n); return x.toISOString().slice(0, 10); };
   add("income", 0, 650000, "Salary", "Salary — Acme Sdn Bhd", d(2));
   add("expense", 1, 4250, "Food", "Nasi Lemak", d(1));
@@ -168,6 +172,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (a.templateKey != null && !templates.find((x) => x.key === a.templateKey)) fail("NotFound", "Account template not found");
       const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
       accounts.push(acc);
+      txns.push({ id: uid(), kind: "opening", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: a.openingBalanceCents, description: "Opening balance", transactionDate: today(), createdAt: now(), updatedAt: now(), excludedFromReporting: false });
       return hydrate(acc) as T;
     }
     case "list_accounts":
@@ -181,7 +186,10 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         acc.accountType = s.type;
         acc.group = s.group;
       }
-      if (a.input.openingBalanceCents != null) acc.openingBalanceCents = a.input.openingBalanceCents;
+      if (a.input.openingBalanceCents != null) {
+        const op = txns.find((t) => t.kind === "opening" && t.accountId === acc.id);
+        if (op) op.amountCents = a.input.openingBalanceCents;
+      }
       acc.updatedAt = now();
       return hydrate(acc) as T;
     }
@@ -193,11 +201,12 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     }
     case "set_account_balance": {
       const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
-      if (!hasTxns(acc.id)) {
-        acc.openingBalanceCents = a.realBalanceCents;
+      if (!hasActivity(acc.id)) {
+        const op = txns.find((t) => t.kind === "opening" && t.accountId === acc.id);
+        if (op) op.amountCents = a.realBalanceCents;
       } else {
         const diff = a.realBalanceCents - balanceOf(acc);
-        if (diff !== 0) txns.unshift({ id: uid(), kind: "adjustment", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: diff, description: "Balance adjustment", transactionDate: today(), createdAt: now(), updatedAt: now() });
+        if (diff !== 0) txns.unshift({ id: uid(), kind: "adjustment", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: diff, description: "Balance adjustment", transactionDate: today(), createdAt: now(), updatedAt: now(), excludedFromReporting: false });
       }
       return hydrate(acc) as T;
     }
@@ -296,14 +305,14 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
       const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
       if (acc.isArchived) fail("Conflict", "The selected account is archived");
-      const tx: Transaction = { id: uid(), kind, accountId: a.accountId, toAccountId: null, categoryId: a.categoryId, amountCents: a.amountCents, description: a.description, transactionDate: a.date, createdAt: now(), updatedAt: now() };
+      const tx: Transaction = { id: uid(), kind, accountId: a.accountId, toAccountId: null, categoryId: a.categoryId, amountCents: a.amountCents, description: a.description, transactionDate: a.date, createdAt: now(), updatedAt: now(), excludedFromReporting: !!a.excludedFromReporting };
       txns.unshift(tx);
       return tx as T;
     }
     case "create_transfer_transaction": {
       if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
       if (a.fromAccountId === a.toAccountId) fail("ValidationError", "Cannot transfer to the same account");
-      const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, createdAt: now(), updatedAt: now() };
+      const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, createdAt: now(), updatedAt: now(), excludedFromReporting: false };
       txns.unshift(tx);
       return tx as T;
     }
@@ -320,13 +329,15 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "update_transaction": {
       const i = txns.findIndex((t) => t.id === a.input.id);
       if (i < 0) fail("NotFound", "Transaction not found");
-      if (txns[i].kind === "adjustment" || a.input.kind === "adjustment") fail("ValidationError", "Adjustments cannot be edited");
-      txns[i] = { ...txns[i], ...a.input, updatedAt: now() };
+      if (txns[i].kind === "adjustment" || txns[i].kind === "opening" || a.input.kind === "adjustment" || a.input.kind === "opening") fail("ValidationError", "Adjustments cannot be edited");
+      const excluded = (a.input.kind === "income" || a.input.kind === "expense") && !!a.input.excludedFromReporting;
+      txns[i] = { ...txns[i], ...a.input, excludedFromReporting: excluded, updatedAt: now() };
       return txns[i] as T;
     }
     case "delete_transaction": {
       const i = txns.findIndex((t) => t.id === a.id);
       if (i < 0) fail("NotFound", "Transaction not found");
+      if (txns[i].kind === "opening") fail("ValidationError", "The opening balance can't be deleted");
       txns.splice(i, 1);
       return undefined as T;
     }
@@ -341,11 +352,11 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       const from = `${y}-${String(m).padStart(2, "0")}-01`;
       const to = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
       const inRange = (t: Transaction) => t.transactionDate >= from && t.transactionDate < to;
-      const income = txns.filter((t) => t.kind === "income" && inRange(t)).reduce((s, t) => s + t.amountCents, 0);
-      const expense = txns.filter((t) => t.kind === "expense" && inRange(t)).reduce((s, t) => s + t.amountCents, 0);
+      const income = txns.filter((t) => t.kind === "income" && !t.excludedFromReporting && inRange(t)).reduce((s, t) => s + t.amountCents, 0);
+      const expense = txns.filter((t) => t.kind === "expense" && !t.excludedFromReporting && inRange(t)).reduce((s, t) => s + t.amountCents, 0);
       const parentOf = (cid: string) => categories.find((x) => x.id === cid)?.parentId ?? cid;
       const byCat = new Map<string, number>();
-      txns.filter((t) => t.kind === "expense" && inRange(t)).forEach((t) => {
+      txns.filter((t) => t.kind === "expense" && !t.excludedFromReporting && inRange(t)).forEach((t) => {
         const pid = parentOf(t.categoryId!);
         byCat.set(pid, (byCat.get(pid) ?? 0) + t.amountCents);
       });
