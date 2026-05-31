@@ -206,7 +206,6 @@ fn map_category(r: &Row) -> rusqlite::Result<Category> {
         color: r.get("color")?,
         parent_id: r.get("parent_id")?,
         sort_order: r.get("sort_order")?,
-        is_system: r.get::<_, i64>("is_system")? != 0,
         is_archived: r.get::<_, i64>("is_archived")? != 0,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
@@ -253,8 +252,8 @@ pub fn insert_category(
     now: &str,
 ) -> AppResult<Category> {
     conn.execute(
-        "INSERT INTO categories (id, name, kind, emoji, color, parent_id, sort_order, is_system, is_archived, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 100, 0, 0, ?7, ?7)",
+        "INSERT INTO categories (id, name, kind, emoji, color, parent_id, sort_order, is_archived, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 100, 0, ?7, ?7)",
         params![id, name, kind, emoji, color, parent_id, now],
     )
     .map_err(map_unique)?;
@@ -303,6 +302,56 @@ pub fn set_children_archived(conn: &Connection, parent_id: &str, archived: bool,
         params![parent_id, archived as i64, now],
     )?;
     Ok(())
+}
+
+pub fn count_children(conn: &Connection, parent_id: &str) -> AppResult<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM categories WHERE parent_id = ?1",
+        [parent_id],
+        |r| r.get(0),
+    )?)
+}
+
+pub fn count_transactions_for_category(conn: &Connection, category_id: &str) -> AppResult<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM transactions WHERE category_id = ?1",
+        [category_id],
+        |r| r.get(0),
+    )?)
+}
+
+pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
+    let n = conn.execute("DELETE FROM categories WHERE id = ?1", [id])?;
+    if n == 0 {
+        return Err(AppError::NotFound("Category not found".into()));
+    }
+    Ok(())
+}
+
+pub fn reorder_categories(conn: &Connection, ids: &[String], now: &str) -> AppResult<()> {
+    for (i, id) in ids.iter().enumerate() {
+        let n = conn.execute(
+            "UPDATE categories SET sort_order = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, i as i64, now],
+        )?;
+        if n == 0 {
+            return Err(AppError::NotFound("Category not found".into()));
+        }
+    }
+    Ok(())
+}
+
+pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>, now: &str) -> AppResult<Category> {
+    let n = conn
+        .execute(
+            "UPDATE categories SET parent_id = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, parent_id, now],
+        )
+        .map_err(map_unique)?;
+    if n == 0 {
+        return Err(AppError::NotFound("Category not found".into()));
+    }
+    get_category(conn, id)
 }
 
 // ── Transactions ─────────────────────────────────────────────────────────────

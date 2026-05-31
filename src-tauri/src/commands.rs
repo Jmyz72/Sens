@@ -93,6 +93,26 @@ pub fn restore_category(state: State<'_, DbState>, id: String) -> AppResult<Cate
     with_conn!(state, c => service::restore_category(&c, &id))
 }
 
+#[tauri::command]
+pub fn delete_category(state: State<'_, DbState>, id: String) -> AppResult<()> {
+    with_conn!(state, c => service::delete_category(&c, &id))
+}
+
+#[tauri::command]
+pub fn reorder_categories(state: State<'_, DbState>, ids: Vec<String>) -> AppResult<()> {
+    with_conn!(state, c => service::reorder_categories(&c, &ids))
+}
+
+#[tauri::command]
+pub fn set_category_parent(state: State<'_, DbState>, id: String, parent_id: Option<String>) -> AppResult<Category> {
+    with_conn!(state, c => service::set_category_parent(&c, &id, parent_id.as_deref()))
+}
+
+#[tauri::command]
+pub fn set_categories_archived(state: State<'_, DbState>, ids: Vec<String>, archived: bool) -> AppResult<()> {
+    with_conn!(state, c => service::set_categories_archived(&c, &ids, archived))
+}
+
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 #[tauri::command]

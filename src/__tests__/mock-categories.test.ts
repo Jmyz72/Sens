@@ -32,6 +32,73 @@ describe("mock subcategories", () => {
     expect(all.find((c) => c.id === sub.id)!.isArchived).toBe(false);
   });
 
+  it("deletes an unused category but blocks ones with children or transactions", async () => {
+    const unused = await expenseParent(`Trash-${Math.random()}`);
+    await mockInvoke("delete_category", { id: unused.id });
+    const all = await mockInvoke<Category[]>("list_categories", { kind: null, includeArchived: true });
+    expect(all.some((c) => c.id === unused.id)).toBe(false);
+
+    const parent = await expenseParent(`HasKid-${Math.random()}`);
+    await mockInvoke<Category>("create_category", { name: "Kid", kind: "expense", emoji: "🧒", color: null, parentId: parent.id });
+    await expect(mockInvoke("delete_category", { id: parent.id })).rejects.toMatchObject({ code: "Conflict" });
+
+    const acc = await mockInvoke<{ id: string }>("create_account", { name: `A-${Math.random()}`, subtype: "cash", openingBalanceCents: 0, templateKey: null });
+    const used = await expenseParent(`Used-${Math.random()}`);
+    await mockInvoke("create_expense_transaction", { accountId: acc.id, categoryId: used.id, amountCents: 100, description: null, date: "2026-05-10" });
+    await expect(mockInvoke("delete_category", { id: used.id })).rejects.toMatchObject({ code: "Conflict" });
+  });
+
+  it("reorder_categories assigns sort_order by index", async () => {
+    const a = await expenseParent(`Ord-A-${Math.random()}`);
+    const b = await expenseParent(`Ord-B-${Math.random()}`);
+    await mockInvoke("reorder_categories", { ids: [b.id, a.id] });
+    const all = await mockInvoke<Category[]>("list_categories", { kind: null, includeArchived: true });
+    expect(all.find((c) => c.id === b.id)!.sortOrder).toBe(0);
+    expect(all.find((c) => c.id === a.id)!.sortOrder).toBe(1);
+  });
+
+  it("set_category_parent moves, promotes, and rejects cross-kind", async () => {
+    const food = await expenseParent(`Food-SP-${Math.random()}`);
+    const fun = await expenseParent(`Fun-SP-${Math.random()}`);
+    const salary = await mockInvoke<Category>("create_category", { name: `Sal-SP-${Math.random()}`, kind: "income", emoji: "💰", color: null, parentId: null });
+    const coffee = await mockInvoke<Category>("create_category", { name: "Coffee SP", kind: "expense", emoji: "☕", color: null, parentId: food.id });
+
+    const moved = await mockInvoke<Category>("set_category_parent", { id: coffee.id, parentId: fun.id });
+    expect(moved.parentId).toBe(fun.id);
+
+    const promoted = await mockInvoke<Category>("set_category_parent", { id: coffee.id, parentId: null });
+    expect(promoted.parentId).toBe(null);
+
+    await expect(mockInvoke("set_category_parent", { id: coffee.id, parentId: salary.id }))
+      .rejects.toMatchObject({ code: "ValidationError" });
+  });
+
+  it("set_category_parent rejects a sibling-name collision under the new parent", async () => {
+    const p1 = await expenseParent(`P1-${Math.random()}`);
+    const p2 = await expenseParent(`P2-${Math.random()}`);
+    const dupInP1 = await mockInvoke<Category>("create_category", { name: "Dup", kind: "expense", emoji: "🍔", color: null, parentId: p1.id });
+    await mockInvoke<Category>("create_category", { name: "Dup", kind: "expense", emoji: "🍔", color: null, parentId: p2.id });
+    await expect(mockInvoke("set_category_parent", { id: dupInP1.id, parentId: p2.id }))
+      .rejects.toMatchObject({ code: "Conflict" });
+  });
+
+  it("set_categories_archived archives many with cascade", async () => {
+    const food = await expenseParent(`Food-BA-${Math.random()}`);
+    const coffee = await mockInvoke<Category>("create_category", { name: "Coffee BA", kind: "expense", emoji: "☕", color: null, parentId: food.id });
+    const fun = await expenseParent(`Fun-BA-${Math.random()}`);
+    await mockInvoke("set_categories_archived", { ids: [food.id, fun.id], archived: true });
+    const all = await mockInvoke<Category[]>("list_categories", { kind: null, includeArchived: true });
+    expect(all.find((c) => c.id === coffee.id)!.isArchived).toBe(true);
+    expect(all.find((c) => c.id === fun.id)!.isArchived).toBe(true);
+  });
+
+  it("mock seeds Coffee under Food and an Investments income category", async () => {
+    const all = await mockInvoke<Category[]>("list_categories", { kind: null, includeArchived: false });
+    const food = all.find((c) => c.name === "Food" && c.parentId == null)!;
+    expect(all.some((c) => c.name === "Coffee" && c.parentId === food.id)).toBe(true);
+    expect(all.some((c) => c.name === "Investments" && c.kind === "income" && c.parentId == null)).toBe(true);
+  });
+
   it("dashboard rolls subcategory spend into the parent", async () => {
     const acc = await mockInvoke<{ id: string }>("create_account", { name: `Acc-${Math.random()}`, subtype: "cash", openingBalanceCents: 0, templateKey: null });
     const food = await expenseParent(`Food-${Math.random()}`);

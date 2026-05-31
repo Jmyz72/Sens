@@ -3,7 +3,11 @@
 //! CHECK constraints, and indexes per the design spec's Database Design.
 
 /// Ordered list of `(version, sql)`. Append-only — never edit a shipped one.
-pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003)];
+pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004)];
+
+const MIGRATION_004: &str = r#"
+ALTER TABLE categories DROP COLUMN is_system;
+"#;
 
 const MIGRATION_003: &str = r#"
 ALTER TABLE categories ADD COLUMN parent_id TEXT REFERENCES categories(id) ON DELETE RESTRICT;

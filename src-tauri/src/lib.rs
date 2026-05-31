@@ -52,6 +52,10 @@ pub fn run() {
             commands::update_category,
             commands::archive_category,
             commands::restore_category,
+            commands::delete_category,
+            commands::reorder_categories,
+            commands::set_category_parent,
+            commands::set_categories_archived,
             commands::create_income_transaction,
             commands::create_expense_transaction,
             commands::create_transfer_transaction,
@@ -217,13 +221,12 @@ mod tests {
     }
 
     #[test]
-    fn cannot_archive_system_category() {
+    fn seeded_categories_can_be_archived() {
         let c = open_in_memory().unwrap();
-        // All seeded categories are is_system=1; pick the first one.
-        let sys = service::list_categories(&c, None, false).unwrap().into_iter().next().unwrap();
-        assert!(sys.is_system, "expected a system category");
-        let result = service::archive_category(&c, &sys.id);
-        assert!(result.is_err(), "archiving a system category should fail");
+        // After dropping is_system, every seeded category is archivable.
+        let cat = service::list_categories(&c, None, false).unwrap().into_iter().next().unwrap();
+        let updated = service::archive_category(&c, &cat.id).unwrap();
+        assert!(updated.is_archived, "seeded category should archive successfully");
     }
 
     #[test]
@@ -337,6 +340,111 @@ mod tests {
             !s.spending_breakdown.iter().any(|b| b.category_id == coffee.id),
             "subcategory must not appear as its own bar"
         );
+    }
+
+    #[test]
+    fn delete_category_rules() {
+        let c = open_in_memory().unwrap();
+        // Unused leaf category: deletes fine.
+        let unused = service::create_category(&c, "Throwaway", "expense", "🗑️", None, None).unwrap();
+        service::delete_category(&c, &unused.id).unwrap();
+        assert!(service::list_categories(&c, None, true).unwrap().iter().all(|x| x.id != unused.id));
+
+        // Parent with a child: blocked.
+        let parent = service::create_category(&c, "Parent X", "expense", "📦", None, None).unwrap();
+        let _child = service::create_category(&c, "Child X", "expense", "📦", None, Some(&parent.id)).unwrap();
+        assert!(matches!(service::delete_category(&c, &parent.id), Err(AppError::Conflict(_))));
+
+        // Category referenced by a transaction: blocked.
+        let acc = service::create_account(&c, "Acc", "cash", 0, None).unwrap();
+        let used = service::create_category(&c, "Used Cat", "expense", "💳", None, None).unwrap();
+        service::create_expense(&c, &acc.id, &used.id, 1000, None, "2026-05-10").unwrap();
+        assert!(matches!(service::delete_category(&c, &used.id), Err(AppError::Conflict(_))));
+    }
+
+    #[test]
+    fn reorder_categories_sets_sort_order() {
+        let c = open_in_memory().unwrap();
+        let a = service::create_category(&c, "AA", "expense", "🅰️", None, None).unwrap();
+        let b = service::create_category(&c, "BB", "expense", "🅱️", None, None).unwrap();
+        // Put b before a.
+        service::reorder_categories(&c, &[b.id.clone(), a.id.clone()]).unwrap();
+        let a2 = service::list_categories(&c, None, true).unwrap().into_iter().find(|x| x.id == a.id).unwrap();
+        let b2 = service::list_categories(&c, None, true).unwrap().into_iter().find(|x| x.id == b.id).unwrap();
+        assert_eq!(b2.sort_order, 0);
+        assert_eq!(a2.sort_order, 1);
+    }
+
+    #[test]
+    fn set_category_parent_move_promote_demote() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food MP", "expense", "🍔", None, None).unwrap();
+        let fun = service::create_category(&c, "Fun MP", "expense", "🎮", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee MP", "expense", "☕", None, Some(&food.id)).unwrap();
+
+        // Move sub to another parent.
+        let moved = service::set_category_parent(&c, &coffee.id, Some(&fun.id)).unwrap();
+        assert_eq!(moved.parent_id.as_deref(), Some(fun.id.as_str()));
+
+        // Promote sub to top-level.
+        let promoted = service::set_category_parent(&c, &coffee.id, None).unwrap();
+        assert_eq!(promoted.parent_id, None);
+        assert_eq!(promoted.kind, "expense");
+
+        // Demote a childless top-level under another parent.
+        let demoted = service::set_category_parent(&c, &coffee.id, Some(&food.id)).unwrap();
+        assert_eq!(demoted.parent_id.as_deref(), Some(food.id.as_str()));
+    }
+
+    #[test]
+    fn set_category_parent_rejects_invalid() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food R", "expense", "🍔", None, None).unwrap();
+        let salary = service::create_category(&c, "Salary R", "income", "💰", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee R", "expense", "☕", None, Some(&food.id)).unwrap();
+
+        // Cross-kind move rejected.
+        assert!(matches!(service::set_category_parent(&c, &coffee.id, Some(&salary.id)), Err(AppError::Validation(_))));
+
+        // Cannot demote a parent that still has children (use a same-kind target so the
+        // children guard — not the cross-kind guard — is what rejects it).
+        let dessert = service::create_category(&c, "Dessert R", "expense", "🍰", None, None).unwrap();
+        assert!(matches!(service::set_category_parent(&c, &food.id, Some(&dessert.id)), Err(AppError::Validation(_))));
+
+        // New parent must be top-level (not a subcategory).
+        let snack = service::create_category(&c, "Snack R", "expense", "🍪", None, Some(&food.id)).unwrap();
+        assert!(matches!(service::set_category_parent(&c, &snack.id, Some(&coffee.id)), Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn set_categories_archived_bulk_with_cascade() {
+        let c = open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food B", "expense", "🍔", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee B", "expense", "☕", None, Some(&food.id)).unwrap();
+        let fun = service::create_category(&c, "Fun B", "expense", "🎮", None, None).unwrap();
+
+        service::set_categories_archived(&c, &[food.id.clone(), fun.id.clone()], true).unwrap();
+        let all = service::list_categories(&c, None, true).unwrap();
+        assert!(all.iter().find(|x| x.id == food.id).unwrap().is_archived);
+        assert!(all.iter().find(|x| x.id == fun.id).unwrap().is_archived);
+        // Cascade archived the child too.
+        assert!(all.iter().find(|x| x.id == coffee.id).unwrap().is_archived);
+
+        service::set_categories_archived(&c, &[food.id.clone()], false).unwrap();
+        let all = service::list_categories(&c, None, true).unwrap();
+        assert!(!all.iter().find(|x| x.id == coffee.id).unwrap().is_archived);
+    }
+
+    #[test]
+    fn seeds_subcategories_under_food() {
+        let c = open_in_memory().unwrap();
+        let all = service::list_categories(&c, Some("expense"), false).unwrap();
+        let food = all.iter().find(|x| x.name == "Food" && x.parent_id.is_none()).unwrap();
+        let coffee = all.iter().find(|x| x.name == "Coffee" && x.parent_id.as_deref() == Some(food.id.as_str()));
+        assert!(coffee.is_some(), "expected a seeded 'Coffee' subcategory under Food");
+        // New income top-level.
+        let inc = service::list_categories(&c, Some("income"), false).unwrap();
+        assert!(inc.iter().any(|x| x.name == "Investments" && x.parent_id.is_none()), "expected seeded 'Investments' income category");
     }
 
     #[test]

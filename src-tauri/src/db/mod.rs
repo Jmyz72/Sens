@@ -10,6 +10,7 @@ use rusqlite::Connection;
 use std::path::Path;
 
 const FIRST_RUN_KEY: &str = "seeded";
+const DEFAULTS_V2_KEY: &str = "defaults_v2_seeded";
 
 /// Open the database, enforce foreign keys, run migrations, and seed once.
 pub fn open(path: &Path) -> AppResult<Connection> {
@@ -18,6 +19,7 @@ pub fn open(path: &Path) -> AppResult<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     run_migrations(&conn)?;
     seed_once(&conn)?;
+    backfill_defaults(&conn)?;
     Ok(conn)
 }
 
@@ -28,6 +30,7 @@ pub fn open_in_memory() -> AppResult<Connection> {
     conn.pragma_update(None, "foreign_keys", "ON")?;
     run_migrations(&conn)?;
     seed_once(&conn)?;
+    backfill_defaults(&conn)?;
     Ok(conn)
 }
 
@@ -79,6 +82,41 @@ fn seed_once(conn: &Connection) -> AppResult<()> {
         conn.execute(
             "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, '1', ?2)",
             rusqlite::params![FIRST_RUN_KEY, now],
+        )?;
+        Ok(())
+    })();
+    match res {
+        Ok(()) => conn.execute_batch("COMMIT")?,
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
+/// Backfill the richer default category tree for existing users. Gated by its
+/// own flag so it runs once; INSERT OR IGNORE means it never duplicates rows a
+/// fresh install already has, and never resurrects a default the user deleted
+/// after this has run.
+fn backfill_defaults(conn: &Connection) -> AppResult<()> {
+    let done: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM app_settings WHERE key = ?1)",
+            [DEFAULTS_V2_KEY],
+            |r| r.get(0),
+        )
+        .unwrap_or(false);
+    if done {
+        return Ok(());
+    }
+    let now = crate::now();
+    conn.execute_batch("BEGIN")?;
+    let res = (|| -> AppResult<()> {
+        seed::seed_categories(conn, &now)?;
+        conn.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, '1', ?2)",
+            rusqlite::params![DEFAULTS_V2_KEY, now],
         )?;
         Ok(())
     })();
@@ -162,5 +200,55 @@ mod migration_tests {
         assert_eq!(idx("idx_categories_top_kind_name"), 1, "top-level partial index");
         assert_eq!(idx("idx_categories_sub_parent_name"), 1, "sibling partial index");
         assert_eq!(idx("idx_categories_kind_name"), 0, "old global index should be dropped");
+    }
+
+    #[test]
+    fn backfill_seeds_defaults_for_existing_users_without_disturbing_them() {
+        let conn = super::open_in_memory().unwrap();
+        // Simulate a pre-v0.4.1 database: top-level categories exist, but the
+        // subcategory tree and the backfill flag do not.
+        conn.execute("DELETE FROM categories WHERE parent_id IS NOT NULL", []).unwrap();
+        conn.execute("DELETE FROM app_settings WHERE key = ?1", [super::DEFAULTS_V2_KEY]).unwrap();
+        let food: String = conn
+            .query_row(
+                "SELECT id FROM categories WHERE name = 'Food' AND parent_id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // An existing user may have archived a default before upgrading.
+        conn.execute("UPDATE categories SET is_archived = 1 WHERE id = ?1", [&food]).unwrap();
+
+        super::backfill_defaults(&conn).unwrap();
+
+        let children = |id: &str| -> i64 {
+            conn.query_row("SELECT COUNT(*) FROM categories WHERE parent_id = ?1", [id], |r| r.get(0))
+                .unwrap()
+        };
+        let subs = children(&food);
+        assert!(subs > 0, "backfill should seed subcategories under an existing top-level");
+
+        // The existing (archived) top-level is left untouched — not un-archived,
+        // not duplicated.
+        let archived: i64 = conn
+            .query_row("SELECT is_archived FROM categories WHERE id = ?1", [&food], |r| r.get(0))
+            .unwrap();
+        assert_eq!(archived, 1, "backfill must not disturb an existing archived category");
+        let food_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM categories WHERE name = 'Food' AND parent_id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(food_count, 1, "backfill must not duplicate an existing top-level");
+
+        // Re-seeding is idempotent: running the seed again adds nothing.
+        super::seed::seed_categories(&conn, "t").unwrap();
+        assert_eq!(children(&food), subs, "re-seeding must not duplicate subcategories");
+
+        // The gate flag is now set, so a second backfill is a no-op.
+        super::backfill_defaults(&conn).unwrap();
+        assert_eq!(children(&food), subs, "a gated second backfill must change nothing");
     }
 }

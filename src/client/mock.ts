@@ -53,12 +53,38 @@ PROVIDER_GROUPS.forEach(({ group, defaultSubtype, providers }) =>
 
 const CAT_SEED: [string, Category["kind"], string, string][] = [
   ["Salary", "income", "💰", "#46d39a"], ["Bonus", "income", "🎉", "#3fcf8e"], ["Freelance", "income", "💻", "#5aa66d"], ["Gift", "income", "🎁", "#56b3c4"], ["Other Income", "income", "➕", "#7bbf8f"],
+  ["Investments", "income", "📈", "#2fbf71"],
   ["Food", "expense", "🍔", "#e0a13c"], ["Transport", "expense", "🚗", "#8b7bd8"], ["Bills", "expense", "🧾", "#56b3c4"], ["Shopping", "expense", "🛍️", "#d9728f"], ["Health", "expense", "🏥", "#f0708c"], ["Entertainment", "expense", "🎬", "#a78bfa"], ["Groceries", "expense", "🛒", "#5aa66d"], ["Education", "expense", "📚", "#5b8def"], ["Travel", "expense", "✈️", "#33c9d6"], ["Other Expense", "expense", "💸", "#9aa4b2"],
   ["Transfer", "transfer", "🔄", "#9aa4b2"],
 ];
 const categories: Category[] = CAT_SEED.map(([name, kind, emoji, color], i) => ({
-  id: uid(), name, kind, emoji, color, parentId: null, sortOrder: i, isSystem: true, isArchived: false, createdAt: now(), updatedAt: now(),
+  id: uid(), name, kind, emoji, color, parentId: null, sortOrder: i, isArchived: false, createdAt: now(), updatedAt: now(),
 }));
+
+const SUB_SEED: [string, Category["kind"], string, string, string][] = [
+  ["Food", "expense", "Dining out", "🍽️", "#e0a13c"], ["Food", "expense", "Coffee", "☕", "#c08a4a"], ["Food", "expense", "Delivery/Takeaway", "🛵", "#d99a3c"], ["Food", "expense", "Snacks", "🍪", "#e3b15c"],
+  ["Transport", "expense", "Fuel", "⛽", "#8b7bd8"], ["Transport", "expense", "Parking & Tolls", "🅿️", "#9a8be0"], ["Transport", "expense", "Ride-hailing", "🚕", "#7d6dd0"], ["Transport", "expense", "Public transit", "🚇", "#a89bea"], ["Transport", "expense", "Car maintenance", "🔧", "#6f5fc0"],
+  ["Bills", "expense", "Rent", "🏠", "#56b3c4"], ["Bills", "expense", "Electricity", "💡", "#5fbecf"], ["Bills", "expense", "Water", "🚿", "#4aa6b8"], ["Bills", "expense", "Internet", "📶", "#63c5d6"], ["Bills", "expense", "Mobile", "📱", "#52aebf"], ["Bills", "expense", "Subscriptions", "📺", "#48a2b4"],
+  ["Shopping", "expense", "Clothing", "👗", "#d9728f"], ["Shopping", "expense", "Electronics", "🔌", "#e07f9a"], ["Shopping", "expense", "Home", "🛋️", "#cf6685"], ["Shopping", "expense", "Gifts", "🎁", "#e58aa3"],
+  ["Health", "expense", "Pharmacy", "💊", "#f0708c"], ["Health", "expense", "Clinic/Doctor", "🩺", "#f37e98"], ["Health", "expense", "Insurance", "🛡️", "#e96680"], ["Health", "expense", "Fitness", "🏋️", "#f58aa2"],
+  ["Entertainment", "expense", "Movies", "🎬", "#a78bfa"], ["Entertainment", "expense", "Games", "🎮", "#b39bfb"], ["Entertainment", "expense", "Events", "🎟️", "#9b7df9"], ["Entertainment", "expense", "Hobbies", "🎨", "#bfa9fc"],
+  ["Education", "expense", "Courses", "🎓", "#5b8def"], ["Education", "expense", "Books", "📖", "#6b97f1"], ["Education", "expense", "Tuition", "🧑", "#4f83ed"],
+  ["Travel", "expense", "Flights", "✈️", "#33c9d6"], ["Travel", "expense", "Accommodation", "🏨", "#45d0dc"], ["Travel", "expense", "Activities", "🏝️", "#28bdca"],
+  ["Salary", "income", "Base pay", "💵", "#46d39a"], ["Salary", "income", "Overtime", "⏰", "#52d8a2"], ["Salary", "income", "Allowances", "🧾", "#3fcf8e"], ["Salary", "income", "Commission", "📊", "#5bddaa"],
+  ["Freelance", "income", "Projects", "💻", "#5aa66d"], ["Freelance", "income", "Consulting", "💼", "#66b079"],
+  ["Investments", "income", "Dividends", "💹", "#3fcf8e"], ["Investments", "income", "Interest", "🏦", "#4bd699"], ["Investments", "income", "Capital gains", "📈", "#37c886"],
+];
+// Per-parent sort_order (0,1,2… within each parent), matching the Rust seed's
+// SUBCATEGORIES values rather than the flat array index.
+const subSortByParent: Record<string, number> = {};
+SUB_SEED.forEach(([parentName, kind, childName, emoji, color]) => {
+  const parent = categories.find((c) => c.name === parentName && c.kind === kind && c.parentId == null);
+  if (parent) {
+    const sort = subSortByParent[parent.id] ?? 0;
+    subSortByParent[parent.id] = sort + 1;
+    categories.push({ id: uid(), name: childName, kind, emoji, color, parentId: parent.id, sortOrder: sort, isArchived: false, createdAt: now(), updatedAt: now() });
+  }
+});
 
 const accounts: Account[] = [];
 const txns: Transaction[] = [];
@@ -178,7 +204,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         (a.parentId != null ? x.parentId === a.parentId : x.parentId == null && x.kind === kind),
       );
       if (clash) fail("Conflict", "A category with this name already exists at this level");
-      const cat: Category = { id: uid(), name, kind, emoji: a.emoji, color: a.color ?? null, parentId: a.parentId ?? null, sortOrder: 100, isSystem: false, isArchived: false, createdAt: now(), updatedAt: now() };
+      const cat: Category = { id: uid(), name, kind, emoji: a.emoji, color: a.color ?? null, parentId: a.parentId ?? null, sortOrder: 100, isArchived: false, createdAt: now(), updatedAt: now() };
       categories.push(cat);
       return cat as T;
     }
@@ -186,13 +212,61 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "restore_category": {
       const c = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
       const archiving = command === "archive_category";
-      if (archiving && c.isSystem) fail("Conflict", "System categories cannot be archived");
       c.isArchived = archiving;
       c.updatedAt = now();
       if (c.parentId == null) {
         categories.forEach((x) => { if (x.parentId === c.id) { x.isArchived = archiving; x.updatedAt = now(); } });
       }
       return c as T;
+    }
+    case "delete_category": {
+      const c = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
+      if (categories.some((x) => x.parentId === c.id)) fail("Conflict", "Remove or move its subcategories first");
+      if (txns.some((t) => t.categoryId === c.id)) fail("Conflict", "In use by transactions — archive it instead");
+      categories.splice(categories.indexOf(c), 1);
+      return undefined as T;
+    }
+    case "reorder_categories": {
+      (a.ids as string[]).forEach((id, i) => {
+        const c = categories.find((x) => x.id === id);
+        if (c) { c.sortOrder = i; c.updatedAt = now(); }
+      });
+      return undefined as T;
+    }
+    case "set_categories_archived": {
+      const archiving = a.archived === true;
+      (a.ids as string[]).forEach((id) => {
+        const c = categories.find((x) => x.id === id);
+        if (!c) return;
+        c.isArchived = archiving;
+        c.updatedAt = now();
+        if (c.parentId == null) {
+          categories.forEach((x) => { if (x.parentId === c.id) { x.isArchived = archiving; x.updatedAt = now(); } });
+        }
+      });
+      return undefined as T;
+    }
+    case "set_category_parent": {
+      const cat = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
+      const pid: string | null = a.parentId ?? null;
+      if (pid != null) {
+        if (pid === cat.id) fail("ValidationError", "A category cannot be its own parent");
+        const parent = categories.find((x) => x.id === pid) ?? fail("NotFound", "Category not found");
+        if (parent.parentId != null) fail("ValidationError", "The new parent must be a top-level category");
+        if (parent.kind !== cat.kind) fail("ValidationError", "Cannot move a category to a different kind");
+        if (cat.parentId == null && categories.some((x) => x.parentId === cat.id)) {
+          fail("ValidationError", "Empty this category's subcategories before making it a subcategory");
+        }
+        // Sibling-name uniqueness under the new parent.
+        if (categories.some((x) => x.id !== cat.id && x.parentId === pid && x.name === cat.name)) {
+          fail("Conflict", "A category with this name already exists at this level");
+        }
+      } else if (categories.some((x) => x.id !== cat.id && x.parentId == null && x.kind === cat.kind && x.name === cat.name)) {
+        fail("Conflict", "A category with this name already exists at this level");
+      }
+      cat.parentId = pid;
+      cat.updatedAt = now();
+      return cat as T;
     }
     case "create_income_transaction":
     case "create_expense_transaction": {

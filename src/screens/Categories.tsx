@@ -13,7 +13,7 @@ import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { useAppData } from "../store";
 import { useToast } from "../components/Toast";
-import { categoryTree, type CategoryNode } from "../lib/categories";
+import { categoryTree, reorderIds, moveTargets, type CategoryNode } from "../lib/categories";
 
 // ── Preset colour palette (data constant, acceptable hardcoded hex) ─────────
 
@@ -166,6 +166,56 @@ function CategoryForm({ initial, parent, defaultKind = "expense", onClose, onDon
   );
 }
 
+// ── Move modal ───────────────────────────────────────────────────────────────
+
+function MoveCategoryModal({ category, all, onClose, onDone }: {
+  category: Category;
+  all: Category[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const t = useTheme();
+  const { notify } = useToast();
+  const [busy, setBusy] = useState(false);
+  const targets = moveTargets(all, category);
+  const isSub = category.parentId != null;
+  const hasChildren = all.some((c) => c.parentId === category.id);
+
+  async function move(parentId: string | null) {
+    setBusy(true);
+    try { await client.setCategoryParent(category.id, parentId); onDone(); }
+    catch (e) { notify((e as { message?: string })?.message ?? "Failed to move category", "error"); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <Modal onClose={onClose} width={360}>
+      <div style={{ padding: "16px 20px", borderBottom: `0.5px solid ${t.divider}`, fontSize: 15, fontWeight: 700 }}>
+        Move "{category.name}"
+      </div>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+        {isSub && (
+          <Btn variant="outline" size="md" disabled={busy} onClick={() => move(null)}>
+            Make top-level category
+          </Btn>
+        )}
+        {targets.length === 0 && !isSub && (
+          <div style={{ fontSize: 12.5, color: t.faint }}>
+            {hasChildren
+              ? "Empty this category's subcategories first to make it a subcategory."
+              : `No other ${KIND_LABELS[category.kind].toLowerCase()} category to move under — create one first.`}
+          </div>
+        )}
+        {targets.map((p) => (
+          <Btn key={p.id} variant="outline" size="md" disabled={busy} onClick={() => move(p.id)}>
+            <GlyphTile tone={p.color ?? t.accent} size={20} emoji={p.emoji} radius={6} /> Under {p.name}
+          </Btn>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 // ── Main screen ──────────────────────────────────────────────────────────────
 
 export function Categories() {
@@ -178,6 +228,30 @@ export function Categories() {
   const [creating, setCreating] = useState<CategoryKind | null>(null);
   const [addingSubTo, setAddingSubTo] = useState<Category | null>(null);
   const [editing, setEditing] = useState<Category | null>(null);
+  const [moving, setMoving] = useState<Category | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<Category | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkArchive(archived: boolean) {
+    if (selected.size === 0) return;
+    try {
+      await client.setCategoriesArchived([...selected], archived);
+      setSelected(new Set());
+      setSelectMode(false);
+      await reload();
+    } catch (e) {
+      notify((e as { message?: string })?.message ?? "Bulk action failed", "error");
+    }
+  }
 
   useEffect(() => {
     client.listCategories(undefined, true).then(setAll).catch(() => {});
@@ -210,11 +284,35 @@ export function Categories() {
     try { await client.restoreCategory(c.id); await reload(); }
     catch (e) { notify((e as { message?: string })?.message ?? "Failed to restore category", "error"); }
   }
+  async function del(c: Category) {
+    try { await client.deleteCategory(c.id); await reload(); }
+    catch (e) { notify((e as { message?: string })?.message ?? "Failed to delete category", "error"); }
+  }
   async function afterMutation() {
     await reload();
     setCreating(null);
     setAddingSubTo(null);
     setEditing(null);
+  }
+
+  // Persist a drag-reorder. We rebuild the *full* sibling group (same kind +
+  // parent, archived rows included) from `all` so sort_order stays a clean
+  // 0..n with no collisions even when archived rows are hidden from the drag.
+  async function commitReorder(fromId: string, toId: string) {
+    if (fromId === toId) return;
+    const from = all.find((c) => c.id === fromId);
+    const to = all.find((c) => c.id === toId);
+    if (!from || !to) return;
+    const sameGroup =
+      from.kind === to.kind && (from.parentId ?? null) === (to.parentId ?? null);
+    if (!sameGroup) return; // a stray cross-group drop is a no-op
+    const ids = all
+      .filter((c) => c.kind === from.kind && (c.parentId ?? null) === (from.parentId ?? null))
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((c) => c.id);
+    const next = reorderIds(ids, ids.indexOf(fromId), ids.indexOf(toId));
+    try { await client.reorderCategories(next); await reload(); }
+    catch (e) { notify((e as { message?: string })?.message ?? "Failed to reorder", "error"); }
   }
 
   const activeCount = all.filter((c) => !c.isArchived).length;
@@ -230,12 +328,27 @@ export function Categories() {
               <div style={{ fontSize: 13.5, fontWeight: 500, color: t.text }}>{activeCount} active</div>
               <div style={{ fontSize: 12, color: t.faint, marginTop: 2 }}>Categories &amp; subcategories</div>
             </div>
-            <Btn variant="primary" icon="plus" size="md" onClick={() => setCreating("expense")}>New</Btn>
+            <div style={{ display: "flex", gap: 6 }}>
+              <Btn variant="outline" size="md" onClick={() => { setSelectMode((s) => !s); setSelected(new Set()); }}>
+                {selectMode ? "Done" : "Select"}
+              </Btn>
+              <Btn variant="primary" icon="plus" size="md" onClick={() => setCreating("expense")}>New</Btn>
+            </div>
           </div>
           {hasArchived && (
             <div style={{ marginTop: 10 }}>
               <Btn variant="outline" size="sm" onClick={() => setShowArchived((s) => !s)}>
                 {showArchived ? "Hide archived" : "Show archived"}
+              </Btn>
+            </div>
+          )}
+          {selectMode && (
+            <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+              <Btn variant="outline" size="sm" icon="archive" disabled={selected.size === 0} onClick={() => bulkArchive(true)}>
+                Archive ({selected.size})
+              </Btn>
+              <Btn variant="outline" size="sm" icon="restore" disabled={selected.size === 0} onClick={() => bulkArchive(false)}>
+                Restore ({selected.size})
               </Btn>
             </div>
           )}
@@ -255,15 +368,28 @@ export function Categories() {
               ) : (
                 nodes.map((node) => {
                   const c = node.category;
-                  const on = c.id === selectedId;
+                  const on = !selectMode && c.id === selectedId;
                   return (
-                    <button key={c.id} className="sens-row" onClick={() => setSelectedId(c.id)}
+                    <button key={c.id} className="sens-row" onClick={() => selectMode ? toggleSelected(c.id) : setSelectedId(c.id)}
+                      draggable={!selectMode}
+                      onDragStart={(e) => e.dataTransfer.setData("text/plain", c.id)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const fromId = e.dataTransfer.getData("text/plain");
+                        if (fromId) commitReorder(fromId, c.id);
+                      }}
                       style={{
                         width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "8px 16px",
                         background: on ? t.panel2 : "transparent", border: "none", cursor: "pointer",
                         opacity: c.isArchived ? 0.55 : 1, textAlign: "left",
                         borderLeft: `2px solid ${on ? (c.color ?? t.accent) : "transparent"}`,
                       }}>
+                      {selectMode && (
+                        <span style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${selected.has(c.id) ? t.accent : t.border}`, background: selected.has(c.id) ? t.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {selected.has(c.id) && <Icon name="check" size={11} color={t.onAccent} />}
+                        </span>
+                      )}
                       <GlyphTile tone={c.color ?? t.accent} size={28} emoji={c.emoji} radius={8} />
                       <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: on ? 650 : 550, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {c.name}
@@ -292,6 +418,11 @@ export function Categories() {
             onEditChild={(child) => setEditing(child)}
             onArchiveChild={(child) => archive(child)}
             onRestoreChild={(child) => restore(child)}
+            onDelete={() => setConfirmingDelete(selectedNode.category)}
+            onDeleteChild={(child) => setConfirmingDelete(child)}
+            onReorderChildren={(fromId, toId) => commitReorder(fromId, toId)}
+            onMove={() => setMoving(selectedNode.category)}
+            onMoveChild={(child) => setMoving(child)}
           />
         ) : (
           <Card><Empty icon="filter" title="No categories yet" hint="Create one with the New button." /></Card>
@@ -308,6 +439,29 @@ export function Categories() {
       {editing && (
         <CategoryForm initial={editing} onClose={() => setEditing(null)} onDone={afterMutation} />
       )}
+      {moving && (
+        <MoveCategoryModal category={moving} all={all} onClose={() => setMoving(null)} onDone={() => { setMoving(null); reload(); }} />
+      )}
+      {confirmingDelete && (
+        <Modal onClose={() => setConfirmingDelete(null)} width={360}>
+          <div style={{ padding: "16px 20px", borderBottom: `0.5px solid ${t.divider}`, fontSize: 15, fontWeight: 700 }}>
+            Delete "{confirmingDelete.name}"?
+          </div>
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ fontSize: 12.5, color: t.dim, lineHeight: 1.5 }}>
+              This permanently removes the category. It can't be undone. A category still used by
+              transactions can't be deleted — archive it instead.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Btn variant="outline" size="md" onClick={() => setConfirmingDelete(null)}>Cancel</Btn>
+              <Btn variant="danger" size="md" icon="trash"
+                onClick={async () => { const c = confirmingDelete; setConfirmingDelete(null); await del(c); }}>
+                Delete
+              </Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -315,7 +469,7 @@ export function Categories() {
 // ── Detail pane ──────────────────────────────────────────────────────────────
 
 function CategoryDetail({
-  node, onEdit, onArchive, onRestore, onAddSub, onEditChild, onArchiveChild, onRestoreChild,
+  node, onEdit, onArchive, onRestore, onAddSub, onEditChild, onArchiveChild, onRestoreChild, onDelete, onDeleteChild, onReorderChildren, onMove, onMoveChild,
 }: {
   node: CategoryNode;
   onEdit: () => void;
@@ -325,6 +479,11 @@ function CategoryDetail({
   onEditChild: (c: Category) => void;
   onArchiveChild: (c: Category) => void;
   onRestoreChild: (c: Category) => void;
+  onDelete: () => void;
+  onDeleteChild: (c: Category) => void;
+  onReorderChildren: (fromId: string, toId: string) => void;
+  onMove: () => void;
+  onMoveChild: (c: Category) => void;
 }) {
   const t = useTheme();
   const c = node.category;
@@ -337,7 +496,6 @@ function CategoryDetail({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {c.name}
-            {c.isSystem && <Tag tone={t.accent}>System</Tag>}
             {c.isArchived && <Tag tone={t.faint}>Archived</Tag>}
           </div>
           <div style={{ fontSize: 12.5, color: t.dim, marginTop: 3 }}>
@@ -346,9 +504,13 @@ function CategoryDetail({
         </div>
         <div style={{ display: "flex", gap: 4 }}>
           <Btn variant="outline" size="sm" icon="pencil" onClick={onEdit}>Edit</Btn>
-          {!c.isSystem && (c.isArchived
+          <Btn variant="outline" size="sm" icon="swap" onClick={onMove}>Move</Btn>
+          {c.isArchived
             ? <Btn variant="outline" size="sm" icon="restore" onClick={onRestore}>Restore</Btn>
             : <Btn variant="outline" size="sm" icon="archive" onClick={onArchive}>Archive</Btn>
+          }
+          {node.children.length === 0 && (
+            <Btn variant="danger" size="sm" icon="trash" onClick={onDelete}>Delete</Btn>
           )}
         </div>
       </div>
@@ -365,6 +527,14 @@ function CategoryDetail({
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
             {node.children.map((child) => (
               <div key={child.id} className="sens-row"
+                draggable
+                onDragStart={(e) => e.dataTransfer.setData("text/plain", child.id)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const fromId = e.dataTransfer.getData("text/plain");
+                  if (fromId) onReorderChildren(fromId, child.id);
+                }}
                 style={{ display: "flex", alignItems: "center", gap: 11, padding: "8px 10px",
                   border: `0.5px solid ${t.border}`, borderRadius: 9, opacity: child.isArchived ? 0.55 : 1 }}>
                 <GlyphTile tone={child.color ?? t.accent} size={28} emoji={child.emoji} radius={8} />
@@ -374,9 +544,11 @@ function CategoryDetail({
                 </span>
                 <div style={{ display: "flex", gap: 4 }}>
                   <Btn variant="outline" size="sm" icon="pencil" onClick={() => onEditChild(child)}>Edit</Btn>
+                  <Btn variant="outline" size="sm" icon="swap" onClick={() => onMoveChild(child)}>Move</Btn>
                   {child.isArchived
                     ? <Btn variant="outline" size="sm" icon="restore" onClick={() => onRestoreChild(child)}>Restore</Btn>
                     : <Btn variant="outline" size="sm" icon="archive" onClick={() => onArchiveChild(child)}>Archive</Btn>}
+                  <Btn variant="danger" size="sm" icon="trash" onClick={() => onDeleteChild(child)}>Delete</Btn>
                 </div>
               </div>
             ))}

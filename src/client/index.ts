@@ -40,6 +40,12 @@ export const client = {
     dispatch<Category>("update_category", { input }),
   archiveCategory: (id: string) => dispatch<Category>("archive_category", { id }),
   restoreCategory: (id: string) => dispatch<Category>("restore_category", { id }),
+  deleteCategory: (id: string) => dispatch<void>("delete_category", { id }),
+  reorderCategories: (ids: string[]) => dispatch<void>("reorder_categories", { ids }),
+  setCategoryParent: (id: string, parentId: string | null) =>
+    dispatch<Category>("set_category_parent", { id, parentId }),
+  setCategoriesArchived: (ids: string[], archived: boolean) =>
+    dispatch<void>("set_categories_archived", { ids, archived }),
 
   // Transactions
   createIncome: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string) =>

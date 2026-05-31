@@ -65,7 +65,6 @@ pub struct Category {
     pub color: Option<String>,
     pub parent_id: Option<String>,
     pub sort_order: i64,
-    pub is_system: bool,
     pub is_archived: bool,
     pub created_at: String,
     pub updated_at: String,

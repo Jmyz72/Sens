@@ -47,3 +47,28 @@ export function categoryPickerItems(cats: Category[], kind: CategoryKind): Picke
   }
   return out;
 }
+
+/** Return `ids` with the item at `from` moved to index `to`. */
+export function reorderIds(ids: string[], from: number, to: number): string[] {
+  const next = ids.slice();
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+/** Valid top-level parents a category may be moved under: same kind, top-level,
+ *  active (not archived), not itself, not its current parent. A top-level that
+ *  still has children cannot be moved (would create a third level), so it
+ *  returns []. */
+export function moveTargets(cats: Category[], category: Category): Category[] {
+  const hasChildren = cats.some((c) => c.parentId === category.id);
+  if (category.parentId == null && hasChildren) return [];
+  return cats.filter(
+    (c) =>
+      c.parentId == null &&
+      c.kind === category.kind &&
+      !c.isArchived &&
+      c.id !== category.id &&
+      c.id !== category.parentId,
+  );
+}

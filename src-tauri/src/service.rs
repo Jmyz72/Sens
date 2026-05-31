@@ -184,9 +184,6 @@ pub fn update_category(conn: &Connection, input: UpdateCategoryInput) -> AppResu
 
 pub fn archive_category(conn: &Connection, id: &str) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
-    if cat.is_system {
-        return Err(AppError::Conflict("System categories cannot be archived".into()));
-    }
     let now = now();
     let updated = repo::set_category_archived(conn, id, true, &now)?;
     if cat.parent_id.is_none() {
@@ -207,6 +204,78 @@ pub fn restore_category(conn: &Connection, id: &str) -> AppResult<Category> {
         repo::set_children_archived(conn, id, false, &now)?;
     }
     Ok(updated)
+}
+
+pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
+    repo::get_category(conn, id)?; // NotFound if missing
+    if repo::count_children(conn, id)? > 0 {
+        return Err(AppError::Conflict("Remove or move its subcategories first".into()));
+    }
+    if repo::count_transactions_for_category(conn, id)? > 0 {
+        return Err(AppError::Conflict("In use by transactions — archive it instead".into()));
+    }
+    repo::delete_category(conn, id)
+}
+
+/// Reparent a category: move a leaf to another top-level parent, promote a
+/// subcategory to top-level (parent_id = None), or demote a childless top-level
+/// into a subcategory. Kind never changes; the new parent must be top-level and
+/// share the moved category's kind.
+pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>) -> AppResult<Category> {
+    let cat = repo::get_category(conn, id)?;
+    if let Some(pid) = parent_id {
+        if pid == id {
+            return Err(AppError::Validation("A category cannot be its own parent".into()));
+        }
+        let parent = repo::get_category(conn, pid)?; // NotFound if bogus
+        if parent.parent_id.is_some() {
+            return Err(AppError::Validation("The new parent must be a top-level category".into()));
+        }
+        if parent.kind != cat.kind {
+            return Err(AppError::Validation("Cannot move a category to a different kind".into()));
+        }
+        // Demoting/moving a top-level that still has children would create a third level.
+        if cat.parent_id.is_none() && repo::count_children(conn, id)? > 0 {
+            return Err(AppError::Validation("Empty this category's subcategories before making it a subcategory".into()));
+        }
+    }
+    repo::set_category_parent(conn, id, parent_id, &now())
+}
+
+/// Bulk archive or restore. Reuses the per-id archive/restore so the top-level
+/// child cascade is applied to each. Wrapped in one transaction so a failure
+/// partway leaves nothing half-applied (all-or-nothing).
+pub fn set_categories_archived(conn: &Connection, ids: &[String], archived: bool) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
+    for id in ids {
+        if archived {
+            archive_category(&tx, id)?;
+        } else {
+            restore_category(&tx, id)?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Assign sort_order = index to each id. Caller (frontend) supplies one full
+/// sibling group (same parent + kind); we validate they are genuine siblings,
+/// then apply every update in a single transaction (all-or-nothing).
+pub fn reorder_categories(conn: &Connection, ids: &[String]) -> AppResult<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let first = repo::get_category(conn, &ids[0])?;
+    for id in &ids[1..] {
+        let cat = repo::get_category(conn, id)?;
+        if cat.kind != first.kind || cat.parent_id != first.parent_id {
+            return Err(AppError::Validation("Can only reorder categories within one group".into()));
+        }
+    }
+    let tx = conn.unchecked_transaction()?;
+    repo::reorder_categories(&tx, ids, &now())?;
+    tx.commit()?;
+    Ok(())
 }
 
 // ── Transactions ─────────────────────────────────────────────────────────────
