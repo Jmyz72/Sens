@@ -56,10 +56,6 @@ const CAT_SEED: [string, Category["kind"], string, string][] = [
   ["Food", "expense", "🍔", "#e0a13c"], ["Transport", "expense", "🚗", "#8b7bd8"], ["Bills", "expense", "🧾", "#56b3c4"], ["Shopping", "expense", "🛍️", "#d9728f"], ["Health", "expense", "🏥", "#f0708c"], ["Entertainment", "expense", "🎬", "#a78bfa"], ["Groceries", "expense", "🛒", "#5aa66d"], ["Education", "expense", "📚", "#5b8def"], ["Travel", "expense", "✈️", "#33c9d6"], ["Other Expense", "expense", "💸", "#9aa4b2"],
   ["Transfer", "transfer", "🔄", "#9aa4b2"],
 ];
-const categories: Category[] = CAT_SEED.map(([name, kind, emoji, color], i) => ({
-  id: uid(), name, kind, emoji, color, parentId: null, sortOrder: i, isArchived: false, createdAt: now(), updatedAt: now(),
-}));
-
 const SUB_SEED: [string, Category["kind"], string, string, string][] = [
   ["Food", "expense", "Dining out", "🍽️", "#e0a13c"], ["Food", "expense", "Coffee", "☕", "#c08a4a"], ["Food", "expense", "Delivery/Takeaway", "🛵", "#d99a3c"], ["Food", "expense", "Snacks", "🍪", "#e3b15c"],
   ["Transport", "expense", "Fuel", "⛽", "#8b7bd8"], ["Transport", "expense", "Parking & Tolls", "🅿️", "#9a8be0"], ["Transport", "expense", "Ride-hailing", "🚕", "#7d6dd0"], ["Transport", "expense", "Public transit", "🚇", "#a89bea"], ["Transport", "expense", "Car maintenance", "🔧", "#6f5fc0"],
@@ -73,17 +69,25 @@ const SUB_SEED: [string, Category["kind"], string, string, string][] = [
   ["Freelance", "income", "Projects", "💻", "#5aa66d"], ["Freelance", "income", "Consulting", "💼", "#66b079"],
   ["Investments", "income", "Dividends", "💹", "#3fcf8e"], ["Investments", "income", "Interest", "🏦", "#4bd699"], ["Investments", "income", "Capital gains", "📈", "#37c886"],
 ];
-// Per-parent sort_order (0,1,2… within each parent), matching the Rust seed's
-// SUBCATEGORIES values rather than the flat array index.
-const subSortByParent: Record<string, number> = {};
-SUB_SEED.forEach(([parentName, kind, childName, emoji, color]) => {
-  const parent = categories.find((c) => c.name === parentName && c.kind === kind && c.parentId == null);
-  if (parent) {
-    const sort = subSortByParent[parent.id] ?? 0;
-    subSortByParent[parent.id] = sort + 1;
-    categories.push({ id: uid(), name: childName, kind, emoji, color, parentId: parent.id, sortOrder: sort, isArchived: false, createdAt: now(), updatedAt: now() });
-  }
-});
+
+const categories: Category[] = [];
+
+function seedCategories() {
+  categories.length = 0;
+  CAT_SEED.forEach(([name, kind, emoji, color], i) => {
+    categories.push({ id: uid(), name, kind, emoji, color, parentId: null, sortOrder: i, isArchived: false, createdAt: now(), updatedAt: now() });
+  });
+  const subSortByParent: Record<string, number> = {};
+  SUB_SEED.forEach(([parentName, kind, childName, emoji, color]) => {
+    const parent = categories.find((c) => c.name === parentName && c.kind === kind && c.parentId == null);
+    if (parent) {
+      const sort = subSortByParent[parent.id] ?? 0;
+      subSortByParent[parent.id] = sort + 1;
+      categories.push({ id: uid(), name: childName, kind, emoji, color, parentId: parent.id, sortOrder: sort, isArchived: false, createdAt: now(), updatedAt: now() });
+    }
+  });
+}
+seedCategories();
 
 const accounts: Account[] = [];
 const txns: Transaction[] = [];
@@ -350,6 +354,13 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "set_setting": {
       if (!String(a.key).trim()) fail("ValidationError", "Key cannot be empty");
       settings.set(String(a.key), String(a.value));
+      return undefined as T;
+    }
+    case "reset_app": {
+      accounts.length = 0;
+      txns.length = 0;
+      settings.clear();
+      seedCategories();
       return undefined as T;
     }
     default:
