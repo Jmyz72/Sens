@@ -85,6 +85,73 @@ Completes the deferred taxonomy work.
 - [ ] 1.0 polish pass
 — spec: _TBD_
 
+## Technical health & hardening (cross-cutting)
+
+Not feature phases — engineering-quality work that spans releases. Pick these up
+alongside the feature minors above (or fold the smaller ones into a patch). Items
+are ⚪ planned until scheduled.
+
+### ⚪ Performance — balance computation at scale
+The current balance engine (`balance_expr` in `src-tauri/src/repo.rs`) runs five
+correlated sub-queries over `transactions` **per account row**, reused on the
+Accounts screen and the dashboard (`list_accounts` / `get_account` /
+`account_balances`). Fine today; scans grow with transaction history.
+- [ ] rewrite as a single `LEFT JOIN transactions … GROUP BY a.id` (CASE sums), or
+      maintain a running-balance materialization
+- [ ] re-fetch discipline on the frontend: `store.ts` bumps a `version` counter and
+      every screen re-pulls — Accounts loads the **entire** transaction history in a
+      1000-row loop on each reload; consolidate the duplicate Transactions/Accounts
+      fetches and add a lightweight query cache + request cancellation on unmount
+- [ ] Transactions screen caps at 500 rows with no pagination UI — older txns are
+      silently unreachable there
+— spec: _TBD_
+
+### ⚪ Rust↔mock drift guard
+The subtype taxonomy and default category tree are hand-maintained in **both** the
+Rust seed (`db/seed.rs`, migration 002) and `src/client/mock.ts` (`SUBTYPE_ROWS`,
+`CAT_SEED`/`SUB_SEED`). CLAUDE.md already warns every behavior change must land in
+both places — a standing drift hazard.
+- [ ] CI check (or shared generated JSON) asserting the mock's taxonomy/seed matches
+      the Rust source, so divergence fails the build
+— spec: _TBD_
+
+### ⚪ Test coverage — UI & integration
+Backend services/repos and frontend libs are well covered; there are **no React
+component/interaction tests** for the screens (`Categories.tsx`, `Accounts.tsx`,
+`Dashboard.tsx`) or the four modals — i.e. the form-submit → error-toast →
+`reload()` flows users actually exercise.
+- [ ] add `@testing-library/react` + modal-flow tests (submit, validation, error)
+- [ ] backend edges: `month_range` date boundaries (leap year / year-end), combined
+      transaction filters (account + category + date), pagination limits
+— spec: _TBD_
+
+### ⚪ Accessibility pass
+Only two aria/role attributes exist across the entire `src/**/*.tsx` tree.
+- [ ] `aria-label` on icon-only buttons; `role="dialog"` + focus trapping on modals
+- [ ] keyboard path + live-region announcements for Categories drag-reorder
+- [ ] audit the own/owe account distinction for a non-color cue (the kind colors
+      already pair with sign + icon; accounts should match that guarantee)
+- _Note:_ overlaps the v1.0.0 "1.0 polish pass" — could land there.
+— spec: _TBD_
+
+### ⚪ Startup resilience
+App setup uses `.expect()` (`src-tauri/src/lib.rs`); a corrupt or unreachable
+app-data DB panics on launch with no user-facing message. Normal operation already
+surfaces `AppError` cleanly — only startup is exposed.
+- [ ] graceful startup error path with a recovery dialog
+- _Note:_ pairs naturally with backup/restore in **v0.11.0 — Data integrity &
+  ownership**.
+— spec: _TBD_
+
+### ⚪ Frontend cleanups (low priority)
+- [ ] split `Categories.tsx` (572 lines) — extract the inline `CategoryForm` and
+      `MoveCategoryModal`
+- [ ] extract one `getErrorMessage(e, fallback)` helper (the
+      `(e as { message?: string })?.message ?? "…"` cast is copy-pasted ~5×)
+- [ ] factor repeated modal-header / inline theme-token styling into a `ModalHeader`
+      atom + a few style helpers
+— spec: _TBD_
+
 ## Later / unscheduled
 _Nothing yet — every selected feature is placed above. New ideas land here (or in
 the right phase) before they're scheduled._
