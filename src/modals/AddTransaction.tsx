@@ -147,8 +147,10 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
               {excluded && <Icon name="check" size={12} color="#fff" stroke={3} />}
             </span>
             <span style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>Money movement</div>
-              <div style={{ fontSize: 11, color: t.faint }}>Affects balances but excluded from income/expense reports</div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>
+                {kind === "income" ? "Excluded from income" : "Excluded from expense"}
+              </div>
+              <div style={{ fontSize: 11, color: t.faint }}>Still updates the balance, but won't count in reports</div>
             </span>
           </button>
         )}
