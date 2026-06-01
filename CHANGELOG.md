@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Redesigned the Dashboard layout.** Net worth and the month's Income / Expenses /
+  Net Cashflow are now unified into a single hero strip, and accounts render as a
+  responsive tile grid (with provider logos) instead of a tall list pinned beside the
+  spending breakdown. The old two-column row left a large empty gap when one side was
+  short; the new full-width stack flows naturally from an empty state to a full one.
+
 ## [0.5.2] — 2026-06-01
 
 ### Changed
