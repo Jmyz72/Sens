@@ -45,8 +45,18 @@ fn postings_for(kind: &str, account_id: &str, to_account_id: Option<&str>, amoun
 /// (Re)write the postings for a transaction from its header. Idempotent: clears
 /// any existing postings first, so it is safe on both create and update paths.
 fn materialize_postings(conn: &Connection, t: &Transaction) -> AppResult<()> {
+    let legs = postings_for(&t.kind, &t.account_id, t.to_account_id.as_deref(), t.amount_cents);
+    // Defence in depth: every known kind yields a balanced 2-leg entry. An empty
+    // set means an unhandled kind reached here — fail loud (even in release)
+    // rather than silently writing an unbalanced ledger.
+    if legs.is_empty() {
+        return Err(AppError::Validation(format!(
+            "Cannot post transaction of kind '{}'",
+            t.kind
+        )));
+    }
     repo::delete_postings_for(conn, &t.id)?;
-    for leg in postings_for(&t.kind, &t.account_id, t.to_account_id.as_deref(), t.amount_cents) {
+    for leg in legs {
         repo::insert_posting(conn, &new_id(), &t.id, leg.account_id.as_deref(), leg.system_bucket, leg.amount_cents)?;
     }
     Ok(())

@@ -5,8 +5,9 @@
 /// Ordered list of `(version, sql)`. Append-only — never edit a shipped one.
 pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005), (6, MIGRATION_006)];
 
-// v0.6.0 — double-entry posting engine. Adds a `postings` ledger that is the
-// authoritative source for account balances. Each posting is either a real
+// Double-entry posting engine (unreleased; version set at release time). Adds a
+// `postings` ledger that is the authoritative source for account balances. Each
+// posting is either a real
 // account leg (account_id set) or a nominal counter leg (system_bucket set).
 // Data-preserving: backfills two balanced legs per existing transaction using
 // the canonical sign rule, so older databases upgrade automatically. Fresh
