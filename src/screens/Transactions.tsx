@@ -120,7 +120,11 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
           categoryId: tx.categoryId, amountCents: tx.amountCents, description: tx.description,
           transactionDate: tx.transactionDate, excludedFromReporting: tx.excludedFromReporting,
         };
-        if (action === "recategorize" && target?.categoryId) input.categoryId = target.categoryId;
+        if (action === "recategorize") {
+          const cat = tx.kind === "income" ? target?.incomeCategory : tx.kind === "expense" ? target?.expenseCategory : undefined;
+          if (!cat) continue; // defensive — ids are pre-filtered to rows whose kind has a target
+          input.categoryId = cat.id;
+        }
         if (action === "move" && target?.accountId) input.accountId = target.accountId;
         if (action === "exclude") input.excludedFromReporting = true;
         if (action === "include") input.excludedFromReporting = false;
@@ -157,11 +161,9 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
 
   function chooseTarget(action: BulkAction, target: BulkTarget) {
     setPickFor(null);
-    if (previewOn) {
-      setPending({ action, target });
-      return;
-    }
-    applyBulk(action, planBulk(action, selectedTxns).changeable.map((x) => x.id), target);
+    const plan = planBulk(action, selectedTxns, target);
+    if (previewOn) { setPending({ action, target }); return; }
+    applyBulk(action, plan.changeable.map((x) => x.id), target);
   }
 
   async function onDuplicate(tx: Transaction) {
@@ -312,7 +314,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
 
       {pending && (
         <BulkPreviewSheet
-          plan={planBulk(pending.action, selectedTxns)}
+          plan={planBulk(pending.action, selectedTxns, pending.target)}
           target={pending.target}
           accounts={accounts}
           onCancel={() => setPending(null)}
@@ -330,6 +332,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
           action={pickFor}
           accounts={accounts}
           categories={categories}
+          selected={selectedTxns}
           onCancel={() => setPickFor(null)}
           onChoose={(target) => chooseTarget(pickFor, target)}
         />

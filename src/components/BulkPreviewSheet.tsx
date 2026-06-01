@@ -4,15 +4,10 @@ import type { ReactNode } from "react";
 import type { Account, Transaction } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { Modal, Btn, Money } from "./ui";
-import type { BulkAction, BulkPlan } from "../lib/txnSelection";
+import type { BulkAction, BulkPlan, BulkTarget } from "../lib/txnSelection";
 import { signedFor } from "../lib/kinds";
 
-export interface BulkTarget {
-  categoryId?: string;
-  categoryName?: string;
-  accountId?: string;
-  accountName?: string;
-}
+export type { BulkTarget } from "../lib/txnSelection";
 
 const VERB: Record<BulkAction, string> = {
   recategorize: "Re-categorize", move: "Move to account",
@@ -29,7 +24,11 @@ export function BulkPreviewSheet({ plan, target, accounts, onCancel, onApply, on
 
   const changing = useMemo(() => plan.changeable.filter((x) => !removed.has(x.id)), [plan.changeable, removed]);
   const skippedTotal = plan.lockedSkipped.length + removed.size;
-  const targetLabel = target?.categoryName ?? target?.accountName;
+
+  const catNameFor = (tx: Transaction) =>
+    tx.kind === "income" ? target?.incomeCategory?.name
+    : tx.kind === "expense" ? target?.expenseCategory?.name
+    : undefined;
 
   const row = (tx: Transaction, trailing: ReactNode, dim = false) => (
     <div key={tx.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 18px", borderBottom: `0.5px solid ${t.divider}`, fontSize: 12.5, opacity: dim ? 0.6 : 1 }}>
@@ -46,11 +45,26 @@ export function BulkPreviewSheet({ plan, target, accounts, onCancel, onApply, on
       <div style={{ padding: "16px 18px", borderBottom: `0.5px solid ${t.divider}` }}>
         <div style={{ fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {VERB[plan.action]}
-          {targetLabel && (
+          {plan.action === "move" && target?.accountName && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: t.panel2, border: `0.5px solid ${t.borderStrong}`, borderRadius: 8, padding: "3px 9px", fontSize: 12.5 }}>
-              {targetLabel}
+              {target.accountName}
               {onChangeTarget && <button type="button" onClick={onChangeTarget} style={{ color: t.accent, cursor: "pointer", fontWeight: 500, background: "transparent", font: "inherit", border: "none", padding: 0 }}>Change</button>}
             </span>
+          )}
+          {plan.action === "recategorize" && (target?.expenseCategory || target?.incomeCategory) && (
+            <>
+              {target.expenseCategory && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: t.panel2, border: `0.5px solid ${t.borderStrong}`, borderRadius: 8, padding: "3px 9px", fontSize: 12.5 }}>
+                  Expense → {target.expenseCategory.name}
+                </span>
+              )}
+              {target.incomeCategory && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: t.panel2, border: `0.5px solid ${t.borderStrong}`, borderRadius: 8, padding: "3px 9px", fontSize: 12.5 }}>
+                  Income → {target.incomeCategory.name}
+                </span>
+              )}
+              {onChangeTarget && <button type="button" onClick={onChangeTarget} style={{ color: t.accent, cursor: "pointer", fontWeight: 500, background: "transparent", font: "inherit", border: "none", padding: 0 }}>Change</button>}
+            </>
           )}
         </div>
         <div style={{ fontSize: 12, color: t.dim, marginTop: 7 }}>
@@ -63,7 +77,7 @@ export function BulkPreviewSheet({ plan, target, accounts, onCancel, onApply, on
         <div style={{ padding: "11px 18px 6px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: t.faint }}>Will change · {changing.length}</div>
         {changing.map((tx) => row(tx,
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {plan.action === "recategorize" && targetLabel && <span style={{ fontSize: 11, color: t.accent }}>→ {targetLabel}</span>}
+            {plan.action === "recategorize" && catNameFor(tx) && <span style={{ fontSize: 11, color: t.accent }}>→ {catNameFor(tx)}</span>}
             <Money cents={signedFor(tx.kind, tx.amountCents, false)} signed size={12} />
             <button type="button" onClick={() => setRemoved((p) => new Set(p).add(tx.id))} style={{ fontSize: 11, color: t.dim, border: `0.5px solid ${t.borderStrong}`, borderRadius: 7, padding: "3px 8px", cursor: "pointer", background: "transparent", font: "inherit" }}>✕ Skip</button>
           </div>))}

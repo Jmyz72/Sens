@@ -301,6 +301,10 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
       const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
       if (acc.isArchived) fail("Conflict", "The selected account is archived");
+      if (a.categoryId) {
+        const c = categories.find((x) => x.id === a.categoryId);
+        if (c && c.kind !== kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${kind}'`);
+      }
       const tx: Transaction = { id: uid(), kind, accountId: a.accountId, toAccountId: null, categoryId: a.categoryId, amountCents: a.amountCents, description: a.description, transactionDate: a.date, createdAt: now(), updatedAt: now(), excludedFromReporting: !!a.excludedFromReporting };
       txns.unshift(tx);
       return tx as T;
@@ -327,6 +331,10 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (i < 0) fail("NotFound", "Transaction not found");
       if (txns[i].kind === "opening" || a.input.kind === "opening") fail("ValidationError", "The opening balance can't be edited here; change it from the account's opening balance field");
       if (txns[i].kind === "adjustment" || a.input.kind === "adjustment") fail("ValidationError", "Adjustments cannot be edited; delete it and reconcile again");
+      if ((a.input.kind === "income" || a.input.kind === "expense") && a.input.categoryId) {
+        const c = categories.find((x) => x.id === a.input.categoryId);
+        if (c && c.kind !== a.input.kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${a.input.kind}'`);
+      }
       const excluded = (a.input.kind === "income" || a.input.kind === "expense") && !!a.input.excludedFromReporting;
       txns[i] = { ...txns[i], ...a.input, excludedFromReporting: excluded, updatedAt: now() };
       return txns[i] as T;

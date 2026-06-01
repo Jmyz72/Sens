@@ -91,4 +91,22 @@ describe("planBulk", () => {
     expect(p.changeable.map((t) => t.id)).toEqual(["already"]);
     expect(p.lockedSkipped).toEqual([]);
   });
+
+  it("recategorize with no target: all income/expense are changeable (panel count)", () => {
+    const p = planBulk("recategorize", [tx("income", 100, { id: "i" }), tx("expense", 200, { id: "e" })]);
+    expect(p.changeable.map((t) => t.id).sort()).toEqual(["e", "i"]);
+  });
+
+  it("recategorize with only an expense target: expense changes, income skipped with reason", () => {
+    const p = planBulk("recategorize", [tx("income", 100, { id: "i" }), tx("expense", 200, { id: "e" })], { expenseCategory: { id: "c1", name: "Food" } });
+    expect(p.changeable.map((t) => t.id)).toEqual(["e"]);
+    expect(p.lockedSkipped.map((l) => l.tx.id)).toEqual(["i"]);
+    expect(p.lockedSkipped[0].reason).toMatch(/income/i);
+  });
+
+  it("recategorize with both targets: all change", () => {
+    const p = planBulk("recategorize", [tx("income", 100, { id: "i" }), tx("expense", 200, { id: "e" })], { incomeCategory: { id: "c2", name: "Salary" }, expenseCategory: { id: "c1", name: "Food" } });
+    expect(p.changeable.map((t) => t.id).sort()).toEqual(["e", "i"]);
+    expect(p.lockedSkipped).toEqual([]);
+  });
 });

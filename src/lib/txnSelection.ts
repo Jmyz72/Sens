@@ -4,6 +4,13 @@ import type { Transaction } from "../types";
 
 export type BulkAction = "recategorize" | "move" | "exclude" | "include" | "delete";
 
+export interface BulkTarget {
+  accountId?: string;
+  accountName?: string;
+  incomeCategory?: { id: string; name: string };
+  expenseCategory?: { id: string; name: string };
+}
+
 export interface SelectionSummary {
   count: number;
   inCents: number;
@@ -39,13 +46,22 @@ function editLockReason(t: Transaction, action: BulkAction): string {
   return "Opening balances can't be edited"; // opening
 }
 
-export function planBulk(action: BulkAction, txns: Transaction[]): BulkPlan {
+export function planBulk(action: BulkAction, txns: Transaction[], target?: BulkTarget): BulkPlan {
   const changeable: Transaction[] = [];
   const lockedSkipped: LockedRow[] = [];
 
   for (const t of txns) {
     switch (action) {
       case "recategorize":
+        if (t.kind === "income" || t.kind === "expense") {
+          if (!target) { changeable.push(t); break; }            // no target chosen yet → potential (panel count)
+          const has = t.kind === "income" ? !!target.incomeCategory : !!target.expenseCategory;
+          if (has) changeable.push(t);
+          else lockedSkipped.push({ tx: t, reason: t.kind === "income" ? "No income category chosen" : "No expense category chosen" });
+        } else {
+          lockedSkipped.push({ tx: t, reason: editLockReason(t, "recategorize") });
+        }
+        break;
       case "move":
         if (isCashflow(t)) changeable.push(t);
         else lockedSkipped.push({ tx: t, reason: editLockReason(t, action) });
