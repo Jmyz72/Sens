@@ -1,7 +1,7 @@
 // Transactions: searchable, filterable log grouped by date, with a detail
 // panel for edit/delete. Adjustments can be deleted but not edited.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Transaction, TransactionKind, UpdateTransactionInput } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { Card, Empty, IconBtn, Money, Pill } from "../components/ui";
@@ -83,13 +83,22 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   }, [filtered, sort]);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const toggleSelect = (id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleSelect = useCallback((id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; }), []);
+
+  // Prune selection to rows still in view, so bulk actions never touch rows
+  // the user has filtered/searched out of sight.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(filtered.map((x) => x.id));
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) { if (visible.has(id)) next.add(id); else changed = true; }
+      return changed ? next : prev;
+    });
+  }, [filtered]);
 
   // Bulk action state
-  const [previewOn, setPreviewOn] = useState(true);
-  useEffect(() => {
-    client.getSetting("bulk_action_preview").then((v) => setPreviewOn(v !== "0")).catch(() => {});
-  }, []);
   const [pending, setPending] = useState<{ action: BulkAction; target?: BulkTarget } | null>(null);
   const [pickFor, setPickFor] = useState<BulkAction | null>(null);
   const selectedTxns = useMemo(() => txns.filter((x) => selectedIds.has(x.id)), [txns, selectedIds]);
@@ -103,17 +112,28 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
 
   const sel = txns.find((x) => x.id === selId) ?? null;
 
-  async function onDelete(id: string) {
+  const onDelete = useCallback(async (id: string) => {
+    if (!window.confirm("Delete this transaction? This can't be undone.")) return;
     await client.deleteTransaction(id);
     setSelId(null);
     await reload();
+  }, [reload]);
+
+  // Read the preview preference fresh at action time so a Settings change takes
+  // effect without remounting this screen.
+  async function isPreviewOn(): Promise<boolean> {
+    try { return (await client.getSetting("bulk_action_preview")) !== "0"; }
+    catch { return true; }
   }
 
   async function applyBulk(action: BulkAction, ids: string[], target?: BulkTarget) {
     const toApply = txns.filter((x) => ids.includes(x.id));
     const skipped = selectedTxns.length - toApply.length;
-    try {
-      for (const tx of toApply) {
+    // Resilient: each row applies independently so one failure doesn't abort the
+    // rest, and the toast reports the true success/failure split.
+    let failed = 0;
+    for (const tx of toApply) {
+      try {
         if (action === "delete") { await client.deleteTransaction(tx.id); continue; }
         const input: UpdateTransactionInput = {
           id: tx.id, kind: tx.kind, accountId: tx.accountId, toAccountId: tx.toAccountId,
@@ -129,27 +149,27 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
         if (action === "exclude") input.excludedFromReporting = true;
         if (action === "include") input.excludedFromReporting = false;
         await client.updateTransaction(input);
-      }
-    } catch {
-      await reload();
-      notify("Some transactions couldn't be updated", "error");
-      return;
-    } finally {
-      setSelectedIds(new Set());
-      setPending(null);
+      } catch { failed++; }
     }
+    const succeeded = toApply.length - failed;
+    setSelectedIds(new Set());
+    setPending(null);
     await reload();
+    if (failed > 0) {
+      notify(`${failed} couldn't be updated${succeeded > 0 ? ` · ${succeeded} done` : ""}`, "error");
+      return;
+    }
     const verb = { recategorize: "Re-categorized", move: "Moved", exclude: "Excluded", include: "Included", delete: "Deleted" }[action];
-    notify(`${verb} ${toApply.length}${skipped > 0 ? ` · ${skipped} skipped` : ""}`);
+    notify(`${verb} ${succeeded}${skipped > 0 ? ` · ${skipped} skipped` : ""}`);
   }
 
-  function startBulk(action: BulkAction) {
+  async function startBulk(action: BulkAction) {
     if (action === "recategorize" || action === "move") {
       setPickFor(action);
       return;
     }
     const plan = planBulk(action, selectedTxns);
-    if (previewOn) {
+    if (await isPreviewOn()) {
       setPending({ action });
       return;
     }
@@ -159,10 +179,10 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
     applyBulk(action, plan.changeable.map((x) => x.id));
   }
 
-  function chooseTarget(action: BulkAction, target: BulkTarget) {
+  async function chooseTarget(action: BulkAction, target: BulkTarget) {
     setPickFor(null);
     const plan = planBulk(action, selectedTxns, target);
-    if (previewOn) { setPending({ action, target }); return; }
+    if (await isPreviewOn()) { setPending({ action, target }); return; }
     applyBulk(action, plan.changeable.map((x) => x.id), target);
   }
 
@@ -203,7 +223,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
       } else if ((e.key === "e" || e.key === "E") && sel && sel.kind !== "adjustment" && sel.kind !== "opening") {
         setEditing(sel);
       } else if ((e.key === "Backspace" || e.key === "Delete") && sel && sel.kind !== "opening") {
-        if (window.confirm("Delete this transaction?")) onDelete(sel.id);
+        onDelete(sel.id);
       }
     }
     window.addEventListener("keydown", onKey);
