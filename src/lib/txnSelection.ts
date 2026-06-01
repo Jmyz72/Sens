@@ -1,6 +1,6 @@
 // src/lib/txnSelection.ts
 // Pure logic for the multi-select panel and bulk preview sheet.
-import type { Transaction } from "./../types";
+import type { Transaction } from "../types";
 
 export type BulkAction = "recategorize" | "move" | "exclude" | "include" | "delete";
 

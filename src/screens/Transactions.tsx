@@ -45,6 +45,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
     client.listTransactions({ limit: 1000, ...r }).then(setTxns).catch(() => {});
   }, [version, preset, custom]);
   useEffect(() => { setAcctFilter(initialAccountId ?? null); }, [initialAccountId]);
+  useEffect(() => { setSelectedIds(new Set()); }, [preset, custom]);
 
   const toggleKind = (k: TransactionKind) => setKinds((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
 

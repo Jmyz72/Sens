@@ -29,6 +29,8 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const accountOptions = accounts.filter((a) => !a.isArchived || a.id === tx.accountId || a.id === tx.toAccountId);
+
   const acctTxns = allTxns.filter((x) => x.accountId === accountId || x.toAccountId === accountId);
   const after = computeRunningBalances(acctTxns, accountId).get(tx.id);
   const before = after != null ? after - signedFor(tx.kind, tx.amountCents, tx.toAccountId === accountId) : undefined;
@@ -86,14 +88,14 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
             <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
               <span style={{ color: t.dim }}>{tx.kind === "transfer" ? "From" : "Account"}</span>
               <select value={accountId} onChange={(e) => setAccountId(e.target.value)} style={fieldStyle}>
-                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                {accountOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </label>
             {tx.kind === "transfer" && (
               <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
                 <span style={{ color: t.dim }}>To</span>
                 <select value={toAccountId ?? ""} onChange={(e) => setToAccountId(e.target.value || null)} style={fieldStyle}>
-                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  {accountOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </label>
             )}

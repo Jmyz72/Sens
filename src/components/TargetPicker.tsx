@@ -48,7 +48,7 @@ export function TargetPicker({
 
       <div style={{ maxHeight: 380, overflowY: "auto", padding: 8 }}>
         {isMove
-          ? accounts.map((a) => (
+          ? accounts.filter((a) => !a.isArchived).map((a) => (
               <button
                 key={a.id}
                 type="button"

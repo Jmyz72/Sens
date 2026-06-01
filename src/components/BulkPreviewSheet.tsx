@@ -5,6 +5,7 @@ import type { Account, Transaction } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { Modal, Btn, Money } from "./ui";
 import type { BulkAction, BulkPlan } from "../lib/txnSelection";
+import { signedFor } from "../lib/kinds";
 
 export interface BulkTarget {
   categoryId?: string;
@@ -48,7 +49,7 @@ export function BulkPreviewSheet({ plan, target, accounts, onCancel, onApply, on
           {targetLabel && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: t.panel2, border: `0.5px solid ${t.borderStrong}`, borderRadius: 8, padding: "3px 9px", fontSize: 12.5 }}>
               {targetLabel}
-              {onChangeTarget && <span onClick={onChangeTarget} style={{ color: t.accent, cursor: "pointer", fontWeight: 500 }}>Change</span>}
+              {onChangeTarget && <button type="button" onClick={onChangeTarget} style={{ color: t.accent, cursor: "pointer", fontWeight: 500, background: "transparent", font: "inherit", border: "none", padding: 0 }}>Change</button>}
             </span>
           )}
         </div>
@@ -63,14 +64,14 @@ export function BulkPreviewSheet({ plan, target, accounts, onCancel, onApply, on
         {changing.map((tx) => row(tx,
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {plan.action === "recategorize" && targetLabel && <span style={{ fontSize: 11, color: t.accent }}>→ {targetLabel}</span>}
-            <Money cents={tx.kind === "income" ? tx.amountCents : -tx.amountCents} signed size={12} />
-            <span onClick={() => setRemoved((p) => new Set(p).add(tx.id))} style={{ fontSize: 11, color: t.dim, border: `0.5px solid ${t.borderStrong}`, borderRadius: 7, padding: "3px 8px", cursor: "pointer" }}>✕ Skip</span>
+            <Money cents={signedFor(tx.kind, tx.amountCents, false)} signed size={12} />
+            <button type="button" onClick={() => setRemoved((p) => new Set(p).add(tx.id))} style={{ fontSize: 11, color: t.dim, border: `0.5px solid ${t.borderStrong}`, borderRadius: 7, padding: "3px 8px", cursor: "pointer", background: "transparent", font: "inherit" }}>✕ Skip</button>
           </div>))}
 
         {removed.size > 0 && <>
           <div style={{ padding: "11px 18px 6px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: t.accent }}>Removed by you · {removed.size}</div>
           {plan.changeable.filter((x) => removed.has(x.id)).map((tx) => row(tx,
-            <span onClick={() => setRemoved((p) => { const n = new Set(p); n.delete(tx.id); return n; })} style={{ fontSize: 11, color: t.accent, border: `0.5px solid ${t.accent}`, borderRadius: 7, padding: "3px 8px", cursor: "pointer" }}>＋ Add back</span>, true))}
+            <button type="button" onClick={() => setRemoved((p) => { const n = new Set(p); n.delete(tx.id); return n; })} style={{ fontSize: 11, color: t.accent, border: `0.5px solid ${t.accent}`, borderRadius: 7, padding: "3px 8px", cursor: "pointer", background: "transparent", font: "inherit" }}>＋ Add back</button>, true))}
         </>}
 
         {plan.lockedSkipped.length > 0 && <>
