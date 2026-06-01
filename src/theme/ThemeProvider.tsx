@@ -53,6 +53,8 @@ function baseCss(t: Theme): string {
     .sens-row{transition:background-color .12s;}
     .sens-row.click{cursor:pointer;}
     .sens-row:hover{background-color:var(--row-hover);}
+    .sens-row-quick{opacity:0;transition:opacity .12s;}
+    .sens-row:hover .sens-row-quick{opacity:1;}
     .sens-btn{cursor:pointer;border:none;font-family:inherit;transition:filter .12s,border-color .12s,background-color .12s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
     .sens-btn:disabled{cursor:not-allowed;}
     .sens-btn-primary:hover:not(:disabled){filter:brightness(1.08);}

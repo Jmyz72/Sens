@@ -2,6 +2,7 @@
 // per-account activity list. Renders the kind glyph, labels, and a signed,
 // color-coded amount per the UI Color System.
 
+import type { ReactNode } from "react";
 import type { Account, Category, Transaction } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { GlyphTile, Money } from "./ui";
@@ -10,13 +11,20 @@ import { hexA } from "../theme/tokens";
 import { KIND_META, kindColor, signedFor } from "../lib/kinds";
 import { fmtDate } from "../lib/format";
 
-export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick, showDate = true, balanceAfterCents }: {
+export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick, showDate = true, balanceAfterCents, density = "comfortable", selected, onToggleSelect, quickActions }: {
   tx: Transaction; accounts: Account[]; categories: Category[]; perspectiveAccountId?: string; onClick?: () => void; showDate?: boolean; balanceAfterCents?: number;
+  density?: "comfortable" | "compact";
+  selected?: boolean;
+  onToggleSelect?: () => void;
+  quickActions?: ReactNode;
 }) {
   const t = useTheme();
   const cat = tx.categoryId ? categories.find((c) => c.id === tx.categoryId) : undefined;
   const meta = KIND_META[tx.kind];
   const color = kindColor(t, tx.kind);
+
+  const rowH = density === "compact" ? 42 : 50;
+  const glyph = density === "compact" ? 28 : 32;
 
   const title = tx.description
     || cat?.name
@@ -36,9 +44,18 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
 
   return (
     <div className={`sens-row${onClick ? " click" : ""}`} onClick={onClick}
-      style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 8px", margin: "0 -8px", height: 50, borderRadius: 9 }}>
-      {cat ? <GlyphTile tone={cat.color ?? color} size={32} emoji={cat.emoji} />
-        : <GlyphTile tone={color} size={32} icon={meta.icon} />}
+      style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 8px", margin: "0 -8px", height: rowH, borderRadius: 9, position: "relative", background: selected ? hexA(t.accent, 0.08) : undefined }}>
+      {onToggleSelect && (
+        <button onClick={(e) => { e.stopPropagation(); onToggleSelect(); }} aria-label="Select transaction"
+          style={{ width: 18, height: 18, flexShrink: 0, borderRadius: 6, border: `1.5px solid ${selected ? t.accent : t.borderStrong}`, background: selected ? t.accent : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+          {selected && <Icon name="check" size={11} color={t.onAccent} stroke={3} />}
+        </button>
+      )}
+      <div style={{ position: "relative", flexShrink: 0 }}>
+        {cat ? <GlyphTile tone={cat.color ?? color} size={glyph} emoji={cat.emoji} />
+          : <GlyphTile tone={color} size={glyph} icon={meta.icon} />}
+        <span style={{ position: "absolute", left: -3, top: -3, width: 9, height: 9, borderRadius: 99, background: cat?.color ?? color, border: `2px solid ${t.panel}` }} />
+      </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
           <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
@@ -52,7 +69,8 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
           {subtitle}{showDate ? ` · ${fmtDate(tx.transactionDate)}` : ""}
         </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+      {quickActions && <div className="sens-row-quick" style={{ display: "flex", gap: 4, flexShrink: 0 }}>{quickActions}</div>}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, width: 110, flexShrink: 0 }}>
         <Money cents={signed ? signedCents : tx.amountCents} signed={signed} color={tx.kind === "transfer" && !signed ? color : undefined} size={13} />
         {balanceAfterCents !== undefined && (
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
