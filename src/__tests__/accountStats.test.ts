@@ -3,6 +3,7 @@ import type { Account, Transaction, TransactionKind } from "../types";
 import {
   accountTxns, txnDelta, balanceSeries, computeAccountStats, netWorthStats, periodFromDate,
 } from "../lib/accountStats";
+import { computeRunningBalances } from "../lib/kinds";
 
 function acct(p: Partial<Account> & { id: string }): Account {
   return {
@@ -133,5 +134,29 @@ describe("periodFromDate", () => {
   });
   it("clamps the day when the target month is shorter", () => {
     expect(periodFromDate("1M", "2026-03-31")).toBe("2026-02-28");
+  });
+});
+
+describe("accountTxns — opening row visibility on the Accounts screen", () => {
+  it("excludes the opening row by default (stats accumulators seed from openingBalanceCents)", () => {
+    const open = tx("opening", "a", 10000, "2026-01-01");
+    const inc = tx("income", "a", 5000, "2026-05-10");
+    expect(accountTxns([open, inc], "a").map((t) => t.id)).toEqual([inc.id]);
+  });
+
+  it("includes the opening row for display when includeOpening is set", () => {
+    const open = tx("opening", "a", 10000, "2026-01-01");
+    const inc = tx("income", "a", 5000, "2026-05-10");
+    const ids = accountTxns([open, inc], "a", { includeOpening: true }).map((t) => t.id).sort();
+    expect(ids).toEqual([inc.id, open.id].sort());
+  });
+
+  it("running balances over the display list include the opening base (BAL column)", () => {
+    const open = tx("opening", "a", 10000, "2026-01-01");
+    const inc = tx("income", "a", 5000, "2026-05-10");
+    const display = accountTxns([open, inc], "a", { includeOpening: true });
+    const run = computeRunningBalances(display, "a");
+    expect(run.get(open.id)).toBe(10000);
+    expect(run.get(inc.id)).toBe(15000); // opening base included, not just 5000
   });
 });
