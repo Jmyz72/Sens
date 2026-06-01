@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Transaction, TransactionKind } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
-import { hexA } from "../theme/tokens";
 import { Btn, Card, Empty, GlyphTile, IconBtn, Money, Pill } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { TxnRow } from "../components/TxnRow";
@@ -75,11 +74,25 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
     return dates.map((date) => ({ date, items: byDate.get(date)!.sort(cmp) }));
   }, [filtered, sort]);
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  function dayNet(items: Transaction[]): number {
+    return items.reduce((s, x) => s + (x.kind === "income" ? x.amountCents : x.kind === "expense" ? -x.amountCents : 0), 0);
+  }
+
   const sel = txns.find((x) => x.id === selId) ?? null;
 
   async function onDelete(id: string) {
     await client.deleteTransaction(id);
     setSelId(null);
+    await reload();
+  }
+
+  async function onDuplicate(tx: Transaction) {
+    if (tx.kind === "income" && tx.categoryId) await client.createIncome(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
+    else if (tx.kind === "expense" && tx.categoryId) await client.createExpense(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
+    else if (tx.kind === "transfer" && tx.toAccountId) await client.createTransfer(tx.accountId, tx.toAccountId, tx.amountCents, tx.description, tx.transactionDate);
     await reload();
   }
 
@@ -144,16 +157,26 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
           </div>
         </div>
 
-        <Card pad={0} style={{ overflow: "hidden" }}>
+        <Card pad={0} style={{ overflow: "visible" }}>
           {groups.length === 0 && <Empty icon="list" title="No transactions match" hint="Try clearing filters or add a transaction." />}
           {groups.map((g) => (
             <div key={g.date}>
-              <div style={{ padding: "9px 18px", fontSize: 11, fontWeight: 600, color: t.faint, textTransform: "uppercase", letterSpacing: 0.4, background: t.panel2, borderBottom: `0.5px solid ${t.divider}` }}>{dateGroupLabel(g.date)}</div>
+              <div style={{ position: "sticky", top: 0, zIndex: 1, display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "9px 18px", fontSize: 11, fontWeight: 600, color: t.faint, textTransform: "uppercase", letterSpacing: 0.4,
+                background: t.panel2, borderBottom: `0.5px solid ${t.divider}` }}>
+                <span>{dateGroupLabel(g.date)}</span>
+                <Money cents={dayNet(g.items)} signed size={11} weight={700} />
+              </div>
               <div style={{ padding: "4px 16px" }}>
                 {g.items.map((tx) => (
-                  <div key={tx.id} style={{ borderRadius: 9, background: selId === tx.id ? hexA(t.accent, 0.08) : "transparent" }}>
-                    <TxnRow tx={tx} accounts={accounts} categories={categories} showDate={false} onClick={() => setSelId(tx.id)} density={density} />
-                  </div>
+                  <TxnRow key={tx.id} tx={tx} accounts={accounts} categories={categories} showDate={false}
+                    density={density} selected={selectedIds.has(tx.id)} onToggleSelect={() => toggleSelect(tx.id)}
+                    onClick={() => setSelId(tx.id)}
+                    quickActions={<>
+                      {tx.kind !== "adjustment" && tx.kind !== "opening" && <IconBtn name="pencil" icon={13} onClick={() => setEditing(tx)} title="Edit" />}
+                      {tx.kind !== "adjustment" && tx.kind !== "opening" && <IconBtn name="copy" icon={13} onClick={() => onDuplicate(tx)} title="Duplicate" />}
+                      {tx.kind !== "opening" && <IconBtn name="trash" icon={13} onClick={() => onDelete(tx.id)} title="Delete" />}
+                    </>} />
                 ))}
               </div>
             </div>
