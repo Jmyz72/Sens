@@ -5,17 +5,11 @@ use crate::error::{AppError, AppResult};
 use crate::models::*;
 use rusqlite::{params, Connection, Row};
 
-/// SQL expression computing an account's current balance from its opening
-/// balance plus signed transaction history. `{a}` is the accounts-table alias.
+/// SQL expression computing an account's current balance as the sum of its
+/// postings. `{a}` is the accounts-table alias. One uniform rule for every kind
+/// (replaces the former 6-term per-kind sum over `transactions`).
 fn balance_expr(a: &str) -> String {
-    format!(
-        "COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='income'     AND account_id={a}.id),0) \
-         + COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='opening'    AND account_id={a}.id),0) \
-         + COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='transfer'   AND to_account_id={a}.id),0) \
-         + COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='adjustment' AND account_id={a}.id),0) \
-         - COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='expense'    AND account_id={a}.id),0) \
-         - COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='transfer'   AND account_id={a}.id),0)"
-    )
+    format!("COALESCE((SELECT SUM(amount_cents) FROM postings WHERE account_id = {a}.id), 0)")
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────
@@ -167,7 +161,7 @@ pub fn account_has_nonopening_activity(conn: &Connection, id: &str) -> AppResult
     )?)
 }
 
-pub fn set_opening_amount(conn: &Connection, account_id: &str, amount_cents: i64, now: &str) -> AppResult<Account> {
+pub fn set_opening_amount(conn: &Connection, account_id: &str, amount_cents: i64, now: &str) -> AppResult<()> {
     let n = conn.execute(
         "UPDATE transactions SET amount_cents = ?2, updated_at = ?3 WHERE account_id = ?1 AND kind = 'opening'",
         params![account_id, amount_cents, now],
@@ -175,7 +169,7 @@ pub fn set_opening_amount(conn: &Connection, account_id: &str, amount_cents: i64
     if n == 0 {
         return Err(AppError::NotFound("Opening transaction not found".into()));
     }
-    get_account(conn, account_id)
+    Ok(())
 }
 
 pub fn update_account_fields(
@@ -185,7 +179,7 @@ pub fn update_account_fields(
     subtype: Option<&str>,
     opening_balance_cents: Option<i64>,
     now: &str,
-) -> AppResult<Account> {
+) -> AppResult<()> {
     if let Some(n) = name {
         conn.execute("UPDATE accounts SET name = ?2, updated_at = ?3 WHERE id = ?1", params![id, n, now])?;
     }
@@ -198,7 +192,7 @@ pub fn update_account_fields(
             params![id, o, now],
         )?;
     }
-    get_account(conn, id)
+    Ok(())
 }
 
 pub fn set_account_archived(conn: &Connection, id: &str, archived: bool, now: &str) -> AppResult<Account> {
@@ -413,12 +407,46 @@ pub fn insert_transaction(
     get_transaction(conn, id)
 }
 
+pub fn insert_posting(
+    conn: &Connection,
+    id: &str,
+    transaction_id: &str,
+    account_id: Option<&str>,
+    system_bucket: Option<&str>,
+    amount_cents: i64,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, transaction_id, account_id, system_bucket, amount_cents],
+    )
+    .map_err(map_check)?;
+    Ok(())
+}
+
+pub fn delete_postings_for(conn: &Connection, transaction_id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM postings WHERE transaction_id = ?1", [transaction_id])?;
+    Ok(())
+}
+
 pub fn get_transaction(conn: &Connection, id: &str) -> AppResult<Transaction> {
     conn.query_row("SELECT * FROM transactions WHERE id = ?1", [id], map_transaction)
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Transaction not found".into()),
             other => other.into(),
         })
+}
+
+pub fn get_opening_transaction(conn: &Connection, account_id: &str) -> AppResult<Transaction> {
+    conn.query_row(
+        "SELECT * FROM transactions WHERE account_id = ?1 AND kind = 'opening' LIMIT 1",
+        [account_id],
+        map_transaction,
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Opening transaction not found".into()),
+        other => other.into(),
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

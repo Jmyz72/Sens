@@ -3,7 +3,50 @@
 //! CHECK constraints, and indexes per the design spec's Database Design.
 
 /// Ordered list of `(version, sql)`. Append-only — never edit a shipped one.
-pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005)];
+pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005), (6, MIGRATION_006)];
+
+// Double-entry posting engine (unreleased; version set at release time). Adds a
+// `postings` ledger that is the authoritative source for account balances. Each
+// posting is either a real
+// account leg (account_id set) or a nominal counter leg (system_bucket set).
+// Data-preserving: backfills two balanced legs per existing transaction using
+// the canonical sign rule, so older databases upgrade automatically. Fresh
+// installs run 001→006; the backfill is a no-op with zero transactions.
+const MIGRATION_006: &str = r#"
+CREATE TABLE postings (
+  id             TEXT PRIMARY KEY,
+  transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  account_id     TEXT REFERENCES accounts(id) ON DELETE RESTRICT,
+  system_bucket  TEXT CHECK (system_bucket IN ('income', 'expense', 'equity')),
+  amount_cents   INTEGER NOT NULL,
+  CHECK ((account_id IS NOT NULL AND system_bucket IS NULL)
+      OR (account_id IS NULL     AND system_bucket IS NOT NULL))
+);
+CREATE INDEX idx_postings_account ON postings(account_id);
+CREATE INDEX idx_postings_txn     ON postings(transaction_id);
+
+-- Leg 1: the real-money leg on account_id.
+INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents)
+SELECT 'p1-' || id, id, account_id, NULL,
+       CASE kind WHEN 'expense'  THEN -amount_cents
+                 WHEN 'transfer' THEN -amount_cents
+                 ELSE amount_cents END
+FROM transactions;
+
+-- Leg 2: the counter leg — destination account for transfers, else a system bucket.
+INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents)
+SELECT 'p2-' || id, id,
+       CASE kind WHEN 'transfer' THEN to_account_id ELSE NULL END,
+       CASE kind WHEN 'income'  THEN 'income'
+                 WHEN 'expense' THEN 'expense'
+                 WHEN 'transfer' THEN NULL
+                 ELSE 'equity' END,
+       CASE kind WHEN 'income'   THEN -amount_cents
+                 WHEN 'expense'  THEN  amount_cents
+                 WHEN 'transfer' THEN  amount_cents
+                 ELSE -amount_cents END
+FROM transactions;
+"#;
 
 // v0.5.0 — non-cashflow transactions. Opening balance becomes a structural
 // `opening` transaction (one per account) and income/expense gain an

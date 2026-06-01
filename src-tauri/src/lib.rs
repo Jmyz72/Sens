@@ -578,6 +578,17 @@ mod tests {
             [],
         )
         .unwrap();
+        // Postings required so balance_expr (now postings-based) returns 100.
+        c.execute(
+            "INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents) VALUES ('orphan-p1', 'orphan-open', 'orphan', NULL, 100)",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents) VALUES ('orphan-p2', 'orphan-open', NULL, 'equity', -100)",
+            [],
+        )
+        .unwrap();
         let all = service::list_accounts(&c, true).unwrap();
         let a = all.iter().find(|x| x.id == "orphan").expect("orphan account should still appear");
         assert_eq!(a.account_type, "fund"); // COALESCE fallback type
@@ -585,6 +596,146 @@ mod tests {
         // get_account must resolve (not a misleading NotFound) and net worth includes it.
         assert_eq!(service::get_account_balance(&c, "orphan").unwrap(), 100);
         assert_eq!(service::get_dashboard_summary(&c, "2026-05").unwrap().net_worth_cents, 100);
+    }
+
+    #[test]
+    fn migration_006_backfills_balanced_postings() {
+        use rusqlite::Connection;
+        let c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        // Run migrations 1..=5 only — a pre-postings database.
+        for (v, sql) in crate::db::migrations::MIGRATIONS {
+            if *v <= 5 {
+                c.execute_batch(sql).unwrap();
+            }
+        }
+        // Minimal fixture: two accounts (subtypes 'cash'/'savings' seeded by migration 002),
+        // one expense category, and one of each money-moving kind.
+        let now = "2026-01-01T00:00:00Z";
+        c.execute("INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at) \
+                   VALUES ('a1', NULL, 'Cash', 'cash', 'MYR', 0, ?1, ?1)", [now]).unwrap();
+        c.execute("INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at) \
+                   VALUES ('a2', NULL, 'Bank', 'savings', 'MYR', 0, ?1, ?1)", [now]).unwrap();
+        c.execute("INSERT INTO categories (id, name, kind, emoji, color, parent_id, sort_order, is_archived, created_at, updated_at) \
+                   VALUES ('cx', 'Food', 'expense', '🍜', NULL, NULL, 0, 0, ?1, ?1)", [now]).unwrap();
+        c.execute("INSERT INTO categories (id, name, kind, emoji, color, parent_id, sort_order, is_archived, created_at, updated_at) \
+                   VALUES ('ci', 'Salary', 'income', '💰', NULL, NULL, 0, 0, ?1, ?1)", [now]).unwrap();
+        let ins = |id: &str, kind: &str, acc: &str, to: Option<&str>, cat: Option<&str>, amt: i64| {
+            c.execute(
+                "INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, created_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, '2026-01-02', 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                rusqlite::params![id, kind, acc, to, cat, amt],
+            ).unwrap();
+        };
+        ins("t_open", "opening", "a1", None, None, 10_000);
+        ins("t_inc", "income", "a1", None, Some("ci"), 5_000);
+        ins("t_exp", "expense", "a1", None, Some("cx"), 2_000);
+        ins("t_xfer", "transfer", "a1", Some("a2"), None, 1_000);
+        ins("t_adj", "adjustment", "a1", None, None, -500);
+
+        // Run migration 006.
+        let (_, sql6) = crate::db::migrations::MIGRATIONS.iter().find(|(v, _)| *v == 6).unwrap();
+        c.execute_batch(sql6).unwrap();
+
+        // Every transaction's postings sum to zero.
+        let unbalanced: i64 = c.query_row(
+            "SELECT COUNT(*) FROM (SELECT transaction_id, SUM(amount_cents) s FROM postings GROUP BY transaction_id) WHERE s <> 0",
+            [], |r| r.get(0)).unwrap();
+        assert_eq!(unbalanced, 0, "all transactions must balance to zero");
+
+        // a1 balance from postings = 10000 + 5000 - 2000 - 1000 (transfer out) - 500 (adj) = 11500.
+        let bal_a1: i64 = c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id='a1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(bal_a1, 11_500);
+        // a2 receives the transfer: +1000.
+        let bal_a2: i64 = c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id='a2'", [], |r| r.get(0)).unwrap();
+        assert_eq!(bal_a2, 1_000);
+    }
+
+    // Helper: assert every transaction in the DB has postings summing to zero.
+    fn assert_books_balance(c: &rusqlite::Connection) {
+        let unbalanced: i64 = c.query_row(
+            "SELECT COUNT(*) FROM (SELECT transaction_id, SUM(amount_cents) s FROM postings GROUP BY transaction_id) WHERE s <> 0",
+            [], |r| r.get(0)).unwrap();
+        assert_eq!(unbalanced, 0, "every transaction's postings must sum to zero");
+    }
+
+    #[test]
+    fn create_income_expense_transfer_write_balanced_postings() {
+        let c = crate::db::open_in_memory().unwrap();
+        let acc = crate::service::create_account(&c, "Cash", "cash", 10_000, None).unwrap();
+        let bank = crate::service::create_account(&c, "Bank", "savings", 0, None).unwrap();
+        let cats = crate::service::list_categories(&c, Some("income"), false).unwrap();
+        let inc_cat = cats.first().expect("seeded income categories expected").id.clone();
+        let xcats = crate::service::list_categories(&c, Some("expense"), false).unwrap();
+        let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
+
+        crate::service::create_income(&c, &acc.id, &inc_cat, 5_000, None, "2026-02-01", false).unwrap();
+        crate::service::create_expense(&c, &acc.id, &exp_cat, 2_000, None, "2026-02-02", false).unwrap();
+        crate::service::create_transfer(&c, &acc.id, &bank.id, 1_000, None, "2026-02-03").unwrap();
+
+        // Stronger RED assertion: postings must exist before the balance check.
+        let posting_count: i64 = c.query_row("SELECT COUNT(*) FROM postings", [], |r| r.get(0)).unwrap();
+        assert!(posting_count > 0, "expected postings to have been written but got 0");
+
+        assert_books_balance(&c);
+        // Cash: opening 10000 + income 5000 - expense 2000 - transfer 1000 = 12000.
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, 12_000);
+        // Bank: opening 0 + transfer in 1000 = 1000.
+        assert_eq!(crate::repo::get_account(&c, &bank.id).unwrap().balance_cents, 1_000);
+    }
+
+    #[test]
+    fn update_and_delete_keep_postings_consistent() {
+        let c = crate::db::open_in_memory().unwrap();
+        let acc = crate::service::create_account(&c, "Cash", "cash", 0, None).unwrap();
+        let xcats = crate::service::list_categories(&c, Some("expense"), false).unwrap();
+        let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
+        let t = crate::service::create_expense(&c, &acc.id, &exp_cat, 2_000, None, "2026-02-02", false).unwrap();
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, -2_000);
+
+        // Edit the amount up to 5000.
+        let input = crate::models::UpdateTransactionInput {
+            id: t.id.clone(), kind: "expense".into(), account_id: acc.id.clone(),
+            to_account_id: None, category_id: Some(exp_cat.clone()),
+            amount_cents: 5_000, description: None, transaction_date: "2026-02-02".into(),
+            excluded_from_reporting: false,
+        };
+        crate::service::update_transaction(&c, input).unwrap();
+        assert_books_balance(&c);
+        let posting_bal: i64 = c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id = ?1", [&acc.id], |r| r.get(0)).unwrap();
+        assert_eq!(posting_bal, -5_000, "postings must reflect the edited amount");
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, -5_000);
+        // Exactly 2 postings remain for the txn (no stale rows from the old amount).
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM postings WHERE transaction_id = ?1", [&t.id], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2);
+
+        // Delete cascades postings away.
+        crate::service::delete_transaction(&c, &t.id).unwrap();
+        let after: i64 = c.query_row("SELECT COUNT(*) FROM postings WHERE transaction_id = ?1", [&t.id], |r| r.get(0)).unwrap();
+        assert_eq!(after, 0);
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, 0);
+    }
+
+    #[test]
+    fn set_account_balance_keeps_postings_consistent() {
+        let c = crate::db::open_in_memory().unwrap();
+        // Fresh account, only the opening row exists → reconcile edits opening.
+        let acc = crate::service::create_account(&c, "Cash", "cash", 1_000, None).unwrap();
+        crate::service::set_account_balance(&c, &acc.id, 4_000).unwrap();
+        assert_books_balance(&c);
+        let pbal = |id: &str| c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id = ?1", [id], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, 4_000);
+        assert_eq!(pbal(&acc.id), 4_000, "opening postings must reflect the reconciled balance");
+
+        // Now create real activity, then reconcile → inserts a balanced adjustment.
+        let xcats = crate::service::list_categories(&c, Some("expense"), false).unwrap();
+        let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
+        crate::service::create_expense(&c, &acc.id, &exp_cat, 500, None, "2026-03-01", false).unwrap();
+        // balance is now 3500; reconcile to 3000 → adjustment of -500.
+        crate::service::set_account_balance(&c, &acc.id, 3_000).unwrap();
+        assert_books_balance(&c);
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, 3_000);
+        assert_eq!(pbal(&acc.id), 3_000, "adjustment postings must reflect the reconciled balance");
     }
 
     #[test]
@@ -612,5 +763,63 @@ mod tests {
             !service::list_categories(&c, Some("expense"), true).unwrap().iter().any(|x| x.name == "Bespoke"),
             "custom category removed"
         );
+    }
+
+    #[test]
+    fn update_account_opening_balance_remateralizes_postings() {
+        let c = crate::db::open_in_memory().unwrap();
+        let acc = crate::service::create_account(&c, "Cash", "cash", 1_000, None).unwrap();
+        let pbal = |id: &str| c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id = ?1", [id], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(pbal(&acc.id), 1_000);
+
+        // Edit the opening balance to 6000 via the account-edit path.
+        let input = crate::models::UpdateAccountInput {
+            id: acc.id.clone(),
+            name: None,
+            subtype: None,
+            opening_balance_cents: Some(6_000),
+        };
+        crate::service::update_account(&c, input).unwrap();
+
+        assert_books_balance(&c);
+        assert_eq!(pbal(&acc.id), 6_000, "opening postings must reflect the edited opening balance");
+        // Exactly one opening transaction with two postings (no duplicates/stale rows).
+        let n: i64 = c.query_row(
+            "SELECT COUNT(*) FROM postings p JOIN transactions t ON t.id = p.transaction_id WHERE t.account_id = ?1 AND t.kind = 'opening'",
+            [&acc.id], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn reset_app_clears_postings() {
+        let c = crate::db::open_in_memory().unwrap();
+        let _acc = crate::service::create_account(&c, "Cash", "cash", 1_000, None).unwrap();
+        let before: i64 = c.query_row("SELECT COUNT(*) FROM postings", [], |r| r.get(0)).unwrap();
+        assert!(before > 0, "account creation should have written postings");
+        crate::db::reset_to_defaults(&c).unwrap();
+        let after: i64 = c.query_row("SELECT COUNT(*) FROM postings", [], |r| r.get(0)).unwrap();
+        assert_eq!(after, 0, "factory reset must clear postings");
+    }
+
+    #[test]
+    fn balance_reads_from_postings() {
+        use rusqlite::Connection;
+        let c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        for (_, sql) in crate::db::migrations::MIGRATIONS {
+            c.execute_batch(sql).unwrap();
+        }
+        let now = crate::now();
+        c.execute("INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at) \
+                   VALUES ('a1', NULL, 'Cash', 'cash', 'MYR', 0, ?1, ?1)", [&now]).unwrap();
+        c.execute("INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, created_at, updated_at) \
+                   VALUES ('o1','opening','a1',NULL,NULL,7000,'Opening balance','2026-01-01',0,?1,?1)", [&now]).unwrap();
+        // Postings DELIBERATELY diverge from the header (9000, not 7000) to prove the
+        // balance is read from postings, not the transaction header.
+        c.execute("INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents) VALUES ('o1a','o1','a1',NULL,9000)", []).unwrap();
+        c.execute("INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents) VALUES ('o1b','o1',NULL,'equity',-9000)", []).unwrap();
+
+        let acc = crate::repo::get_account(&c, "a1").unwrap();
+        assert_eq!(acc.balance_cents, 9000, "balance must come from postings, not the transaction header");
     }
 }

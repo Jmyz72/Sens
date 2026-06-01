@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Internal: account balances now come from a double-entry `postings` ledger (one
+  uniform rule) instead of a per-kind signed sum. No visible behavior change;
+  existing data is migrated automatically (migration 006). Lays the groundwork
+  for split transactions.
+
 ## [0.5.1] — 2026-06-01
 
 ### Fixed
