@@ -110,40 +110,32 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
 
   async function applyBulk(action: BulkAction, ids: string[], target?: BulkTarget) {
     const toApply = txns.filter((x) => ids.includes(x.id));
-    for (const tx of toApply) {
-      if (action === "delete") {
-        await client.deleteTransaction(tx.id);
-        continue;
-      }
-      const input: UpdateTransactionInput = {
-        id: tx.id,
-        kind: tx.kind,
-        accountId: tx.accountId,
-        toAccountId: tx.toAccountId,
-        categoryId: tx.categoryId,
-        amountCents: tx.amountCents,
-        description: tx.description,
-        transactionDate: tx.transactionDate,
-        excludedFromReporting: tx.excludedFromReporting,
-      };
-      if (action === "recategorize") input.categoryId = target!.categoryId!;
-      if (action === "move") input.accountId = target!.accountId!;
-      if (action === "exclude") input.excludedFromReporting = true;
-      if (action === "include") input.excludedFromReporting = false;
-      await client.updateTransaction(input);
-    }
     const skipped = selectedTxns.length - toApply.length;
-    setSelectedIds(new Set());
-    setPending(null);
+    try {
+      for (const tx of toApply) {
+        if (action === "delete") { await client.deleteTransaction(tx.id); continue; }
+        const input: UpdateTransactionInput = {
+          id: tx.id, kind: tx.kind, accountId: tx.accountId, toAccountId: tx.toAccountId,
+          categoryId: tx.categoryId, amountCents: tx.amountCents, description: tx.description,
+          transactionDate: tx.transactionDate, excludedFromReporting: tx.excludedFromReporting,
+        };
+        if (action === "recategorize" && target?.categoryId) input.categoryId = target.categoryId;
+        if (action === "move" && target?.accountId) input.accountId = target.accountId;
+        if (action === "exclude") input.excludedFromReporting = true;
+        if (action === "include") input.excludedFromReporting = false;
+        await client.updateTransaction(input);
+      }
+    } catch {
+      await reload();
+      notify("Some transactions couldn't be updated", "error");
+      return;
+    } finally {
+      setSelectedIds(new Set());
+      setPending(null);
+    }
     await reload();
-    const verb: Record<BulkAction, string> = {
-      recategorize: "Re-categorized",
-      move: "Moved",
-      exclude: "Excluded",
-      include: "Included",
-      delete: "Deleted",
-    };
-    notify(`${verb[action]} ${toApply.length}${skipped > 0 ? ` · ${skipped} skipped` : ""}`);
+    const verb = { recategorize: "Re-categorized", move: "Moved", exclude: "Excluded", include: "Included", delete: "Deleted" }[action];
+    notify(`${verb} ${toApply.length}${skipped > 0 ? ` · ${skipped} skipped` : ""}`);
   }
 
   function startBulk(action: BulkAction) {
