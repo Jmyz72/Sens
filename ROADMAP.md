@@ -10,6 +10,7 @@ The project is **pre-1.0**. In `0.x`, the **minor** carries feature releases and
 **patch** carries fixes/follow-ups. **`1.0.0` is reserved for feature-complete.**
 
 **Last shipped:** `v0.5.0` — Non-cashflow transactions ·
+**In progress (unreleased):** Transactions screen redesign (`feature/transactions-redesign`) — toolbar (search/date-range/sort/density), date-grouped list, three-state sidebar, bulk-action preview sheet, keyboard nav; frontend-only. Spec: `docs/superpowers/specs/2026-06-02-transactions-screen-redesign-design.md` ·
 **Next:** `v0.6.0` — Credit & debt behavior ·
 **Later:** the climb to `v1.0.0`
 
