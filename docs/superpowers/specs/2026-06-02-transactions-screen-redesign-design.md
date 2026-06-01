@@ -145,13 +145,24 @@ always sees the exact rows that will change and the rows being skipped:
   list) opens inline and can be reopened without leaving the sheet.
 - **"Will change · N"** — a list of the affected transactions (mini `TxnRow`s). For
   re-categorize/move each row previews its **before → after** (e.g. ~~Dining~~ → Food).
-- **"Skipped · M"** — the excluded rows, dimmed, each with its reason
-  (*can't be edited* / *opening balances can't be deleted*).
+  Each row carries a quiet **✕ Skip** control to drop it from this operation.
+- **"↩ Removed by you · K"** — rows the user skipped in this sheet. Reversible with
+  **＋ Add back**. Excluded from the Apply count. This bucket is empty until the user skips
+  something.
+- **"🔒 Can't change · M"** — the guard-blocked rows, dimmed and **locked** (no control),
+  each with its reason (*can't be edited* / *opening balances can't be deleted*). These can
+  never be promoted into the change set.
+- **Live recompute** — the header count, the **Apply to N** button, and the footer net all
+  update as the user skips / adds back. If the change set drops to 0, **Apply disables**.
 - **Footer** — Cancel · **Apply to N** (accent), or a red **Delete N** with
   "This can't be undone." copy for the destructive case.
-- **On Apply** — sheet closes → panel shows a busy state → the eligible rows loop through
-  `updateTransaction` / `deleteTransaction` → one `reload()` → selection clears → a summary
-  toast (*"Re-categorized 4 · 1 skipped."*).
+- **On Apply** — sheet closes → panel shows a busy state → the *remaining* change-set rows
+  loop through `updateTransaction` / `deleteTransaction` → one `reload()` → selection clears
+  → a summary toast (*"Re-categorized 3 · 2 skipped."* — the skip count folds in both
+  guard-blocked and user-removed rows).
+
+The sheet's editing is scoped to that one operation: skipping a row here does **not** alter
+the broader multi-select behind the sheet (Cancel leaves the original selection intact).
 
 **Edge cases:**
 - 0 rows would change (e.g. all already excluded, or only openings selected): the action
