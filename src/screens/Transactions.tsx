@@ -52,8 +52,8 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
     });
   }, [txns, kinds, query, categories, accounts, acctFilter]);
 
-  const totalIn = filtered.filter((x) => x.kind === "income").reduce((s, x) => s + x.amountCents, 0);
-  const totalOut = filtered.filter((x) => x.kind === "expense").reduce((s, x) => s + x.amountCents, 0);
+  const totalIn = filtered.filter((x) => x.kind === "income" && !x.excludedFromReporting).reduce((s, x) => s + x.amountCents, 0);
+  const totalOut = filtered.filter((x) => x.kind === "expense" && !x.excludedFromReporting).reduce((s, x) => s + x.amountCents, 0);
 
   const groups = useMemo(() => {
     const byDate = new Map<string, Transaction[]>();
@@ -78,7 +78,10 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   const toggleSelect = (id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   function dayNet(items: Transaction[]): number {
-    return items.reduce((s, x) => s + (x.kind === "income" ? x.amountCents : x.kind === "expense" ? -x.amountCents : 0), 0);
+    return items.reduce((s, x) =>
+      s + (x.kind === "income" && !x.excludedFromReporting ? x.amountCents
+         : x.kind === "expense" && !x.excludedFromReporting ? -x.amountCents
+         : 0), 0);
   }
 
   const sel = txns.find((x) => x.id === selId) ?? null;
@@ -90,9 +93,13 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   }
 
   async function onDuplicate(tx: Transaction) {
-    if (tx.kind === "income" && tx.categoryId) await client.createIncome(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
-    else if (tx.kind === "expense" && tx.categoryId) await client.createExpense(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
-    else if (tx.kind === "transfer" && tx.toAccountId) await client.createTransfer(tx.accountId, tx.toAccountId, tx.amountCents, tx.description, tx.transactionDate);
+    if (tx.kind === "income" && tx.categoryId)
+      await client.createIncome(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
+    else if (tx.kind === "expense" && tx.categoryId)
+      await client.createExpense(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
+    else if (tx.kind === "transfer" && tx.toAccountId)
+      await client.createTransfer(tx.accountId, tx.toAccountId, tx.amountCents, tx.description, tx.transactionDate);
+    else return;
     await reload();
   }
 
