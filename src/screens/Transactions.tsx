@@ -56,23 +56,24 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   const totalIn = filtered.filter((x) => x.kind === "income").reduce((s, x) => s + x.amountCents, 0);
   const totalOut = filtered.filter((x) => x.kind === "expense").reduce((s, x) => s + x.amountCents, 0);
 
-  const sorted = useMemo(() => {
-    const arr = [...filtered];
-    arr.sort((a, b) => {
-      if (sort === "amount-desc") return b.amountCents - a.amountCents;
-      if (sort === "amount-asc") return a.amountCents - b.amountCents;
+  const groups = useMemo(() => {
+    const byDate = new Map<string, Transaction[]>();
+    for (const tx of filtered) {
+      const arr = byDate.get(tx.transactionDate) ?? [];
+      arr.push(tx);
+      byDate.set(tx.transactionDate, arr);
+    }
+    const cmp = (a: Transaction, b: Transaction) => {
+      if (sort === "amount-desc") { const d = b.amountCents - a.amountCents; if (d) return d; }
+      else if (sort === "amount-asc") { const d = a.amountCents - b.amountCents; if (d) return d; }
       const ka = txnSortKey(a), kb = txnSortKey(b);
       return sort === "date-asc" ? (ka < kb ? -1 : ka > kb ? 1 : 0) : (ka < kb ? 1 : ka > kb ? -1 : 0);
-    });
-    return arr;
+    };
+    const dates = [...byDate.keys()].sort((a, b) =>
+      sort === "date-asc" ? (a < b ? -1 : a > b ? 1 : 0) : (a < b ? 1 : a > b ? -1 : 0),
+    );
+    return dates.map((date) => ({ date, items: byDate.get(date)!.sort(cmp) }));
   }, [filtered, sort]);
-
-  const groups: { date: string; items: Transaction[] }[] = [];
-  sorted.forEach((tx) => {
-    let g = groups.find((x) => x.date === tx.transactionDate);
-    if (!g) { g = { date: tx.transactionDate, items: [] }; groups.push(g); }
-    g.items.push(tx);
-  });
 
   const sel = txns.find((x) => x.id === selId) ?? null;
 
@@ -103,6 +104,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
             ))}
           </div>
           <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}
+            aria-label="Sort transactions"
             style={{ height: 34, padding: "0 10px", fontSize: 12.5, border: `0.5px solid ${t.border}`,
               background: t.panel, color: t.dim, borderRadius: 9, cursor: "pointer", fontFamily: t.font }}>
             <option value="date-desc">Date ↓</option>
