@@ -115,26 +115,48 @@ Summary, always valid for any mix:
   kinds are acknowledged without distorting the net. If any selected income/expense are
   flagged excluded, note the count (they are still summed in the selection math).
 
-Actions adapt to the eligible subset; each shows its eligible count and disables (dashed,
-with a reason) when nothing qualifies. Nothing fails silently.
+Actions adapt to the eligible subset and disable (dashed, with a reason) when **0 rows
+would change**. Nothing fails silently.
 
-| Action | Eligible kinds | Notes |
+**One consistent label format for every action:** an **affected count** (the number of
+rows the action will actually change) plus, when guards exclude some of the selection, a
+faint **"· N skipped"** whose tooltip gives the reason. The same format applies to Delete
+(e.g. "4 · 1 skipped") — no special-casing.
+
+| Action | Affects (the count shown) | Skips |
 |---|---|---|
-| 🏷 Re-categorize… | income/expense | Category-tree popover; loops `updateTransaction`. |
-| ↔︎ Move to account… | income/expense | Account popover; loops `updateTransaction`. Transfers excluded (ambiguous from/to). |
-| ⚑ Exclude from reporting | income/expense | Sets `excludedFromReporting = true`. |
-| ◷ Include in reporting | income/expense | Sets `excludedFromReporting = false`. |
-| 🗑 Delete | income/expense/transfer/adjustment | Skips `opening`; count reads e.g. "4 · skips 1 opening". Confirm dialog repeats skips. |
-| Clear selection | — | Always available. |
+| 🏷 Re-categorize… | income/expense in the selection | transfer / adjustment / opening |
+| ↔︎ Move to account… | income/expense in the selection | transfer (ambiguous from/to) / adjustment / opening |
+| ⚑ Exclude from reporting | income/expense **not already excluded** | already-excluded rows + non-income/expense |
+| ◷ Include in reporting | income/expense **currently excluded** | already-included rows + non-income/expense |
+| 🗑 Delete | income/expense/transfer/adjustment | opening (structural) |
+| Clear selection | — | always available |
 
-After any bulk action: one `reload()` and a summary toast, e.g.
-*"Re-categorized 2 · 3 skipped."*
+Exclude/Include count **only the rows whose flag actually flips**, so the result is
+deterministic across a mixed-flag selection and the count never overstates the change.
+
+#### Bulk preview sheet (the "what happens next")
+
+Pressing any action opens **one preview sheet** before anything is written — the user
+always sees the exact rows that will change and the rows being skipped:
+
+- **Header** names the action. For pick-actions (Re-categorize / Move) it carries an
+  **editable target chip** (e.g. "🛒 Food · Change") — the picker (category tree / account
+  list) opens inline and can be reopened without leaving the sheet.
+- **"Will change · N"** — a list of the affected transactions (mini `TxnRow`s). For
+  re-categorize/move each row previews its **before → after** (e.g. ~~Dining~~ → Food).
+- **"Skipped · M"** — the excluded rows, dimmed, each with its reason
+  (*can't be edited* / *opening balances can't be deleted*).
+- **Footer** — Cancel · **Apply to N** (accent), or a red **Delete N** with
+  "This can't be undone." copy for the destructive case.
+- **On Apply** — sheet closes → panel shows a busy state → the eligible rows loop through
+  `updateTransaction` / `deleteTransaction` → one `reload()` → selection clears → a summary
+  toast (*"Re-categorized 4 · 1 skipped."*).
 
 **Edge cases:**
-- All-ineligible selection (e.g. only openings, or only a transfer for re-categorize):
-  the action is disabled + dashed with a reason.
-- Delete with an opening in the mix: stays enabled, count shows the skip, confirm repeats it.
-- Pure income/expense selection: every button fully enabled, no skip notes.
+- 0 rows would change (e.g. all already excluded, or only openings selected): the action
+  is disabled + dashed in the panel and the sheet never opens.
+- Pure income/expense selection: counts have no "· N skipped" suffix — the clean case.
 
 ### 6. Keyboard
 
@@ -153,6 +175,9 @@ events while a text input is focused.
   list with sticky subtotals, selection state, the three-state sidebar, keyboard handling.
 - `src/components/TxnRow.tsx` — category color dot, aligned amount column, density prop,
   hover quick-actions slot, selection checkbox.
+- A new **bulk preview sheet** component (reusing the `Modal` atom + mini `TxnRow`s) that
+  takes the action, the resolved target, and the affected/skipped row partition, and
+  returns an Apply callback. Single-row delete keeps a lightweight confirm (not the sheet).
 - `src/lib/` — small helpers: day-net subtotal computation, selection summary
   (counts/net/eligibility), date-range → `{fromDate,toDate}` mapping. Reuse
   `computeRunningBalances`/`signedFor` for the balance-impact line.
