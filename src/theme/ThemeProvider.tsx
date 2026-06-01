@@ -55,6 +55,7 @@ function baseCss(t: Theme): string {
     .sens-row:hover{background-color:var(--row-hover);}
     .sens-row-quick{opacity:0;transition:opacity .12s;}
     .sens-row:hover .sens-row-quick{opacity:1;}
+    .sens-row:focus-within .sens-row-quick{opacity:1;}
     .sens-btn{cursor:pointer;border:none;font-family:inherit;transition:filter .12s,border-color .12s,background-color .12s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
     .sens-btn:disabled{cursor:not-allowed;}
     .sens-btn-primary:hover:not(:disabled){filter:brightness(1.08);}
@@ -76,6 +77,6 @@ function baseCss(t: Theme): string {
     .sens-bar{transition:width .5s cubic-bezier(.2,.7,.3,1);}
     @keyframes sensShimmer{from{background-position:200% center;}to{background-position:-200% center;}}
     .sens-shimmer{background-size:300% 100%;animation:sensShimmer 2s linear infinite;}
-    @media (prefers-reduced-motion: reduce){.sens-shimmer{animation:none;}.sens-screen{animation:none;}.sens-pop{animation:none;}.sens-sidebar{transition:none;}}
+    @media (prefers-reduced-motion: reduce){.sens-shimmer{animation:none;}.sens-screen{animation:none;}.sens-pop{animation:none;}.sens-sidebar{transition:none;}.sens-row-quick{transition:none;}}
   `;
 }

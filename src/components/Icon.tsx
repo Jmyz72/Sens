@@ -47,7 +47,7 @@ export function Icon({
     alertCircle: <>{<circle {...P} cx="12" cy="12" r="9" />}<path {...P} d="M12 8v5" />{dot(12, 15.5, 1.1)}</>,
     info: <>{<circle {...P} cx="12" cy="12" r="9" />}<path {...P} d="M12 16v-5" />{dot(12, 8.5, 1.1)}</>,
     flag: <path {...P} d="M6 21V4M6 4h11l-2.2 4L17 12H6" />,
-    copy: <>{<rect x="8" y="8" width="11" height="11" rx="2" {...P} />}<path {...P} d="M5 15V5h10" /></>,
+    copy: <>{<rect {...P} x="8" y="8" width="11" height="11" rx="2" />}<path {...P} d="M5 15V5h10" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: "block", flexShrink: 0, ...style }}>

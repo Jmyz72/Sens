@@ -46,7 +46,7 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
     <div className={`sens-row${onClick ? " click" : ""}`} onClick={onClick}
       style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 8px", margin: "0 -8px", height: rowH, borderRadius: 9, position: "relative", background: selected ? hexA(t.accent, 0.08) : undefined }}>
       {onToggleSelect && (
-        <button onClick={(e) => { e.stopPropagation(); onToggleSelect(); }} aria-label="Select transaction"
+        <button type="button" role="checkbox" aria-checked={selected ?? false} onClick={(e) => { e.stopPropagation(); onToggleSelect(); }} aria-label="Select transaction"
           style={{ width: 18, height: 18, flexShrink: 0, borderRadius: 6, border: `1.5px solid ${selected ? t.accent : t.borderStrong}`, background: selected ? t.accent : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
           {selected && <Icon name="check" size={11} color={t.onAccent} stroke={3} />}
         </button>
