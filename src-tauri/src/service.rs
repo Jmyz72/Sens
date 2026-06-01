@@ -437,8 +437,9 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
 
     let excluded = matches!(input.kind.as_str(), KIND_INCOME | KIND_EXPENSE) && input.excluded_from_reporting;
 
-    repo::update_transaction_row(
-        conn,
+    let dbtx = conn.unchecked_transaction()?;
+    let t = repo::update_transaction_row(
+        &dbtx,
         &input.id,
         &input.kind,
         &input.account_id,
@@ -449,7 +450,10 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
         &input.transaction_date,
         excluded,
         &now(),
-    )
+    )?;
+    materialize_postings(&dbtx, &t)?;
+    dbtx.commit()?;
+    Ok(t)
 }
 
 pub fn delete_transaction(conn: &Connection, id: &str) -> AppResult<()> {

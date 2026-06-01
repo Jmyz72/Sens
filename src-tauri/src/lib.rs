@@ -674,6 +674,38 @@ mod tests {
     }
 
     #[test]
+    fn update_and_delete_keep_postings_consistent() {
+        let c = crate::db::open_in_memory().unwrap();
+        let acc = crate::service::create_account(&c, "Cash", "cash", 0, None).unwrap();
+        let xcats = crate::service::list_categories(&c, Some("expense"), false).unwrap();
+        let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
+        let t = crate::service::create_expense(&c, &acc.id, &exp_cat, 2_000, None, "2026-02-02", false).unwrap();
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, -2_000);
+
+        // Edit the amount up to 5000.
+        let input = crate::models::UpdateTransactionInput {
+            id: t.id.clone(), kind: "expense".into(), account_id: acc.id.clone(),
+            to_account_id: None, category_id: Some(exp_cat.clone()),
+            amount_cents: 5_000, description: None, transaction_date: "2026-02-02".into(),
+            excluded_from_reporting: false,
+        };
+        crate::service::update_transaction(&c, input).unwrap();
+        assert_books_balance(&c);
+        let posting_bal: i64 = c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id = ?1", [&acc.id], |r| r.get(0)).unwrap();
+        assert_eq!(posting_bal, -5_000, "postings must reflect the edited amount");
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, -5_000);
+        // Exactly 2 postings remain for the txn (no stale rows from the old amount).
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM postings WHERE transaction_id = ?1", [&t.id], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2);
+
+        // Delete cascades postings away.
+        crate::service::delete_transaction(&c, &t.id).unwrap();
+        let after: i64 = c.query_row("SELECT COUNT(*) FROM postings WHERE transaction_id = ?1", [&t.id], |r| r.get(0)).unwrap();
+        assert_eq!(after, 0);
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, 0);
+    }
+
+    #[test]
     fn reset_app_wipes_data_and_reseeds_defaults() {
         let c = open_in_memory().unwrap();
         // Arrange: an account, a transaction, and a custom category.
