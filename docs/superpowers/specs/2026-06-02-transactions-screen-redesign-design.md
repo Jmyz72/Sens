@@ -164,6 +164,24 @@ always sees the exact rows that will change and the rows being skipped:
 The sheet's editing is scoped to that one operation: skipping a row here does **not** alter
 the broader multi-select behind the sheet (Cancel leaves the original selection intact).
 
+#### Setting: "Preview bulk actions" (default on)
+
+A single toggle in **Settings → Transactions**, following the existing `remember_month`
+pattern exactly — a `Toggle` in a `SettingRow`, persisted via
+`setSetting("bulk_action_preview", "1" | "0")` and read with `getSetting` (treat
+`null`/unset as **on**). The Transactions screen reads the flag when a bulk action is
+pressed, so flipping it takes effect immediately with no reload.
+
+- **On (default):** every bulk action opens the preview sheet described above.
+- **Off:** Re-categorize / Move show only their target picker, then apply immediately;
+  Exclude / Include apply instantly. Same summary toast in both cases.
+- **Delete is never silent:** even with preview off, bulk Delete keeps a **lightweight
+  confirm** (count + any skips + "can't be undone") — the full preview collapses to that
+  compact confirm rather than disappearing. Bulk delete never fires with zero confirmation.
+
+`getSetting`/`setSetting` are already mirrored in `mock.ts`; the new key needs no mock
+changes. The Settings screen gains one row under a new (or existing) "Transactions" card.
+
 **Edge cases:**
 - 0 rows would change (e.g. all already excluded, or only openings selected): the action
   is disabled + dashed in the panel and the sheet never opens.
@@ -187,8 +205,11 @@ events while a text input is focused.
 - `src/components/TxnRow.tsx` — category color dot, aligned amount column, density prop,
   hover quick-actions slot, selection checkbox.
 - A new **bulk preview sheet** component (reusing the `Modal` atom + mini `TxnRow`s) that
-  takes the action, the resolved target, and the affected/skipped row partition, and
-  returns an Apply callback. Single-row delete keeps a lightweight confirm (not the sheet).
+  takes the action, the resolved target, and the affected/skipped row partition, supports
+  per-row skip/add-back, and returns an Apply callback. Single-row delete keeps a
+  lightweight confirm (not the sheet).
+- `src/screens/Settings.tsx` — one new `SettingRow` + `Toggle` ("Preview bulk actions")
+  under a "Transactions" `Card`, wired to `getSetting`/`setSetting("bulk_action_preview")`.
 - `src/lib/` — small helpers: day-net subtotal computation, selection summary
   (counts/net/eligibility), date-range → `{fromDate,toDate}` mapping. Reuse
   `computeRunningBalances`/`signedFor` for the balance-impact line.
