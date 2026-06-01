@@ -706,6 +706,28 @@ mod tests {
     }
 
     #[test]
+    fn set_account_balance_keeps_postings_consistent() {
+        let c = crate::db::open_in_memory().unwrap();
+        // Fresh account, only the opening row exists → reconcile edits opening.
+        let acc = crate::service::create_account(&c, "Cash", "cash", 1_000, None).unwrap();
+        crate::service::set_account_balance(&c, &acc.id, 4_000).unwrap();
+        assert_books_balance(&c);
+        let pbal = |id: &str| c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id = ?1", [id], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, 4_000);
+        assert_eq!(pbal(&acc.id), 4_000, "opening postings must reflect the reconciled balance");
+
+        // Now create real activity, then reconcile → inserts a balanced adjustment.
+        let xcats = crate::service::list_categories(&c, Some("expense"), false).unwrap();
+        let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
+        crate::service::create_expense(&c, &acc.id, &exp_cat, 500, None, "2026-03-01", false).unwrap();
+        // balance is now 3500; reconcile to 3000 → adjustment of -500.
+        crate::service::set_account_balance(&c, &acc.id, 3_000).unwrap();
+        assert_books_balance(&c);
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, 3_000);
+        assert_eq!(pbal(&acc.id), 3_000, "adjustment postings must reflect the reconciled balance");
+    }
+
+    #[test]
     fn reset_app_wipes_data_and_reseeds_defaults() {
         let c = open_in_memory().unwrap();
         // Arrange: an account, a transaction, and a custom category.

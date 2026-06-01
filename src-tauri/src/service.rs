@@ -157,15 +157,21 @@ pub fn set_account_balance(conn: &Connection, account_id: &str, real_balance_cen
     }
     if !repo::account_has_nonopening_activity(conn, account_id)? {
         // Only the opening row exists — edit it so the balance equals the target.
-        return repo::set_opening_amount(conn, account_id, real_balance_cents, &now());
+        let tx = conn.unchecked_transaction()?;
+        let acc2 = repo::set_opening_amount(&tx, account_id, real_balance_cents, &now())?;
+        let opening = repo::get_opening_transaction(&tx, account_id)?;
+        materialize_postings(&tx, &opening)?;
+        tx.commit()?;
+        return Ok(acc2);
     }
     let diff = real_balance_cents - acc.balance_cents;
     if diff == 0 {
         return Ok(acc);
     }
     let today = crate::today();
-    repo::insert_transaction(
-        conn,
+    let tx = conn.unchecked_transaction()?;
+    let adj = repo::insert_transaction(
+        &tx,
         &new_id(),
         KIND_ADJUSTMENT,
         account_id,
@@ -177,6 +183,8 @@ pub fn set_account_balance(conn: &Connection, account_id: &str, real_balance_cen
         false,
         &now(),
     )?;
+    materialize_postings(&tx, &adj)?;
+    tx.commit()?;
     repo::get_account(conn, account_id)
 }
 

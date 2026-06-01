@@ -443,6 +443,18 @@ pub fn get_transaction(conn: &Connection, id: &str) -> AppResult<Transaction> {
         })
 }
 
+pub fn get_opening_transaction(conn: &Connection, account_id: &str) -> AppResult<Transaction> {
+    conn.query_row(
+        "SELECT * FROM transactions WHERE account_id = ?1 AND kind = 'opening' LIMIT 1",
+        [account_id],
+        map_transaction,
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Opening transaction not found".into()),
+        other => other.into(),
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn update_transaction_row(
     conn: &Connection,
