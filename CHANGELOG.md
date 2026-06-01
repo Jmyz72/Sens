@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] — 2026-06-01
+
 ### Changed
 - **Clearer wording on the income/expense reporting-exclusion toggle.** The cryptic
   "Money movement" label is now kind-aware — **Excluded from income** on income and
