@@ -173,8 +173,11 @@ pub fn reset_to_defaults(conn: &Connection) -> AppResult<()> {
     let now = crate::now();
     conn.execute_batch("BEGIN")?;
     let res = (|| -> AppResult<()> {
-        // Order respects ON DELETE RESTRICT FKs: transactions reference
-        // accounts + categories; categories self-reference via parent_id.
+        // Order respects ON DELETE RESTRICT FKs: postings reference transactions
+        // (CASCADE) and accounts (RESTRICT); transactions reference accounts +
+        // categories; categories self-reference via parent_id. Delete postings
+        // first so the accounts delete below isn't blocked by the RESTRICT FK.
+        conn.execute("DELETE FROM postings", [])?;
         conn.execute("DELETE FROM transactions", [])?;
         conn.execute("DELETE FROM categories WHERE parent_id IS NOT NULL", [])?;
         conn.execute("DELETE FROM categories", [])?;

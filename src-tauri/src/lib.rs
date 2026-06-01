@@ -791,6 +791,17 @@ mod tests {
     }
 
     #[test]
+    fn reset_app_clears_postings() {
+        let c = crate::db::open_in_memory().unwrap();
+        let _acc = crate::service::create_account(&c, "Cash", "cash", 1_000, None).unwrap();
+        let before: i64 = c.query_row("SELECT COUNT(*) FROM postings", [], |r| r.get(0)).unwrap();
+        assert!(before > 0, "account creation should have written postings");
+        crate::db::reset_to_defaults(&c).unwrap();
+        let after: i64 = c.query_row("SELECT COUNT(*) FROM postings", [], |r| r.get(0)).unwrap();
+        assert_eq!(after, 0, "factory reset must clear postings");
+    }
+
+    #[test]
     fn balance_reads_from_postings() {
         use rusqlite::Connection;
         let c = Connection::open_in_memory().unwrap();
