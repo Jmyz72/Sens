@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-06-01
+
 ### Fixed
 - The **Opening balance** row now appears in an account's **Recent activity** on the
   Accounts screen, and that view's per-row running balance now includes the opening
