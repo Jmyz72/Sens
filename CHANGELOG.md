@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Skip/Add-back, locked rows, and live counts. Gated by a new Settings toggle
     **"Preview bulk actions"** (`bulk_action_preview` app setting, default on);
     when off, edits apply directly but bulk Delete still confirms.
+  - **Bulk re-categorize is category-kind-aware.** A mixed income+expense selection
+    shows one category dropdown per present kind; rows whose kind has no target
+    chosen are placed in the "Can't change" bucket (never silently skipped or
+    mis-assigned). Each row is applied to its own kind's chosen category, so every
+    write is kind-valid and the Rust service's category-kind guard is never hit.
+  - **Mock backend now validates category-kind parity.** `mock.ts`
+    `updateTransaction` / `createIncome` / `createExpense` reject a category
+    whose kind does not match the transaction kind, mirroring the Rust service's
+    `validate_category_for` rule and closing a Tauri/mock seam gap.
   - **Keyboard navigation:** ↑/↓ to move focus, E to edit, ⌫ to delete, ⌘A to
     select all, Space to toggle a row, Esc to clear selection/close panel.
   - New pure-logic lib modules `src/lib/txnFilters.ts` and

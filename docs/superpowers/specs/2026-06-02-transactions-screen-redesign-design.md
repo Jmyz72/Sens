@@ -125,7 +125,7 @@ faint **"· N skipped"** whose tooltip gives the reason. The same format applies
 
 | Action | Affects (the count shown) | Skips |
 |---|---|---|
-| 🏷 Re-categorize… | income/expense in the selection | transfer / adjustment / opening |
+| 🏷 Re-categorize… | income/expense in the selection (kind-aware — see below) | transfer / adjustment / opening; income/expense whose kind has no target chosen |
 | ↔︎ Move to account… | income/expense in the selection | transfer (ambiguous from/to) / adjustment / opening |
 | ⚑ Exclude from reporting | income/expense **not already excluded** | already-excluded rows + non-income/expense |
 | ◷ Include in reporting | income/expense **currently excluded** | already-included rows + non-income/expense |
@@ -134,6 +134,16 @@ faint **"· N skipped"** whose tooltip gives the reason. The same format applies
 
 Exclude/Include count **only the rows whose flag actually flips**, so the result is
 deterministic across a mixed-flag selection and the count never overstates the change.
+
+#### Re-categorize: per-kind target picker
+
+Because a category belongs to exactly one kind (`income` or `expense`), bulk re-categorize is **kind-aware**:
+
+- **`TargetPicker` adapts to the selection's kinds.** A mixed income+expense selection shows **one category dropdown per present kind** — an "Expense category" picker and an "Income category" picker — each listing only that kind's categories. A pure-income or pure-expense selection shows only the relevant picker.
+- **Unassigned kinds drop into "Can't change."** If the user saves without choosing a target for a particular kind, rows of that kind move to the preview sheet's "Can't change" bucket with the reason *"No income category chosen"* or *"No expense category chosen"*. They are never silently skipped or incorrectly written.
+- **Each row is applied to its own kind's target.** `planBulk` pairs every income row with the income-category choice and every expense row with the expense-category choice, so every write sent to `updateTransaction` is kind-valid. The backend's `validate_category_for` rule (category kind must match transaction kind) is never triggered.
+
+The before→after preview in the sheet (`~~Old cat~~ → New cat`) uses each row's own kind to select the correct target for display.
 
 #### Bulk preview sheet (the "what happens next")
 
@@ -228,6 +238,13 @@ events while a text input is focused.
 Verify `src/client/mock.ts` `listTransactions` honors `fromDate`/`toDate` (and
 `accountId`); add the filter if missing. All other paths reuse already-mirrored mock
 methods. No new mock state.
+
+**Category-kind parity (implemented):** `mock.ts` now mirrors the Rust service's
+`validate_category_for` rule — `updateTransaction` and `createIncome`/`createExpense`
+reject a category whose kind does not match the transaction kind, returning an error with
+message `"Category kind '…' does not match transaction kind '…'"`. This closes the
+Tauri/mock seam gap so browser-dev correctly rejects kind-mismatched writes that the
+desktop backend would also reject.
 
 ## Testing
 
