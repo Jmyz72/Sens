@@ -161,7 +161,7 @@ pub fn account_has_nonopening_activity(conn: &Connection, id: &str) -> AppResult
     )?)
 }
 
-pub fn set_opening_amount(conn: &Connection, account_id: &str, amount_cents: i64, now: &str) -> AppResult<Account> {
+pub fn set_opening_amount(conn: &Connection, account_id: &str, amount_cents: i64, now: &str) -> AppResult<()> {
     let n = conn.execute(
         "UPDATE transactions SET amount_cents = ?2, updated_at = ?3 WHERE account_id = ?1 AND kind = 'opening'",
         params![account_id, amount_cents, now],
@@ -169,7 +169,7 @@ pub fn set_opening_amount(conn: &Connection, account_id: &str, amount_cents: i64
     if n == 0 {
         return Err(AppError::NotFound("Opening transaction not found".into()));
     }
-    get_account(conn, account_id)
+    Ok(())
 }
 
 pub fn update_account_fields(
@@ -179,7 +179,7 @@ pub fn update_account_fields(
     subtype: Option<&str>,
     opening_balance_cents: Option<i64>,
     now: &str,
-) -> AppResult<Account> {
+) -> AppResult<()> {
     if let Some(n) = name {
         conn.execute("UPDATE accounts SET name = ?2, updated_at = ?3 WHERE id = ?1", params![id, n, now])?;
     }
@@ -192,7 +192,7 @@ pub fn update_account_fields(
             params![id, o, now],
         )?;
     }
-    get_account(conn, id)
+    Ok(())
 }
 
 pub fn set_account_archived(conn: &Connection, id: &str, archived: bool, now: &str) -> AppResult<Account> {
