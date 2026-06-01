@@ -174,6 +174,39 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
     await reload();
   }
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = e.target as HTMLElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA")) return;
+      const flat = groups.flatMap((g) => g.items);
+      const idx = flat.findIndex((x) => x.id === selId);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const n = flat[Math.min(idx + 1, flat.length - 1)];
+        if (n) setSelId(n.id);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const n = flat[Math.max(idx - 1, 0)];
+        if (n) setSelId(n.id);
+      } else if ((e.key === "a" || e.key === "A") && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setSelectedIds(new Set(flat.map((x) => x.id)));
+      } else if (e.key === "Escape") {
+        if (selectedIds.size) setSelectedIds(new Set());
+        else setSelId(null);
+      } else if (e.key === " " && selId) {
+        e.preventDefault();
+        toggleSelect(selId);
+      } else if ((e.key === "e" || e.key === "E") && sel && sel.kind !== "adjustment" && sel.kind !== "opening") {
+        setEditing(sel);
+      } else if ((e.key === "Backspace" || e.key === "Delete") && sel && sel.kind !== "opening") {
+        if (window.confirm("Delete this transaction?")) onDelete(sel.id);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [groups, selId, sel, selectedIds, toggleSelect, onDelete]);
+
   return (
     <div className="sens-screen" style={{ display: "grid", gridTemplateColumns: ((sel && selectedIds.size === 0) || selectedIds.size > 0) ? "1fr minmax(0, 300px)" : "1fr", gap: 14, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
