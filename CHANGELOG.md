@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Transactions screen redesign ("Evolved List").** A full frontend-only overhaul
+  — no schema or command changes. Key additions:
+  - **Toolbar:** live search, date-range segmented control (This month / Last month
+    / Custom / All) wired to `listTransactions` `fromDate`/`toDate`, sort by date
+    or amount, and a compact/comfortable density toggle persisted to `localStorage`
+    under `sens.txn.density`.
+  - **Date-grouped list** with sticky day headers showing the day's net subtotal,
+    an aligned monospace amount column, a category color dot on each glyph, and
+    hover quick-actions (Edit / Duplicate / Delete) on every row.
+  - **Three-state right sidebar:** empty state → single-transaction
+    **`TxnDetailPanel`** (inline edit with a balance-impact before→after line and
+    the exclude-from-reporting toggle) → adaptive multi-select
+    **`TxnSelectionPanel`** (shown when ≥ 1 row is selected).
+  - **Bulk actions** (re-categorize / move account / exclude / include / delete)
+    routed through a **`BulkPreviewSheet`** listing affected rows with per-row
+    Skip/Add-back, locked rows, and live counts. Gated by a new Settings toggle
+    **"Preview bulk actions"** (`bulk_action_preview` app setting, default on);
+    when off, edits apply directly but bulk Delete still confirms.
+  - **Bulk re-categorize is category-kind-aware.** A mixed income+expense selection
+    shows one category dropdown per present kind; rows whose kind has no target
+    chosen are placed in the "Can't change" bucket (never silently skipped or
+    mis-assigned). Each row is applied to its own kind's chosen category, so every
+    write is kind-valid and the Rust service's category-kind guard is never hit.
+  - **Mock backend now validates category-kind parity.** `mock.ts`
+    `updateTransaction` / `createIncome` / `createExpense` reject a category
+    whose kind does not match the transaction kind, mirroring the Rust service's
+    `validate_category_for` rule and closing a Tauri/mock seam gap.
+  - **Keyboard navigation:** ↑/↓ to move focus, E to edit, ⌫ to delete, ⌘A to
+    select all, Space to toggle a row, Esc to clear selection/close panel.
+  - New pure-logic lib modules `src/lib/txnFilters.ts` and
+    `src/lib/txnSelection.ts` (unit-tested); new components `TxnDetailPanel.tsx`,
+    `TxnSelectionPanel.tsx`, `BulkPreviewSheet.tsx`, `TargetPicker.tsx`; a new
+    `copy` icon. `TxnRow.tsx` extended with density mode, color dot, checkbox, and
+    quick-actions.
+  - Spec: `docs/superpowers/specs/2026-06-02-transactions-screen-redesign-design.md`
+
 ## [0.5.4] — 2026-06-01
 
 ### Changed
