@@ -4,13 +4,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Transaction, TransactionKind } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
-import { Btn, Card, Empty, GlyphTile, IconBtn, Money, Pill } from "../components/ui";
+import { Card, Empty, IconBtn, Money, Pill } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { TxnRow } from "../components/TxnRow";
+import { TxnDetailPanel } from "../components/TxnDetailPanel";
 import { client } from "../client";
 import { useAppData, accountName } from "../store";
-import { fmtDate, dateGroupLabel, todayISO } from "../lib/format";
-import { KIND_META, kindColor, signedFor, txnSortKey } from "../lib/kinds";
+import { dateGroupLabel, todayISO } from "../lib/format";
+import { KIND_META, kindColor, txnSortKey } from "../lib/kinds";
 import { AddTransaction } from "../modals/AddTransaction";
 import { rangeForPreset, type DateRangePreset, type CustomRange } from "../lib/txnFilters";
 
@@ -104,7 +105,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   }
 
   return (
-    <div className="sens-screen" style={{ display: "grid", gridTemplateColumns: sel ? "1fr minmax(0, 300px)" : "1fr", gap: 14, alignItems: "start" }}>
+    <div className="sens-screen" style={{ display: "grid", gridTemplateColumns: (sel && selectedIds.size === 0) ? "1fr minmax(0, 300px)" : "1fr", gap: 14, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
         {/* Row 1: search + date presets + density toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -191,60 +192,13 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
         </Card>
       </div>
 
-      {sel && <DetailPanel tx={sel} onClose={() => setSelId(null)} onEdit={() => setEditing(sel)} onDelete={() => onDelete(sel.id)} />}
+      {sel && selectedIds.size === 0 && (
+        <TxnDetailPanel tx={sel} accounts={accounts} categories={categories} allTxns={txns}
+          onClose={() => setSelId(null)} onDuplicate={() => onDuplicate(sel)} onDelete={() => onDelete(sel.id)}
+          onSaved={() => { reload(); }} />
+      )}
 
       {editing && <AddTransaction accounts={accounts} categories={categories} editing={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); reload(); }} />}
     </div>
-  );
-}
-
-function DetailPanel({ tx, onClose, onEdit, onDelete }: { tx: Transaction; onClose: () => void; onEdit: () => void; onDelete: () => void }) {
-  const t = useTheme();
-  const { accounts, categories } = useAppData();
-  const cat = categories.find((c) => c.id === tx.categoryId);
-  const meta = KIND_META[tx.kind];
-  const color = kindColor(t, tx.kind);
-  const isAdjustment = tx.kind === "adjustment";
-  const signedCents = signedFor(tx.kind, tx.amountCents, false);
-  const rows: [string, string][] = [
-    ["Type", meta.label],
-    ["Date", fmtDate(tx.transactionDate)],
-  ];
-  if (tx.kind === "transfer") {
-    rows.push(["From", accountName(accounts, tx.accountId)], ["To", accountName(accounts, tx.toAccountId)]);
-  } else {
-    rows.push(["Account", accountName(accounts, tx.accountId)]);
-    if (cat) rows.push(["Category", `${cat.emoji} ${cat.name}`]);
-  }
-
-  return (
-    <Card className="sens-pop" pad={0} style={{ overflow: "hidden", alignSelf: "flex-start", position: "sticky", top: 0 }}>
-      <div style={{ padding: 18, borderBottom: `0.5px solid ${t.divider}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-          {cat ? <GlyphTile tone={cat.color ?? color} size={40} emoji={cat.emoji} /> : <GlyphTile tone={color} size={40} icon={meta.icon} />}
-          <IconBtn name="close" onClick={onClose} title="Close" icon={16} />
-        </div>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>{tx.description || cat?.name || meta.label}</div>
-        <div style={{ marginTop: 6 }}>
-          <Money cents={tx.kind === "transfer" ? tx.amountCents : signedCents} signed={tx.kind !== "transfer"} color={tx.kind === "transfer" ? color : undefined} size={26} weight={700} />
-        </div>
-      </div>
-      <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-        {rows.map(([k, v]) => (
-          <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-            <span style={{ color: t.dim }}>{k}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span>
-          </div>
-        ))}
-        {isAdjustment && (
-          <div style={{ fontSize: 12, color: t.dim, background: t.panel2, padding: "8px 12px", borderRadius: 8, display: "flex", gap: 7, alignItems: "center" }}>
-            <Icon name="sliders" size={14} color={t.adjustment} /> Adjustments can be deleted but not edited.
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
-          {!isAdjustment && <Btn variant="outline" icon="pencil" size="sm" onClick={onEdit} style={{ flex: 1, justifyContent: "center" }}>Edit</Btn>}
-          <Btn variant="danger" icon="trash" size="sm" onClick={onDelete} style={{ flex: 1, justifyContent: "center" }}>Delete</Btn>
-        </div>
-      </div>
-    </Card>
   );
 }
