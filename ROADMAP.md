@@ -1,7 +1,7 @@
 # Sens Roadmap
 
 Sens is built one **phase** at a time. **One phase = one release.** A phase begins
-with a brainstorming session (turning its line below into a spec under
+with a brainstorming session (turning its entry below into a spec under
 `docs/superpowers/specs/`), proceeds through an implementation plan in
 `docs/superpowers/plans/`, and ends when its `v*` tag ships per `RELEASING.md`.
 This file is the index; the specs and plans hold the detail.
@@ -9,9 +9,13 @@ This file is the index; the specs and plans hold the detail.
 The project is **pre-1.0**. In `0.x`, the **minor** carries feature releases and the
 **patch** carries fixes/follow-ups. **`1.0.0` is reserved for feature-complete.**
 
-**Last shipped:** `v0.5.0` — Non-cashflow transactions ·
-**In progress (unreleased):** Transactions screen redesign (`feature/transactions-redesign`) — toolbar (search/date-range/sort/density), date-grouped list, three-state sidebar, bulk-action preview sheet, keyboard nav; frontend-only. Spec: `docs/superpowers/specs/2026-06-02-transactions-screen-redesign-design.md` ·
-**Next:** `v0.6.0` — Credit & debt behavior ·
+Planned phases are listed in **priority order — not pre-assigned version numbers.**
+The next minor is decided **at release time** (`npm run release -- minor`), so
+re-ordering, inserting, or dropping a phase never renumbers the rest. Versions live
+in the Shipped table below *after* a phase ships, never before.
+
+**Last shipped:** `v0.6.0` — Transactions screen redesign ("Evolved List") ·
+**Next up:** Credit & debt behavior ·
 **Later:** the climb to `v1.0.0`
 
 Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
@@ -36,15 +40,18 @@ Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
 | 🟢 `v0.4.6` | Richer Malaysia-focused default category tree (`defaults_v3_seeded` backfill); dropped the Investments income default |
 | 🟢 `v0.4.7` | Cash account template + illustrated RM100 logo |
 | 🟢 `v0.5.0` | Non-cashflow transactions: opening balance as a structural `opening` transaction (column dropped; data-preserving `MIGRATION_005`) + `excludedFromReporting` flag — spec: `docs/superpowers/specs/2026-06-01-non-cashflow-transactions-design.md` |
-| 🟢 `v0.5.1` | Opening-balance row now appears in Accounts-screen activity |
-
-## In progress
-
-_**Double-entry posting engine** (unreleased, on `feat/double-entry-posting-engine`; migration 006): account balances now come from `SUM(postings.amount_cents)` via balanced two-leg entries materialized on every write, replacing the per-kind signed sum. Invisible refactor — no behavior change, existing data is backfilled automatically — and the foundation for split transactions and richer credit/debt accounting in later phases. Spec: `docs/superpowers/specs/2026-06-01-double-entry-posting-engine-design.md`; plan: `docs/superpowers/plans/2026-06-01-double-entry-posting-engine.md`. Ships in an upcoming release (version set at release time). `v0.6.0` (Credit & debt behavior) is next up after that. `v0.5.0` shipped non-cashflow transactions: opening balances became real `opening` transactions (the `accounts.opening_balance_cents` column was dropped), income/expense gained an `excludedFromReporting` flag, and existing databases upgrade automatically via the data-preserving `MIGRATION_005`. Spec: `docs/superpowers/specs/2026-06-01-non-cashflow-transactions-design.md`; plan: `docs/superpowers/plans/2026-06-01-non-cashflow-transactions.md`. Follow-ups tracked in [#19](https://github.com/Jmyz72/Sens/issues/19)._
+| 🟢 `v0.5.1` | Opening-balance row now appears in Accounts-screen activity (with running balance) |
+| 🟢 `v0.5.2` | Double-entry posting ledger — balances now come from `SUM(postings.amount_cents)` via balanced two-leg entries (migration 006); invisible refactor, groundwork for split transactions — spec: `docs/superpowers/specs/2026-06-01-double-entry-posting-engine-design.md` |
+| 🟢 `v0.5.3` | Dashboard redesign — unified net-worth + month-KPI hero, responsive account tile grid — spec: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.md` |
+| 🟢 `v0.5.4` | Kind-aware wording for the income/expense reporting-exclusion toggle |
+| 🟢 `v0.6.0` | **Transactions screen redesign ("Evolved List")** — toolbar (search / date-range / sort / density), date-grouped list with sticky day-net subtotals + hover quick-actions, three-state sidebar (inline-edit detail / adaptive multi-select), bulk-action preview sheet with per-kind re-categorize, keyboard nav; frontend-only — spec: `docs/superpowers/specs/2026-06-02-transactions-screen-redesign-design.md` |
 
 ## Planned — the climb to 1.0
 
-### ⚪ v0.6.0 — Credit & debt behavior
+Listed in **priority order**. The version each phase ships under is assigned when it
+ships, not here — finishing a phase moves it into the Shipped table above with its tag.
+
+### ⚪ Credit & debt behavior
 Credit limits + utilization (credit-card, BNPL); installment/payoff schedules and
 interest for loans (personal-loan, mortgage, car-loan, borrowed). Builds on the
 **v0.5.0** non-cashflow flag so repayments move money without polluting income/expense.
@@ -58,43 +65,46 @@ interest for loans (personal-loan, mortgage, car-loan, borrowed). Builds on the
       (pairing), beyond the v0.5.0 flag that already excludes it from income
 — spec: _TBD_
 
-### ⚪ v0.7.0 — Investment value
+### ⚪ Investment value
 Completes the deferred taxonomy work.
 - [ ] cost basis vs current value
 - [ ] unrealized gain/loss (investment, unit-trust, crypto)
 - [ ] fixed-deposit maturity
 — spec: _TBD_
 
-### ⚪ v0.8.0 — Budgets & goals
+### ⚪ Budgets & goals
 - [ ] monthly budget per category
 - [ ] budget-vs-actual + overspend warnings
 - [ ] savings goals (target amounts + progress)
 — spec: _TBD_
 
-### ⚪ v0.9.0 — Recurring & reminders
+### ⚪ Recurring & reminders
 - [ ] recurring/scheduled transactions
 - [ ] upcoming list + one-tap post
 - [ ] bill due-date reminders
 — spec: _TBD_
 
-### ⚪ v0.10.0 — Search, filter & tags
-- [ ] full transaction search
-- [ ] advanced filters (date / account / kind / amount)
-- [ ] free-form tags
+### ⚪ Advanced search, filter & tags
+Basic search and date-range / kind / amount filtering already shipped with the
+**v0.6.0** Transactions redesign; this phase covers what's left.
+- [ ] saved / advanced filters (combine account + category + kind + amount + date)
+- [ ] free-form tags + tag-based filtering
 — spec: _TBD_
 
-### ⚪ v0.11.0 — Reports & insights
+### ⚪ Reports & insights
 - [ ] spending & cashflow trends/charts beyond the dashboard
 - [ ] net-worth history over time
 — spec: _TBD_
 
-### ⚪ v0.12.0 — Data integrity & ownership
+### ⚪ Data integrity & ownership
 - [ ] CSV import/export
 - [ ] full backup & restore
 - [ ] account reconciliation against a statement balance
 — spec: _TBD_
 
-### 🎉 ⚪ v1.0.0 — Onboarding & polish (feature-complete milestone)
+### 🎉 ⚪ 1.0 — Onboarding & polish (feature-complete milestone)
+The `1.0.0` release. Ships when the phases above are done and the app is
+feature-complete.
 - [ ] receipts/attachments on transactions
 - [ ] first-run onboarding
 - [ ] 1.0 polish pass
@@ -103,7 +113,7 @@ Completes the deferred taxonomy work.
 ## Technical health & hardening (cross-cutting)
 
 Not feature phases — engineering-quality work that spans releases. Pick these up
-alongside the feature minors above (or fold the smaller ones into a patch). Items
+alongside the feature phases above (or fold the smaller ones into a patch). Items
 are ⚪ planned until scheduled.
 
 ### ⚪ Performance — balance computation at scale
@@ -118,36 +128,38 @@ Accounts screen and the dashboard (`list_accounts` / `get_account` /
       every screen re-pulls — Accounts loads the **entire** transaction history in a
       1000-row loop on each reload; consolidate the duplicate Transactions/Accounts
       fetches and add a lightweight query cache + request cancellation on unmount
-- [ ] Transactions screen caps at 500 rows with no pagination UI — older txns are
-      silently unreachable there
+- [ ] the Transactions screen now loads up to 1000 rows for the active date range
+      (no pagination UI); once histories grow past that, add range-aware paging
 — spec: _TBD_
 
 ### ⚪ Rust↔mock drift guard
 The subtype taxonomy and default category tree are hand-maintained in **both** the
 Rust seed (`db/seed.rs`, migration 002) and `src/client/mock.ts` (`SUBTYPE_ROWS`,
-`CAT_SEED`/`SUB_SEED`). CLAUDE.md already warns every behavior change must land in
-both places — a standing drift hazard.
-- [ ] CI check (or shared generated JSON) asserting the mock's taxonomy/seed matches
-      the Rust source, so divergence fails the build
+`CAT_SEED`/`SUB_SEED`); the mock also re-implements service validation (e.g. the
+category-kind check added in v0.6.0). CLAUDE.md already warns every behavior change
+must land in both places — a standing drift hazard.
+- [ ] CI check (or shared generated JSON) asserting the mock's taxonomy/seed/validation
+      matches the Rust source, so divergence fails the build
 — spec: _TBD_
 
 ### ⚪ Test coverage — UI & integration
 Backend services/repos and frontend libs are well covered; there are **no React
 component/interaction tests** for the screens (`Categories.tsx`, `Accounts.tsx`,
-`Dashboard.tsx`) or the four modals — i.e. the form-submit → error-toast →
-`reload()` flows users actually exercise.
+`Dashboard.tsx`, `Transactions.tsx`) or the modals — i.e. the form-submit →
+error-toast → `reload()` flows users actually exercise.
 - [ ] add `@testing-library/react` + modal-flow tests (submit, validation, error)
 - [ ] backend edges: `month_range` date boundaries (leap year / year-end), combined
       transaction filters (account + category + date), pagination limits
 — spec: _TBD_
 
 ### ⚪ Accessibility pass
-Only two aria/role attributes exist across the entire `src/**/*.tsx` tree.
-- [ ] `aria-label` on icon-only buttons; `role="dialog"` + focus trapping on modals
+Aria/role coverage is still thin across the `src/**/*.tsx` tree (the v0.6.0 redesign
+added some — checkbox roles, label associations, keyboard nav on Transactions).
+- [ ] `aria-label` on remaining icon-only buttons; `role="dialog"` + focus trapping on modals
 - [ ] keyboard path + live-region announcements for Categories drag-reorder
 - [ ] audit the own/owe account distinction for a non-color cue (the kind colors
       already pair with sign + icon; accounts should match that guarantee)
-- _Note:_ overlaps the v1.0.0 "1.0 polish pass" — could land there.
+- _Note:_ overlaps the **1.0 — Onboarding & polish** phase — could land there.
 — spec: _TBD_
 
 ### ⚪ Startup resilience
@@ -155,15 +167,14 @@ App setup uses `.expect()` (`src-tauri/src/lib.rs`); a corrupt or unreachable
 app-data DB panics on launch with no user-facing message. Normal operation already
 surfaces `AppError` cleanly — only startup is exposed.
 - [ ] graceful startup error path with a recovery dialog
-- _Note:_ pairs naturally with backup/restore in **v0.12.0 — Data integrity &
-  ownership**.
+- _Note:_ pairs naturally with backup/restore in the **Data integrity & ownership** phase.
 — spec: _TBD_
 
 ### ⚪ Frontend cleanups (low priority)
 - [ ] split `Categories.tsx` (572 lines) — extract the inline `CategoryForm` and
       `MoveCategoryModal`
 - [ ] extract one `getErrorMessage(e, fallback)` helper (the
-      `(e as { message?: string })?.message ?? "…"` cast is copy-pasted ~5×)
+      `(e as { message?: string })?.message ?? "…"` cast is copy-pasted across screens)
 - [ ] factor repeated modal-header / inline theme-token styling into a `ModalHeader`
       atom + a few style helpers
 — spec: _TBD_
@@ -174,9 +185,12 @@ the right phase) before they're scheduled._
 
 ## Conventions
 - **Versioning:** one phase = one minor bump (`0.N.0`); fixes are patches (`0.N.x`);
-  `1.0.0` is the feature-complete milestone. Versions are produced only by
-  `npm run release -- <major|minor|patch>` per `RELEASING.md`.
+  `1.0.0` is the feature-complete milestone. **Planned phases are not pre-pinned to a
+  version** — the next minor is produced only by `npm run release -- <major|minor|patch>`
+  at release time, per `RELEASING.md`.
 - **Adding an idea:** append it to the relevant phase's checklist, or to
   *Later / unscheduled* if it has no home yet. The roadmap never blocks capture.
-- **Finishing a phase:** flip its marker to 🟢, record the shipped tag, and fill in
-  its `spec:` link.
+- **Re-prioritizing:** reorder the phase entries under *Planned* freely — because no
+  versions are pinned there, moving a phase up or down costs nothing.
+- **Finishing a phase:** move its entry from *Planned* into the *Shipped* table with
+  its `v*` tag and `spec:` link, and update the **Last shipped / Next up** line.
