@@ -578,6 +578,17 @@ mod tests {
             [],
         )
         .unwrap();
+        // Postings required so balance_expr (now postings-based) returns 100.
+        c.execute(
+            "INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents) VALUES ('orphan-p1', 'orphan-open', 'orphan', NULL, 100)",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents) VALUES ('orphan-p2', 'orphan-open', NULL, 'equity', -100)",
+            [],
+        )
+        .unwrap();
         let all = service::list_accounts(&c, true).unwrap();
         let a = all.iter().find(|x| x.id == "orphan").expect("orphan account should still appear");
         assert_eq!(a.account_type, "fund"); // COALESCE fallback type
@@ -777,5 +788,27 @@ mod tests {
             "SELECT COUNT(*) FROM postings p JOIN transactions t ON t.id = p.transaction_id WHERE t.account_id = ?1 AND t.kind = 'opening'",
             [&acc.id], |r| r.get(0)).unwrap();
         assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn balance_reads_from_postings() {
+        use rusqlite::Connection;
+        let c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        for (_, sql) in crate::db::migrations::MIGRATIONS {
+            c.execute_batch(sql).unwrap();
+        }
+        let now = crate::now();
+        c.execute("INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at) \
+                   VALUES ('a1', NULL, 'Cash', 'cash', 'MYR', 0, ?1, ?1)", [&now]).unwrap();
+        c.execute("INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, created_at, updated_at) \
+                   VALUES ('o1','opening','a1',NULL,NULL,7000,'Opening balance','2026-01-01',0,?1,?1)", [&now]).unwrap();
+        // Postings DELIBERATELY diverge from the header (9000, not 7000) to prove the
+        // balance is read from postings, not the transaction header.
+        c.execute("INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents) VALUES ('o1a','o1','a1',NULL,9000)", []).unwrap();
+        c.execute("INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents) VALUES ('o1b','o1',NULL,'equity',-9000)", []).unwrap();
+
+        let acc = crate::repo::get_account(&c, "a1").unwrap();
+        assert_eq!(acc.balance_cents, 9000, "balance must come from postings, not the transaction header");
     }
 }

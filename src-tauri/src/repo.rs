@@ -5,17 +5,11 @@ use crate::error::{AppError, AppResult};
 use crate::models::*;
 use rusqlite::{params, Connection, Row};
 
-/// SQL expression computing an account's current balance from its opening
-/// balance plus signed transaction history. `{a}` is the accounts-table alias.
+/// SQL expression computing an account's current balance as the sum of its
+/// postings. `{a}` is the accounts-table alias. One uniform rule for every kind
+/// (replaces the former 6-term per-kind sum over `transactions`).
 fn balance_expr(a: &str) -> String {
-    format!(
-        "COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='income'     AND account_id={a}.id),0) \
-         + COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='opening'    AND account_id={a}.id),0) \
-         + COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='transfer'   AND to_account_id={a}.id),0) \
-         + COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='adjustment' AND account_id={a}.id),0) \
-         - COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='expense'    AND account_id={a}.id),0) \
-         - COALESCE((SELECT SUM(amount_cents) FROM transactions WHERE kind='transfer'   AND account_id={a}.id),0)"
-    )
+    format!("COALESCE((SELECT SUM(amount_cents) FROM postings WHERE account_id = {a}.id), 0)")
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────

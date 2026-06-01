@@ -130,7 +130,7 @@ pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult
         }
     }
     let tx = conn.unchecked_transaction()?;
-    let acc = repo::update_account_fields(
+    repo::update_account_fields(
         &tx,
         &input.id,
         name.as_deref(),
@@ -143,7 +143,7 @@ pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult
         materialize_postings(&tx, &opening)?;
     }
     tx.commit()?;
-    Ok(acc)
+    repo::get_account(conn, &input.id)
 }
 
 pub fn archive_account(conn: &Connection, id: &str) -> AppResult<Account> {
@@ -165,11 +165,11 @@ pub fn set_account_balance(conn: &Connection, account_id: &str, real_balance_cen
     if !repo::account_has_nonopening_activity(conn, account_id)? {
         // Only the opening row exists — edit it so the balance equals the target.
         let tx = conn.unchecked_transaction()?;
-        let acc2 = repo::set_opening_amount(&tx, account_id, real_balance_cents, &now())?;
+        repo::set_opening_amount(&tx, account_id, real_balance_cents, &now())?;
         let opening = repo::get_opening_transaction(&tx, account_id)?;
         materialize_postings(&tx, &opening)?;
         tx.commit()?;
-        return Ok(acc2);
+        return repo::get_account(conn, account_id);
     }
     let diff = real_balance_cents - acc.balance_cents;
     if diff == 0 {
