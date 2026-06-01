@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The **Opening balance** row now appears in an account's **Recent activity** on the
+  Accounts screen, and that view's per-row running balance now includes the opening
+  amount. Previously the opening transaction showed everywhere except the Accounts
+  screen.
+
 ## [0.5.0] — 2026-05-31
 
 ### Added
