@@ -10,9 +10,10 @@ import { Icon } from "../components/Icon";
 import { TxnRow } from "../components/TxnRow";
 import { client } from "../client";
 import { useAppData, accountName } from "../store";
-import { fmtDate, dateGroupLabel } from "../lib/format";
-import { KIND_META, kindColor, signedFor } from "../lib/kinds";
+import { fmtDate, dateGroupLabel, todayISO } from "../lib/format";
+import { KIND_META, kindColor, signedFor, txnSortKey } from "../lib/kinds";
 import { AddTransaction } from "../modals/AddTransaction";
+import { rangeForPreset, type DateRangePreset, type CustomRange } from "../lib/txnFilters";
 
 const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "adjustment", "opening"];
 
@@ -25,8 +26,18 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   const [acctFilter, setAcctFilter] = useState<string | null>(initialAccountId ?? null);
   const [selId, setSelId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [preset, setPreset] = useState<DateRangePreset>("thisMonth");
+  const [custom, setCustom] = useState<CustomRange>({});
+  const [sort, setSort] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc">("date-desc");
+  const [density, setDensity] = useState<"comfortable" | "compact">(
+    () => (localStorage.getItem("sens.txn.density") as "comfortable" | "compact") || "comfortable",
+  );
+  useEffect(() => { localStorage.setItem("sens.txn.density", density); }, [density]);
 
-  useEffect(() => { client.listTransactions({ limit: 500 }).then(setTxns).catch(() => {}); }, [version]);
+  useEffect(() => {
+    const r = rangeForPreset(preset, todayISO(), custom);
+    client.listTransactions({ limit: 1000, ...r }).then(setTxns).catch(() => {});
+  }, [version, preset, custom]);
   useEffect(() => { setAcctFilter(initialAccountId ?? null); }, [initialAccountId]);
 
   const toggleKind = (k: TransactionKind) => setKinds((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
@@ -45,8 +56,19 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   const totalIn = filtered.filter((x) => x.kind === "income").reduce((s, x) => s + x.amountCents, 0);
   const totalOut = filtered.filter((x) => x.kind === "expense").reduce((s, x) => s + x.amountCents, 0);
 
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      if (sort === "amount-desc") return b.amountCents - a.amountCents;
+      if (sort === "amount-asc") return a.amountCents - b.amountCents;
+      const ka = txnSortKey(a), kb = txnSortKey(b);
+      return sort === "date-asc" ? (ka < kb ? -1 : ka > kb ? 1 : 0) : (ka < kb ? 1 : ka > kb ? -1 : 0);
+    });
+    return arr;
+  }, [filtered, sort]);
+
   const groups: { date: string; items: Transaction[] }[] = [];
-  filtered.forEach((tx) => {
+  sorted.forEach((tx) => {
     let g = groups.find((x) => x.date === tx.transactionDate);
     if (!g) { g = { date: tx.transactionDate, items: [] }; groups.push(g); }
     g.items.push(tx);
@@ -63,22 +85,61 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   return (
     <div className="sens-screen" style={{ display: "grid", gridTemplateColumns: sel ? "1fr minmax(0, 300px)" : "1fr", gap: 14, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, height: 34, padding: "0 12px", background: t.panel, border: `0.5px solid ${t.border}`, borderRadius: 9, flex: 1, minWidth: 200 }}>
+        {/* Row 1: search + date presets + density toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, height: 34, padding: "0 12px", background: t.panel, border: `0.5px solid ${t.border}`, borderRadius: 9, flex: 1, minWidth: 180 }}>
             <Icon name="search" size={15} color={t.faint} />
             <input className="sens-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search transactions"
               style={{ flex: 1, background: "transparent", border: "none", color: t.text, fontSize: 13, fontFamily: t.font }} />
           </div>
-          <div style={{ display: "flex", gap: 14, fontSize: 12.5 }}>
-            <span style={{ color: t.dim }}>In <b style={{ color: t.income, fontFamily: t.mono }}>{(totalIn / 100).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</b></span>
-            <span style={{ color: t.dim }}>Out <b style={{ color: t.expense, fontFamily: t.mono }}>{(totalOut / 100).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</b></span>
+          <div style={{ display: "flex", gap: 4 }}>
+            {(["thisMonth", "lastMonth", "all", "custom"] as DateRangePreset[]).map((p) => (
+              <button key={p} type="button" onClick={() => setPreset(p)}
+                style={{ height: 34, padding: "0 12px", fontSize: 12.5, border: `0.5px solid ${t.border}`,
+                  background: preset === p ? t.panel3 : t.panel, color: preset === p ? t.text : t.dim,
+                  borderRadius: 9, cursor: "pointer", fontFamily: t.font }}>
+                {p === "thisMonth" ? "This month" : p === "lastMonth" ? "Last month" : p === "custom" ? "Custom" : "All"}
+              </button>
+            ))}
           </div>
+          <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}
+            style={{ height: 34, padding: "0 10px", fontSize: 12.5, border: `0.5px solid ${t.border}`,
+              background: t.panel, color: t.dim, borderRadius: 9, cursor: "pointer", fontFamily: t.font }}>
+            <option value="date-desc">Date ↓</option>
+            <option value="date-asc">Date ↑</option>
+            <option value="amount-desc">Amount ↓</option>
+            <option value="amount-asc">Amount ↑</option>
+          </select>
+          <button type="button" onClick={() => setDensity((d) => d === "compact" ? "comfortable" : "compact")}
+            title="Toggle density" style={{ height: 34, padding: "0 12px", border: `0.5px solid ${t.border}`,
+              background: t.panel, color: t.dim, borderRadius: 9, cursor: "pointer", fontFamily: t.font, fontSize: 12.5 }}>
+            {density === "compact" ? "Comfortable" : "Compact"}
+          </button>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {/* Custom date range inputs */}
+        {preset === "custom" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12.5, color: t.dim }}>From</span>
+            <input type="date" value={custom.fromDate ?? ""} onChange={(e) => setCustom((c) => ({ ...c, fromDate: e.target.value || undefined }))}
+              style={{ height: 34, padding: "0 10px", fontSize: 12.5, border: `0.5px solid ${t.borderStrong}`,
+                background: t.panel2, color: t.text, borderRadius: 8, fontFamily: t.font, cursor: "pointer" }} />
+            <span style={{ fontSize: 12.5, color: t.dim }}>To</span>
+            <input type="date" value={custom.toDateInclusive ?? ""} onChange={(e) => setCustom((c) => ({ ...c, toDateInclusive: e.target.value || undefined }))}
+              style={{ height: 34, padding: "0 10px", fontSize: 12.5, border: `0.5px solid ${t.borderStrong}`,
+                background: t.panel2, color: t.text, borderRadius: 8, fontFamily: t.font, cursor: "pointer" }} />
+          </div>
+        )}
+
+        {/* Row 2: kind chips + account pill + live totals */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {acctFilter && <Pill on onClick={() => setAcctFilter(null)}>Account: {accountName(accounts, acctFilter)} ✕</Pill>}
           {KIND_FILTERS.map((k) => <Pill key={k} on={kinds.has(k)} dot={kindColor(t, k)} onClick={() => toggleKind(k)}>{KIND_META[k].label}</Pill>)}
           {kinds.size > 0 && <Pill onClick={() => setKinds(new Set())}>Clear</Pill>}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 14, fontSize: 12.5, flexShrink: 0 }}>
+            <span style={{ color: t.dim }}>In <b style={{ color: t.income, fontFamily: t.mono }}>{(totalIn / 100).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</b></span>
+            <span style={{ color: t.dim }}>Out <b style={{ color: t.expense, fontFamily: t.mono }}>{(totalOut / 100).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</b></span>
+          </div>
         </div>
 
         <Card pad={0} style={{ overflow: "hidden" }}>
@@ -89,7 +150,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
               <div style={{ padding: "4px 16px" }}>
                 {g.items.map((tx) => (
                   <div key={tx.id} style={{ borderRadius: 9, background: selId === tx.id ? hexA(t.accent, 0.08) : "transparent" }}>
-                    <TxnRow tx={tx} accounts={accounts} categories={categories} showDate={false} onClick={() => setSelId(tx.id)} />
+                    <TxnRow tx={tx} accounts={accounts} categories={categories} showDate={false} onClick={() => setSelId(tx.id)} density={density} />
                   </div>
                 ))}
               </div>
