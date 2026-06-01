@@ -2,7 +2,7 @@
 //! seeding. The SQLite file lives in the Tauri app-data directory and every
 //! connection enables foreign-key enforcement.
 
-mod migrations;
+pub mod migrations;
 mod seed;
 
 use crate::error::AppResult;

@@ -588,6 +588,59 @@ mod tests {
     }
 
     #[test]
+    fn migration_006_backfills_balanced_postings() {
+        use rusqlite::Connection;
+        let c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        // Run migrations 1..=5 only — a pre-postings database.
+        for (v, sql) in crate::db::migrations::MIGRATIONS {
+            if *v <= 5 {
+                c.execute_batch(sql).unwrap();
+            }
+        }
+        // Minimal fixture: two accounts (subtypes 'cash'/'savings' seeded by migration 002),
+        // one expense category, and one of each money-moving kind.
+        let now = "2026-01-01T00:00:00Z";
+        c.execute("INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at) \
+                   VALUES ('a1', NULL, 'Cash', 'cash', 'MYR', 0, ?1, ?1)", [now]).unwrap();
+        c.execute("INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at) \
+                   VALUES ('a2', NULL, 'Bank', 'savings', 'MYR', 0, ?1, ?1)", [now]).unwrap();
+        c.execute("INSERT INTO categories (id, name, kind, emoji, color, parent_id, sort_order, is_archived, created_at, updated_at) \
+                   VALUES ('cx', 'Food', 'expense', '🍜', NULL, NULL, 0, 0, ?1, ?1)", [now]).unwrap();
+        c.execute("INSERT INTO categories (id, name, kind, emoji, color, parent_id, sort_order, is_archived, created_at, updated_at) \
+                   VALUES ('ci', 'Salary', 'income', '💰', NULL, NULL, 0, 0, ?1, ?1)", [now]).unwrap();
+        let ins = |id: &str, kind: &str, acc: &str, to: Option<&str>, cat: Option<&str>, amt: i64| {
+            c.execute(
+                "INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, created_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, '2026-01-02', 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                rusqlite::params![id, kind, acc, to, cat, amt],
+            ).unwrap();
+        };
+        ins("t_open", "opening", "a1", None, None, 10_000);
+        ins("t_inc", "income", "a1", None, Some("ci"), 5_000);
+        ins("t_exp", "expense", "a1", None, Some("cx"), 2_000);
+        ins("t_xfer", "transfer", "a1", Some("a2"), None, 1_000);
+        ins("t_adj", "adjustment", "a1", None, None, -500);
+
+        // Run migration 006.
+        let (_, sql6) = crate::db::migrations::MIGRATIONS.iter().find(|(v, _)| *v == 6).unwrap();
+        c.execute_batch(sql6).unwrap();
+
+        // Every transaction's postings sum to zero.
+        let unbalanced: i64 = c.query_row(
+            "SELECT COUNT(*) FROM (SELECT transaction_id, SUM(amount_cents) s FROM postings GROUP BY transaction_id) WHERE s <> 0",
+            [], |r| r.get(0)).unwrap();
+        assert_eq!(unbalanced, 0, "all transactions must balance to zero");
+
+        // a1 balance from postings = 10000 + 5000 - 2000 - 1000 (transfer out) - 500 (adj) = 11500.
+        let bal_a1: i64 = c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id='a1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(bal_a1, 11_500);
+        // a2 receives the transfer: +1000.
+        let bal_a2: i64 = c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id='a2'", [], |r| r.get(0)).unwrap();
+        assert_eq!(bal_a2, 1_000);
+    }
+
+    #[test]
     fn reset_app_wipes_data_and_reseeds_defaults() {
         let c = open_in_memory().unwrap();
         // Arrange: an account, a transaction, and a custom category.
