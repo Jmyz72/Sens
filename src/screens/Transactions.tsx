@@ -93,7 +93,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
               style={{ flex: 1, background: "transparent", border: "none", color: t.text, fontSize: 13, fontFamily: t.font }} />
           </div>
           <div style={{ display: "flex", gap: 4 }}>
-            {(["thisMonth", "lastMonth", "all", "custom"] as DateRangePreset[]).map((p) => (
+            {(["thisMonth", "lastMonth", "custom", "all"] as DateRangePreset[]).map((p) => (
               <button key={p} type="button" onClick={() => setPreset(p)}
                 style={{ height: 34, padding: "0 12px", fontSize: 12.5, border: `0.5px solid ${t.border}`,
                   background: preset === p ? t.panel3 : t.panel, color: preset === p ? t.text : t.dim,
