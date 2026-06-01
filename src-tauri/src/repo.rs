@@ -413,6 +413,28 @@ pub fn insert_transaction(
     get_transaction(conn, id)
 }
 
+pub fn insert_posting(
+    conn: &Connection,
+    id: &str,
+    transaction_id: &str,
+    account_id: Option<&str>,
+    system_bucket: Option<&str>,
+    amount_cents: i64,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, transaction_id, account_id, system_bucket, amount_cents],
+    )
+    .map_err(map_check)?;
+    Ok(())
+}
+
+pub fn delete_postings_for(conn: &Connection, transaction_id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM postings WHERE transaction_id = ?1", [transaction_id])?;
+    Ok(())
+}
+
 pub fn get_transaction(conn: &Connection, id: &str) -> AppResult<Transaction> {
     conn.query_row("SELECT * FROM transactions WHERE id = ?1", [id], map_transaction)
         .map_err(|e| match e {

@@ -12,6 +12,46 @@ fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
+/// One balanced posting leg. Exactly one of `account_id` / `system_bucket` is set.
+struct Leg {
+    account_id: Option<String>,
+    system_bucket: Option<&'static str>,
+    amount_cents: i64,
+}
+
+/// The single canonical sign rule: turn a transaction header into balanced legs.
+/// `amount_cents` is positive for income/expense/transfer and already-signed for
+/// adjustment/opening. The legs always sum to zero.
+fn postings_for(kind: &str, account_id: &str, to_account_id: Option<&str>, amount_cents: i64) -> Vec<Leg> {
+    let real = |amt: i64| Leg { account_id: Some(account_id.to_string()), system_bucket: None, amount_cents: amt };
+    let bucket = |b: &'static str, amt: i64| Leg { account_id: None, system_bucket: Some(b), amount_cents: amt };
+    match kind {
+        KIND_INCOME => vec![real(amount_cents), bucket("income", -amount_cents)],
+        KIND_EXPENSE => vec![real(-amount_cents), bucket("expense", amount_cents)],
+        KIND_TRANSFER => vec![
+            real(-amount_cents),
+            Leg { account_id: to_account_id.map(|s| s.to_string()), system_bucket: None, amount_cents },
+        ],
+        KIND_ADJUSTMENT | KIND_OPENING => vec![real(amount_cents), bucket("equity", -amount_cents)],
+        _ => {
+            // All real kinds are handled above; an unknown kind would yield an
+            // unbalanced ledger entry. Surface it loudly in dev/tests.
+            debug_assert!(false, "postings_for: unhandled transaction kind '{kind}'");
+            vec![]
+        }
+    }
+}
+
+/// (Re)write the postings for a transaction from its header. Idempotent: clears
+/// any existing postings first, so it is safe on both create and update paths.
+fn materialize_postings(conn: &Connection, t: &Transaction) -> AppResult<()> {
+    repo::delete_postings_for(conn, &t.id)?;
+    for leg in postings_for(&t.kind, &t.account_id, t.to_account_id.as_deref(), t.amount_cents) {
+        repo::insert_posting(conn, &new_id(), &t.id, leg.account_id.as_deref(), leg.system_bucket, leg.amount_cents)?;
+    }
+    Ok(())
+}
+
 fn require_nonempty(label: &str, s: &str) -> AppResult<String> {
     let t = s.trim();
     if t.is_empty() {
@@ -56,7 +96,7 @@ pub fn create_account(
     let account_id = new_id();
     let tx = conn.unchecked_transaction()?;
     repo::insert_account(&tx, &account_id, template_key, &name, &subtype, &now())?;
-    repo::insert_transaction(
+    let opening = repo::insert_transaction(
         &tx,
         &new_id(),
         KIND_OPENING,
@@ -69,6 +109,7 @@ pub fn create_account(
         false,
         &now(),
     )?;
+    materialize_postings(&tx, &opening)?;
     tx.commit()?;
     repo::get_account(conn, &account_id)
 }
@@ -322,14 +363,22 @@ pub fn create_income(conn: &Connection, account_id: &str, category_id: &str, amo
     validate_positive(amount_cents)?;
     ensure_active_account(conn, account_id, "selected")?;
     validate_category_for(conn, category_id, KIND_INCOME)?;
-    repo::insert_transaction(conn, &new_id(), KIND_INCOME, account_id, None, Some(category_id), amount_cents, description, date, excluded_from_reporting, &now())
+    let tx = conn.unchecked_transaction()?;
+    let t = repo::insert_transaction(&tx, &new_id(), KIND_INCOME, account_id, None, Some(category_id), amount_cents, description, date, excluded_from_reporting, &now())?;
+    materialize_postings(&tx, &t)?;
+    tx.commit()?;
+    Ok(t)
 }
 
 pub fn create_expense(conn: &Connection, account_id: &str, category_id: &str, amount_cents: i64, description: Option<&str>, date: &str, excluded_from_reporting: bool) -> AppResult<Transaction> {
     validate_positive(amount_cents)?;
     ensure_active_account(conn, account_id, "selected")?;
     validate_category_for(conn, category_id, KIND_EXPENSE)?;
-    repo::insert_transaction(conn, &new_id(), KIND_EXPENSE, account_id, None, Some(category_id), amount_cents, description, date, excluded_from_reporting, &now())
+    let tx = conn.unchecked_transaction()?;
+    let t = repo::insert_transaction(&tx, &new_id(), KIND_EXPENSE, account_id, None, Some(category_id), amount_cents, description, date, excluded_from_reporting, &now())?;
+    materialize_postings(&tx, &t)?;
+    tx.commit()?;
+    Ok(t)
 }
 
 pub fn create_transfer(conn: &Connection, from_account_id: &str, to_account_id: &str, amount_cents: i64, description: Option<&str>, date: &str) -> AppResult<Transaction> {
@@ -339,7 +388,11 @@ pub fn create_transfer(conn: &Connection, from_account_id: &str, to_account_id: 
     }
     ensure_active_account(conn, from_account_id, "source")?;
     ensure_active_account(conn, to_account_id, "destination")?;
-    repo::insert_transaction(conn, &new_id(), KIND_TRANSFER, from_account_id, Some(to_account_id), None, amount_cents, description, date, false, &now())
+    let tx = conn.unchecked_transaction()?;
+    let t = repo::insert_transaction(&tx, &new_id(), KIND_TRANSFER, from_account_id, Some(to_account_id), None, amount_cents, description, date, false, &now())?;
+    materialize_postings(&tx, &t)?;
+    tx.commit()?;
+    Ok(t)
 }
 
 pub fn list_transactions(conn: &Connection, filters: TransactionFilters) -> AppResult<Vec<Transaction>> {

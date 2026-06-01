@@ -640,6 +640,39 @@ mod tests {
         assert_eq!(bal_a2, 1_000);
     }
 
+    // Helper: assert every transaction in the DB has postings summing to zero.
+    fn assert_books_balance(c: &rusqlite::Connection) {
+        let unbalanced: i64 = c.query_row(
+            "SELECT COUNT(*) FROM (SELECT transaction_id, SUM(amount_cents) s FROM postings GROUP BY transaction_id) WHERE s <> 0",
+            [], |r| r.get(0)).unwrap();
+        assert_eq!(unbalanced, 0, "every transaction's postings must sum to zero");
+    }
+
+    #[test]
+    fn create_income_expense_transfer_write_balanced_postings() {
+        let c = crate::db::open_in_memory().unwrap();
+        let acc = crate::service::create_account(&c, "Cash", "cash", 10_000, None).unwrap();
+        let bank = crate::service::create_account(&c, "Bank", "savings", 0, None).unwrap();
+        let cats = crate::service::list_categories(&c, Some("income"), false).unwrap();
+        let inc_cat = cats.first().expect("seeded income categories expected").id.clone();
+        let xcats = crate::service::list_categories(&c, Some("expense"), false).unwrap();
+        let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
+
+        crate::service::create_income(&c, &acc.id, &inc_cat, 5_000, None, "2026-02-01", false).unwrap();
+        crate::service::create_expense(&c, &acc.id, &exp_cat, 2_000, None, "2026-02-02", false).unwrap();
+        crate::service::create_transfer(&c, &acc.id, &bank.id, 1_000, None, "2026-02-03").unwrap();
+
+        // Stronger RED assertion: postings must exist before the balance check.
+        let posting_count: i64 = c.query_row("SELECT COUNT(*) FROM postings", [], |r| r.get(0)).unwrap();
+        assert!(posting_count > 0, "expected postings to have been written but got 0");
+
+        assert_books_balance(&c);
+        // Cash: opening 10000 + income 5000 - expense 2000 - transfer 1000 = 12000.
+        assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, 12_000);
+        // Bank: opening 0 + transfer in 1000 = 1000.
+        assert_eq!(crate::repo::get_account(&c, &bank.id).unwrap().balance_cents, 1_000);
+    }
+
     #[test]
     fn reset_app_wipes_data_and_reseeds_defaults() {
         let c = open_in_memory().unwrap();
