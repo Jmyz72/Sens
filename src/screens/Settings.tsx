@@ -209,6 +209,25 @@ export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }
     client.setSetting("remember_month", val ? "1" : "0").catch(() => {});
   }
 
+  // bulk_action_preview preference — default on (unset = on)
+  const [bulkPreview, setBulkPreview] = useState(true);
+  const [bulkPreviewLoaded, setBulkPreviewLoaded] = useState(false);
+
+  useEffect(() => {
+    client
+      .getSetting("bulk_action_preview")
+      .then((v) => {
+        setBulkPreview(v !== "0");
+        setBulkPreviewLoaded(true);
+      })
+      .catch(() => setBulkPreviewLoaded(true));
+  }, []);
+
+  function handleBulkPreviewToggle(val: boolean) {
+    setBulkPreview(val);
+    client.setSetting("bulk_action_preview", val ? "1" : "0").catch(() => {});
+  }
+
   const themeOptions: { value: ThemeMode; label: string; icon: React.ReactNode }[] = [
     {
       value: "dark",
@@ -268,6 +287,22 @@ export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }
           right={
             loaded ? (
               <Toggle on={rememberMonth} onChange={handleRememberToggle} />
+            ) : (
+              <div style={{ width: 42, height: 24, borderRadius: 12, background: t.panel3 }} />
+            )
+          }
+        />
+      </Card>
+
+      {/* Transactions */}
+      <Card>
+        <SectionTitle>Transactions</SectionTitle>
+        <SettingRow
+          label="Preview bulk actions"
+          hint="Show a confirmation sheet listing which transactions will change before re-categorizing, moving, excluding, or deleting in bulk."
+          right={
+            bulkPreviewLoaded ? (
+              <Toggle on={bulkPreview} onChange={handleBulkPreviewToggle} />
             ) : (
               <div style={{ width: 42, height: 24, borderRadius: 12, background: t.panel3 }} />
             )
