@@ -77,7 +77,9 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
     const stats = new Map<string, AccountStats>();
     const txnsByAccount = new Map<string, Transaction[]>();
     for (const a of all) {
-      txnsByAccount.set(a.id, accountTxns(allTxns, a.id));
+      // Display list includes the opening row (visible in Recent activity, and it
+      // seeds computeRunningBalances). Stats compute their own opening-excluded list.
+      txnsByAccount.set(a.id, accountTxns(allTxns, a.id, { includeOpening: true }));
       stats.set(a.id, computeAccountStats(a, allTxns, today));
     }
     return { stats, txnsByAccount };

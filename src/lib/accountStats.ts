@@ -27,12 +27,23 @@ export function txnDelta(tx: Transaction, accountId: string): number {
   return signedFor(tx.kind, tx.amountCents, tx.toAccountId === accountId);
 }
 
-/** Every NON-opening transaction that touches an account (as source or destination).
- *  The `opening` row is excluded — its amount is already carried by the derived
- *  `account.openingBalanceCents` that every accumulator here seeds from, so including
- *  it would double-count. */
-export function accountTxns(all: Transaction[], accountId: string): Transaction[] {
-  return all.filter((tx) => tx.kind !== "opening" && (tx.accountId === accountId || tx.toAccountId === accountId));
+/** Transactions that touch an account (as source or destination).
+ *
+ *  By default the `opening` row is EXCLUDED — its amount is already carried by the
+ *  derived `account.openingBalanceCents` that every accumulator here seeds from, so
+ *  including it would double-count. Pass `{ includeOpening: true }` for the activity
+ *  *display* list, where the opening row should appear (and seeds `computeRunningBalances`,
+ *  which starts at 0). Stats callers must keep the default. */
+export function accountTxns(
+  all: Transaction[],
+  accountId: string,
+  opts: { includeOpening?: boolean } = {},
+): Transaction[] {
+  return all.filter(
+    (tx) =>
+      (opts.includeOpening || tx.kind !== "opening") &&
+      (tx.accountId === accountId || tx.toAccountId === accountId),
+  );
 }
 
 function sortByDate(txns: Transaction[]): Transaction[] {
