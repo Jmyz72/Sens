@@ -16,6 +16,7 @@ import type {
   Transaction,
 } from "../types";
 import { PROVIDER_GROUPS } from "../lib/providers";
+import { postingsFor } from "../lib/kinds";
 
 const fail = (code: string, message: string): never => {
   throw { code, message };
@@ -115,13 +116,8 @@ const settings = new Map<string, string>();
 function balanceOf(a: Account): number {
   let b = 0;
   for (const t of txns) {
-    if (t.kind === "opening" && t.accountId === a.id) b += t.amountCents;
-    else if (t.kind === "income" && t.accountId === a.id) b += t.amountCents;
-    else if (t.kind === "expense" && t.accountId === a.id) b -= t.amountCents;
-    else if (t.kind === "adjustment" && t.accountId === a.id) b += t.amountCents;
-    else if (t.kind === "transfer") {
-      if (t.accountId === a.id) b -= t.amountCents;
-      if (t.toAccountId === a.id) b += t.amountCents;
+    for (const leg of postingsFor(t.kind, t.amountCents, t.accountId, t.toAccountId)) {
+      if (leg.accountId === a.id) b += leg.amountCents;
     }
   }
   return b;
