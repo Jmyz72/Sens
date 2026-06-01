@@ -753,4 +753,29 @@ mod tests {
             "custom category removed"
         );
     }
+
+    #[test]
+    fn update_account_opening_balance_remateralizes_postings() {
+        let c = crate::db::open_in_memory().unwrap();
+        let acc = crate::service::create_account(&c, "Cash", "cash", 1_000, None).unwrap();
+        let pbal = |id: &str| c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id = ?1", [id], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(pbal(&acc.id), 1_000);
+
+        // Edit the opening balance to 6000 via the account-edit path.
+        let input = crate::models::UpdateAccountInput {
+            id: acc.id.clone(),
+            name: None,
+            subtype: None,
+            opening_balance_cents: Some(6_000),
+        };
+        crate::service::update_account(&c, input).unwrap();
+
+        assert_books_balance(&c);
+        assert_eq!(pbal(&acc.id), 6_000, "opening postings must reflect the edited opening balance");
+        // Exactly one opening transaction with two postings (no duplicates/stale rows).
+        let n: i64 = c.query_row(
+            "SELECT COUNT(*) FROM postings p JOIN transactions t ON t.id = p.transaction_id WHERE t.account_id = ?1 AND t.kind = 'opening'",
+            [&acc.id], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2);
+    }
 }

@@ -129,14 +129,21 @@ pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult
             return Err(AppError::Validation(format!("Invalid subtype: {s}")));
         }
     }
-    repo::update_account_fields(
-        conn,
+    let tx = conn.unchecked_transaction()?;
+    let acc = repo::update_account_fields(
+        &tx,
         &input.id,
         name.as_deref(),
         input.subtype.as_deref(),
         input.opening_balance_cents,
         &now(),
-    )
+    )?;
+    if input.opening_balance_cents.is_some() {
+        let opening = repo::get_opening_transaction(&tx, &input.id)?;
+        materialize_postings(&tx, &opening)?;
+    }
+    tx.commit()?;
+    Ok(acc)
 }
 
 pub fn archive_account(conn: &Connection, id: &str) -> AppResult<Account> {
