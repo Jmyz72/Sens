@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-06-01
+
 ### Changed
 - **Redesigned the Dashboard layout.** Net worth and the month's Income / Expenses /
   Net Cashflow are now unified into a single hero strip, and accounts render as a
