@@ -35,10 +35,11 @@ Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
 | 🟢 `v0.4.6` | Richer Malaysia-focused default category tree (`defaults_v3_seeded` backfill); dropped the Investments income default |
 | 🟢 `v0.4.7` | Cash account template + illustrated RM100 logo |
 | 🟢 `v0.5.0` | Non-cashflow transactions: opening balance as a structural `opening` transaction (column dropped; data-preserving `MIGRATION_005`) + `excludedFromReporting` flag — spec: `docs/superpowers/specs/2026-06-01-non-cashflow-transactions-design.md` |
+| 🟢 `v0.5.1` | Opening-balance row now appears in Accounts-screen activity; fix + double-entry posting engine foundation (internal, migration 006) |
 
 ## In progress
 
-_Nothing in flight — `v0.6.0` (Credit & debt behavior) is next up. `v0.5.0` shipped non-cashflow transactions: opening balances became real `opening` transactions (the `accounts.opening_balance_cents` column was dropped; balance reconciles to a pure sum of signed history), income/expense gained an `excludedFromReporting` flag, and existing databases upgrade automatically via the data-preserving `MIGRATION_005`. Spec: `docs/superpowers/specs/2026-06-01-non-cashflow-transactions-design.md`; plan: `docs/superpowers/plans/2026-06-01-non-cashflow-transactions.md`. Follow-ups tracked in [#19](https://github.com/Jmyz72/Sens/issues/19)._
+_Nothing in flight — `v0.6.0` (Credit & debt behavior) is next up. `v0.5.1` landed the **double-entry posting engine** (migration 006): account balances now come from `SUM(postings.amount_cents)` via balanced two-leg entries materialized on every write, replacing the per-kind signed sum. No behavior change; existing data is backfilled automatically. This is the foundation for split transactions and richer credit/debt accounting in later phases. `v0.5.0` shipped non-cashflow transactions: opening balances became real `opening` transactions (the `accounts.opening_balance_cents` column was dropped), income/expense gained an `excludedFromReporting` flag, and existing databases upgrade automatically via the data-preserving `MIGRATION_005`. Spec: `docs/superpowers/specs/2026-06-01-non-cashflow-transactions-design.md`; plan: `docs/superpowers/plans/2026-06-01-non-cashflow-transactions.md`. Follow-ups tracked in [#19](https://github.com/Jmyz72/Sens/issues/19)._
 
 ## Planned — the climb to 1.0
 
@@ -105,12 +106,13 @@ alongside the feature minors above (or fold the smaller ones into a patch). Item
 are ⚪ planned until scheduled.
 
 ### ⚪ Performance — balance computation at scale
-The current balance engine (`balance_expr` in `src-tauri/src/repo.rs`) runs five
-correlated sub-queries over `transactions` **per account row**, reused on the
+The current balance engine (`balance_expr` in `src-tauri/src/repo.rs`) runs a
+`SUM(postings.amount_cents) WHERE account_id = X` correlated sub-query **per
+account row** (double-entry `postings` table, migration 006), reused on the
 Accounts screen and the dashboard (`list_accounts` / `get_account` /
 `account_balances`). Fine today; scans grow with transaction history.
-- [ ] rewrite as a single `LEFT JOIN transactions … GROUP BY a.id` (CASE sums), or
-      maintain a running-balance materialization
+- [ ] rewrite as a single `LEFT JOIN postings … GROUP BY a.id`, or maintain a
+      running-balance materialization
 - [ ] re-fetch discipline on the frontend: `store.ts` bumps a `version` counter and
       every screen re-pulls — Accounts loads the **entire** transaction history in a
       1000-row loop on each reload; consolidate the duplicate Transactions/Accounts
