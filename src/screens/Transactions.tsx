@@ -2,23 +2,29 @@
 // panel for edit/delete. Adjustments can be deleted but not edited.
 
 import { useEffect, useMemo, useState } from "react";
-import type { Transaction, TransactionKind } from "../types";
+import type { Transaction, TransactionKind, UpdateTransactionInput } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { Card, Empty, IconBtn, Money, Pill } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { TxnRow } from "../components/TxnRow";
 import { TxnDetailPanel } from "../components/TxnDetailPanel";
+import { TxnSelectionPanel } from "../components/TxnSelectionPanel";
+import { BulkPreviewSheet, type BulkTarget } from "../components/BulkPreviewSheet";
+import { TargetPicker } from "../components/TargetPicker";
 import { client } from "../client";
 import { useAppData, accountName } from "../store";
 import { dateGroupLabel, todayISO } from "../lib/format";
 import { KIND_META, kindColor, txnSortKey } from "../lib/kinds";
 import { AddTransaction } from "../modals/AddTransaction";
 import { rangeForPreset, type DateRangePreset, type CustomRange } from "../lib/txnFilters";
+import { planBulk, type BulkAction } from "../lib/txnSelection";
+import { useToast } from "../components/Toast";
 
 const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "adjustment", "opening"];
 
 export function Transactions({ initialAccountId }: { initialAccountId?: string | null }) {
   const t = useTheme();
+  const { notify } = useToast();
   const { accounts, categories, reload, version } = useAppData();
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [query, setQuery] = useState("");
@@ -78,6 +84,15 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const toggleSelect = (id: string) => setSelectedIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  // Bulk action state
+  const [previewOn, setPreviewOn] = useState(true);
+  useEffect(() => {
+    client.getSetting("bulk_action_preview").then((v) => setPreviewOn(v !== "0")).catch(() => {});
+  }, []);
+  const [pending, setPending] = useState<{ action: BulkAction; target?: BulkTarget } | null>(null);
+  const [pickFor, setPickFor] = useState<BulkAction | null>(null);
+  const selectedTxns = useMemo(() => txns.filter((x) => selectedIds.has(x.id)), [txns, selectedIds]);
+
   function dayNet(items: Transaction[]): number {
     return items.reduce((s, x) =>
       s + (x.kind === "income" && !x.excludedFromReporting ? x.amountCents
@@ -93,6 +108,69 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
     await reload();
   }
 
+  async function applyBulk(action: BulkAction, ids: string[], target?: BulkTarget) {
+    const toApply = txns.filter((x) => ids.includes(x.id));
+    for (const tx of toApply) {
+      if (action === "delete") {
+        await client.deleteTransaction(tx.id);
+        continue;
+      }
+      const input: UpdateTransactionInput = {
+        id: tx.id,
+        kind: tx.kind,
+        accountId: tx.accountId,
+        toAccountId: tx.toAccountId,
+        categoryId: tx.categoryId,
+        amountCents: tx.amountCents,
+        description: tx.description,
+        transactionDate: tx.transactionDate,
+        excludedFromReporting: tx.excludedFromReporting,
+      };
+      if (action === "recategorize") input.categoryId = target!.categoryId!;
+      if (action === "move") input.accountId = target!.accountId!;
+      if (action === "exclude") input.excludedFromReporting = true;
+      if (action === "include") input.excludedFromReporting = false;
+      await client.updateTransaction(input);
+    }
+    const skipped = selectedTxns.length - toApply.length;
+    setSelectedIds(new Set());
+    setPending(null);
+    await reload();
+    const verb: Record<BulkAction, string> = {
+      recategorize: "Re-categorized",
+      move: "Moved",
+      exclude: "Excluded",
+      include: "Included",
+      delete: "Deleted",
+    };
+    notify(`${verb[action]} ${toApply.length}${skipped > 0 ? ` · ${skipped} skipped` : ""}`);
+  }
+
+  function startBulk(action: BulkAction) {
+    if (action === "recategorize" || action === "move") {
+      setPickFor(action);
+      return;
+    }
+    const plan = planBulk(action, selectedTxns);
+    if (previewOn) {
+      setPending({ action });
+      return;
+    }
+    if (action === "delete") {
+      if (!window.confirm(`Delete ${plan.changeable.length} transaction(s)? This can't be undone.`)) return;
+    }
+    applyBulk(action, plan.changeable.map((x) => x.id));
+  }
+
+  function chooseTarget(action: BulkAction, target: BulkTarget) {
+    setPickFor(null);
+    if (previewOn) {
+      setPending({ action, target });
+      return;
+    }
+    applyBulk(action, planBulk(action, selectedTxns).changeable.map((x) => x.id), target);
+  }
+
   async function onDuplicate(tx: Transaction) {
     if (tx.kind === "income" && tx.categoryId)
       await client.createIncome(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
@@ -105,7 +183,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   }
 
   return (
-    <div className="sens-screen" style={{ display: "grid", gridTemplateColumns: (sel && selectedIds.size === 0) ? "1fr minmax(0, 300px)" : "1fr", gap: 14, alignItems: "start" }}>
+    <div className="sens-screen" style={{ display: "grid", gridTemplateColumns: ((sel && selectedIds.size === 0) || selectedIds.size > 0) ? "1fr minmax(0, 300px)" : "1fr", gap: 14, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
         {/* Row 1: search + date presets + density toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -196,6 +274,39 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
         <TxnDetailPanel key={sel.id} tx={sel} accounts={accounts} categories={categories} allTxns={txns}
           onClose={() => setSelId(null)} onDuplicate={() => onDuplicate(sel)} onDelete={() => onDelete(sel.id)}
           onSaved={() => { reload(); }} />
+      )}
+
+      {selectedIds.size > 0 && (
+        <TxnSelectionPanel
+          selected={selectedTxns}
+          onClear={() => setSelectedIds(new Set())}
+          onAction={startBulk}
+        />
+      )}
+
+      {pending && (
+        <BulkPreviewSheet
+          plan={planBulk(pending.action, selectedTxns)}
+          target={pending.target}
+          accounts={accounts}
+          onCancel={() => setPending(null)}
+          onApply={(ids) => applyBulk(pending.action, ids, pending.target)}
+          onChangeTarget={
+            pending.action === "recategorize" || pending.action === "move"
+              ? () => { setPending(null); setPickFor(pending.action); }
+              : undefined
+          }
+        />
+      )}
+
+      {pickFor && (
+        <TargetPicker
+          action={pickFor}
+          accounts={accounts}
+          categories={categories}
+          onCancel={() => setPickFor(null)}
+          onChoose={(target) => chooseTarget(pickFor, target)}
+        />
       )}
 
       {editing && <AddTransaction accounts={accounts} categories={categories} editing={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); reload(); }} />}
