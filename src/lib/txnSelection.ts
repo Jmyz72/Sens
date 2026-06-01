@@ -52,7 +52,7 @@ export function planBulk(action: BulkAction, txns: Transaction[], target?: BulkT
 
   for (const t of txns) {
     switch (action) {
-      case "recategorize":
+      case "recategorize": {
         if (t.kind === "income" || t.kind === "expense") {
           if (!target) { changeable.push(t); break; }            // no target chosen yet → potential (panel count)
           const has = t.kind === "income" ? !!target.incomeCategory : !!target.expenseCategory;
@@ -62,6 +62,7 @@ export function planBulk(action: BulkAction, txns: Transaction[], target?: BulkT
           lockedSkipped.push({ tx: t, reason: editLockReason(t, "recategorize") });
         }
         break;
+      }
       case "move":
         if (isCashflow(t)) changeable.push(t);
         else lockedSkipped.push({ tx: t, reason: editLockReason(t, action) });

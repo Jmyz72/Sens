@@ -103,10 +103,11 @@ export function TargetPicker({
             <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 16 }}>
               {hasExpense && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 11.5, fontWeight: 600, color: t.dim, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  <label htmlFor="targetpicker-expense" style={{ fontSize: 11.5, fontWeight: 600, color: t.dim, textTransform: "uppercase", letterSpacing: 0.4 }}>
                     Expense · {expenseCount}
                   </label>
                   <select
+                    id="targetpicker-expense"
                     value={expenseCatId}
                     onChange={(e) => setExpenseCatId(e.target.value)}
                     style={selectStyle}
@@ -122,10 +123,11 @@ export function TargetPicker({
               )}
               {hasIncome && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 11.5, fontWeight: 600, color: t.dim, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  <label htmlFor="targetpicker-income" style={{ fontSize: 11.5, fontWeight: 600, color: t.dim, textTransform: "uppercase", letterSpacing: 0.4 }}>
                     Income · {incomeCount}
                   </label>
                   <select
+                    id="targetpicker-income"
                     value={incomeCatId}
                     onChange={(e) => setIncomeCatId(e.target.value)}
                     style={selectStyle}
@@ -169,7 +171,7 @@ export function TargetPicker({
                     border: "none",
                     borderRadius: 8,
                     background: canContinue ? t.accent : t.panel3,
-                    color: canContinue ? "#fff" : t.faint,
+                    color: canContinue ? t.onAccent : t.faint,
                     cursor: canContinue ? "pointer" : "not-allowed",
                     fontWeight: 600,
                   }}
