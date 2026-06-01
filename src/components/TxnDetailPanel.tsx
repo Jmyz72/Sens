@@ -6,7 +6,8 @@ import { Card, Btn, Money, GlyphTile, IconBtn } from "./ui";
 import { Icon } from "./Icon";
 import { client } from "../client";
 import { accountName } from "../store";
-import { fmtDate } from "../lib/format";
+import { fmtDate, fmtMoney } from "../lib/format";
+import { hexA } from "../theme/tokens";
 import { KIND_META, kindColor, signedFor, computeRunningBalances } from "../lib/kinds";
 import { categoryPickerItems } from "../lib/categories";
 
@@ -26,13 +27,14 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
   const [desc, setDesc] = useState(tx.description ?? "");
   const [excluded, setExcluded] = useState(tx.excludedFromReporting);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const acctTxns = allTxns.filter((x) => x.accountId === accountId || x.toAccountId === accountId);
   const after = computeRunningBalances(acctTxns, accountId).get(tx.id);
   const before = after != null ? after - signedFor(tx.kind, tx.amountCents, tx.toAccountId === accountId) : undefined;
 
   async function save() {
-    setBusy(true);
+    setBusy(true); setError(null);
     try {
       await client.updateTransaction({
         id: tx.id, kind: tx.kind, accountId,
@@ -42,6 +44,8 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
         excludedFromReporting: tx.kind === "transfer" ? false : excluded,
       });
       onSaved();
+    } catch (e) {
+      setError((e as { message?: string })?.message ?? "Something went wrong");
     } finally { setBusy(false); }
   }
 
@@ -63,7 +67,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
         </div>
         {before != null && after != null && (
           <div style={{ fontSize: 11.5, color: t.faint, marginTop: 6 }}>
-            {accountName(accounts, accountId)} balance {(before / 100).toFixed(2)} → <b style={{ color: t.text }}>{(after / 100).toFixed(2)}</b>
+            {accountName(accounts, accountId)} balance {fmtMoney(before)} → <b style={{ color: t.text }}>{fmtMoney(after)}</b>
           </div>
         )}
       </div>
@@ -110,6 +114,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
                 </button>
               </div>
             )}
+            {error && <div style={{ fontSize: 12, color: t.expense, background: hexA(t.expense, 0.12), padding: "7px 10px", borderRadius: 7 }}>{error}</div>}
             <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
               <Btn size="sm" onClick={save} disabled={busy} style={{ flex: 1, justifyContent: "center" }}>Save</Btn>
               <Btn variant="outline" icon="copy" size="sm" onClick={onDuplicate} style={{ flex: 1, justifyContent: "center" }}>Duplicate</Btn>

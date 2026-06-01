@@ -193,7 +193,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
       </div>
 
       {sel && selectedIds.size === 0 && (
-        <TxnDetailPanel tx={sel} accounts={accounts} categories={categories} allTxns={txns}
+        <TxnDetailPanel key={sel.id} tx={sel} accounts={accounts} categories={categories} allTxns={txns}
           onClose={() => setSelId(null)} onDuplicate={() => onDuplicate(sel)} onDelete={() => onDelete(sel.id)}
           onSaved={() => { reload(); }} />
       )}
