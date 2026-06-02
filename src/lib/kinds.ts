@@ -67,9 +67,9 @@ export function postingsFor(
   }
 }
 
-/** Stable ascending sort key for a transaction: date, then createdAt tiebreaker. */
+/** Stable ascending sort key: date, then time (nulls earliest), then createdAt. */
 export function txnSortKey(tx: Transaction): string {
-  return tx.transactionDate + "\x00" + tx.createdAt;
+  return tx.transactionDate + "\x00" + (tx.transactionTime ?? "") + "\x00" + tx.createdAt;
 }
 
 /**
