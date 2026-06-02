@@ -113,6 +113,23 @@ const accounts: Account[] = [];
 const txns: Transaction[] = [];
 const settings = new Map<string, string>();
 
+function timeEnabled(): boolean {
+  return settings.get("transaction_time_enabled") === "1";
+}
+function isHHMM(s: string): boolean {
+  const m = /^(\d{2}):(\d{2})$/.exec(s);
+  if (!m) return false;
+  const h = Number(m[1]), min = Number(m[2]);
+  return h <= 23 && min <= 59;
+}
+function resolveCreateTime(time: unknown): string | null {
+  if (!timeEnabled()) return null;
+  const t = typeof time === "string" ? time.trim() : "";
+  if (!t) fail("ValidationError", "A time is required");
+  if (!isHHMM(t)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
+  return t;
+}
+
 function balanceOf(a: Account): number {
   let b = 0;
   for (const t of txns) {
@@ -136,14 +153,14 @@ function seedDemo() {
     const s = subtypeOf(t.defaultSubtype)!;
     const id = uid();
     accounts.push({ id, templateKey: key, name, accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: opening, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
-    txns.push({ id: uid(), kind: "opening", accountId: id, toAccountId: null, categoryId: null, amountCents: opening, description: "Opening balance", transactionDate: "2026-01-01", createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+    txns.push({ id: uid(), kind: "opening", accountId: id, toAccountId: null, categoryId: null, amountCents: opening, description: "Opening balance", transactionDate: "2026-01-01", transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
   };
   mk("maybank", "Maybank Savings", 842000);
   mk("tng-ewallet", "Touch 'n Go", 12750);
   mk("stashaway", "StashAway", 1860000);
   const cat = (n: string) => categories.find((c) => c.name === n)!.id;
   const add = (kind: Transaction["kind"], acc: number, amt: number, catName: string | null, desc: string, date: string, to?: number) =>
-    txns.push({ id: uid(), kind, accountId: accounts[acc].id, toAccountId: to != null ? accounts[to].id : null, categoryId: catName ? cat(catName) : null, amountCents: amt, description: desc, transactionDate: date, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+    txns.push({ id: uid(), kind, accountId: accounts[acc].id, toAccountId: to != null ? accounts[to].id : null, categoryId: catName ? cat(catName) : null, amountCents: amt, description: desc, transactionDate: date, transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
   const d = (n: number) => { const x = new Date(); x.setDate(x.getDate() - n); return x.toISOString().slice(0, 10); };
   add("income", 0, 650000, "Salary", "Salary — Acme Sdn Bhd", d(2));
   add("expense", 1, 4250, "Food", "Nasi Lemak", d(1));
@@ -168,7 +185,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (a.templateKey != null && !templates.find((x) => x.key === a.templateKey)) fail("NotFound", "Account template not found");
       const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
       accounts.push(acc);
-      txns.push({ id: uid(), kind: "opening", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: a.openingBalanceCents, description: "Opening balance", transactionDate: today(), createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+      txns.push({ id: uid(), kind: "opening", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: a.openingBalanceCents, description: "Opening balance", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
       return hydrate(acc) as T;
     }
     case "list_accounts":
@@ -202,7 +219,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         if (op) op.amountCents = a.realBalanceCents;
       } else {
         const diff = a.realBalanceCents - balanceOf(acc);
-        if (diff !== 0) txns.unshift({ id: uid(), kind: "adjustment", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: diff, description: "Balance adjustment", transactionDate: today(), createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+        if (diff !== 0) txns.unshift({ id: uid(), kind: "adjustment", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: diff, description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
       }
       return hydrate(acc) as T;
     }
@@ -305,14 +322,16 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         const c = categories.find((x) => x.id === a.categoryId);
         if (c && c.kind !== kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${kind}'`);
       }
-      const tx: Transaction = { id: uid(), kind, accountId: a.accountId, toAccountId: null, categoryId: a.categoryId, amountCents: a.amountCents, description: a.description, transactionDate: a.date, createdAt: now(), updatedAt: now(), excludedFromReporting: !!a.excludedFromReporting };
+      const transactionTime = resolveCreateTime(a.time);
+      const tx: Transaction = { id: uid(), kind, accountId: a.accountId, toAccountId: null, categoryId: a.categoryId, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: !!a.excludedFromReporting };
       txns.unshift(tx);
       return tx as T;
     }
     case "create_transfer_transaction": {
       if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
       if (a.fromAccountId === a.toAccountId) fail("ValidationError", "Cannot transfer to the same account");
-      const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, createdAt: now(), updatedAt: now(), excludedFromReporting: false };
+      const transactionTime = resolveCreateTime(a.time);
+      const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false };
       txns.unshift(tx);
       return tx as T;
     }
@@ -323,7 +342,8 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (f.kind) out = out.filter((t) => t.kind === f.kind);
       if (f.fromDate) out = out.filter((t) => t.transactionDate >= f.fromDate);
       if (f.toDate) out = out.filter((t) => t.transactionDate < f.toDate);
-      out.sort((x, y) => (y.transactionDate + y.createdAt < x.transactionDate + x.createdAt ? -1 : 1));
+      const key = (t: Transaction) => t.transactionDate + "\x00" + (t.transactionTime ?? "") + "\x00" + t.createdAt;
+      out.sort((x, y) => (key(y) < key(x) ? -1 : 1));
       return out.slice(f.offset ?? 0, (f.offset ?? 0) + (f.limit ?? 200)) as T;
     }
     case "update_transaction": {
@@ -336,7 +356,14 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         if (c && c.kind !== a.input.kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${a.input.kind}'`);
       }
       const excluded = (a.input.kind === "income" || a.input.kind === "expense") && !!a.input.excludedFromReporting;
-      txns[i] = { ...txns[i], ...a.input, excludedFromReporting: excluded, updatedAt: now() };
+      let transactionTime = txns[i].transactionTime;
+      if (timeEnabled()) {
+        const t = typeof a.input.transactionTime === "string" ? a.input.transactionTime.trim() : "";
+        if (!t) fail("ValidationError", "A time is required");
+        if (!isHHMM(t)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
+        transactionTime = t;
+      }
+      txns[i] = { ...txns[i], ...a.input, transactionTime, excludedFromReporting: excluded, updatedAt: now() };
       return txns[i] as T;
     }
     case "delete_transaction": {

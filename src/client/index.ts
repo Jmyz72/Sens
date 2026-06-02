@@ -48,12 +48,12 @@ export const client = {
     dispatch<void>("set_categories_archived", { ids, archived }),
 
   // Transactions
-  createIncome: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string, excludedFromReporting = false) =>
-    dispatch<Transaction>("create_income_transaction", { accountId, categoryId, amountCents, description, date, excludedFromReporting }),
-  createExpense: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string, excludedFromReporting = false) =>
-    dispatch<Transaction>("create_expense_transaction", { accountId, categoryId, amountCents, description, date, excludedFromReporting }),
-  createTransfer: (fromAccountId: string, toAccountId: string, amountCents: number, description: string | null, date: string) =>
-    dispatch<Transaction>("create_transfer_transaction", { fromAccountId, toAccountId, amountCents, description, date }),
+  createIncome: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string, time: string | null = null, excludedFromReporting = false) =>
+    dispatch<Transaction>("create_income_transaction", { accountId, categoryId, amountCents, description, date, time, excludedFromReporting }),
+  createExpense: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string, time: string | null = null, excludedFromReporting = false) =>
+    dispatch<Transaction>("create_expense_transaction", { accountId, categoryId, amountCents, description, date, time, excludedFromReporting }),
+  createTransfer: (fromAccountId: string, toAccountId: string, amountCents: number, description: string | null, date: string, time: string | null = null) =>
+    dispatch<Transaction>("create_transfer_transaction", { fromAccountId, toAccountId, amountCents, description, date, time }),
   listTransactions: (filters?: TransactionFilters) =>
     dispatch<Transaction[]>("list_transactions", { filters: filters ?? null }),
   updateTransaction: (input: UpdateTransactionInput) => dispatch<Transaction>("update_transaction", { input }),
