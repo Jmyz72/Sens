@@ -122,9 +122,9 @@ function isHHMM(s: string): boolean {
   const h = Number(m[1]), min = Number(m[2]);
   return h <= 23 && min <= 59;
 }
-function resolveCreateTime(time: unknown): string | null {
-  if (!timeEnabled()) return null;
-  const t = typeof time === "string" ? time.trim() : "";
+function resolveTime(supplied: unknown, fallback: string | null): string | null {
+  if (!timeEnabled()) return fallback;
+  const t = typeof supplied === "string" ? supplied.trim() : "";
   if (!t) fail("ValidationError", "A time is required");
   if (!isHHMM(t)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
   return t;
@@ -322,7 +322,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         const c = categories.find((x) => x.id === a.categoryId);
         if (c && c.kind !== kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${kind}'`);
       }
-      const transactionTime = resolveCreateTime(a.time);
+      const transactionTime = resolveTime(a.time, null);
       const tx: Transaction = { id: uid(), kind, accountId: a.accountId, toAccountId: null, categoryId: a.categoryId, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: !!a.excludedFromReporting };
       txns.unshift(tx);
       return tx as T;
@@ -330,7 +330,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "create_transfer_transaction": {
       if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
       if (a.fromAccountId === a.toAccountId) fail("ValidationError", "Cannot transfer to the same account");
-      const transactionTime = resolveCreateTime(a.time);
+      const transactionTime = resolveTime(a.time, null);
       const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false };
       txns.unshift(tx);
       return tx as T;
@@ -356,13 +356,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         if (c && c.kind !== a.input.kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${a.input.kind}'`);
       }
       const excluded = (a.input.kind === "income" || a.input.kind === "expense") && !!a.input.excludedFromReporting;
-      let transactionTime = txns[i].transactionTime;
-      if (timeEnabled()) {
-        const t = typeof a.input.transactionTime === "string" ? a.input.transactionTime.trim() : "";
-        if (!t) fail("ValidationError", "A time is required");
-        if (!isHHMM(t)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
-        transactionTime = t;
-      }
+      const transactionTime = resolveTime(a.input.transactionTime, txns[i].transactionTime);
       txns[i] = { ...txns[i], ...a.input, transactionTime, excludedFromReporting: excluded, updatedAt: now() };
       return txns[i] as T;
     }
