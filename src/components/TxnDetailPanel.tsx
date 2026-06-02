@@ -6,10 +6,11 @@ import { Card, Btn, Money, GlyphTile, IconBtn } from "./ui";
 import { Icon } from "./Icon";
 import { client } from "../client";
 import { accountName } from "../store";
-import { fmtDate, fmtMoney } from "../lib/format";
+import { fmtDate, fmtMoney, fmtTime, nowTimeHHMM } from "../lib/format";
 import { hexA } from "../theme/tokens";
 import { KIND_META, kindColor, signedFor, computeRunningBalances } from "../lib/kinds";
 import { categoryPickerItems } from "../lib/categories";
+import { useTimeSetting } from "../lib/useTimeSetting";
 
 export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onDuplicate, onDelete, onSaved }: {
   tx: Transaction; accounts: Account[]; categories: Category[]; allTxns: Transaction[];
@@ -24,6 +25,8 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
   const [accountId, setAccountId] = useState(tx.accountId);
   const [toAccountId, setToAccountId] = useState(tx.toAccountId);
   const [date, setDate] = useState(tx.transactionDate);
+  const [timeEnabled] = useTimeSetting();
+  const [time, setTime] = useState(tx.transactionTime ?? nowTimeHHMM());
   const [desc, setDesc] = useState(tx.description ?? "");
   const [excluded, setExcluded] = useState(tx.excludedFromReporting);
   const [busy, setBusy] = useState(false);
@@ -43,6 +46,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
         toAccountId: tx.kind === "transfer" ? toAccountId : null,
         categoryId: tx.kind === "transfer" ? null : categoryId,
         amountCents: tx.amountCents, description: desc.trim() || null, transactionDate: date,
+        transactionTime: timeEnabled ? time : tx.transactionTime,
         excludedFromReporting: tx.kind === "transfer" ? false : excluded,
       });
       onSaved();
@@ -103,6 +107,12 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
               <span style={{ color: t.dim }}>Date</span>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={fieldStyle} />
             </label>
+            {timeEnabled && (
+              <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                <span style={{ color: t.dim }}>Time</span>
+                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={fieldStyle} />
+              </label>
+            )}
             <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, gap: 10 }}>
               <span style={{ color: t.dim }}>Note</span>
               <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="—" style={{ ...fieldStyle, flex: 1 }} />
@@ -126,7 +136,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
         ) : (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-              <span style={{ color: t.dim }}>Date</span><span style={{ fontWeight: 600 }}>{fmtDate(tx.transactionDate)}</span>
+              <span style={{ color: t.dim }}>Date</span><span style={{ fontWeight: 600 }}>{fmtDate(tx.transactionDate)}{tx.transactionTime ? ` · ${fmtTime(tx.transactionTime)}` : ""}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
               <span style={{ color: t.dim }}>Account</span><span style={{ fontWeight: 600 }}>{accountName(accounts, tx.accountId)}</span>

@@ -75,7 +75,7 @@ export function txnSortKey(tx: Transaction): string {
 /**
  * Compute a map of transaction id → "balance after this transaction" for a
  * given account. Accumulation follows the spec:
- *   - Sort ascending by (transactionDate, createdAt) as stable tiebreaker.
+ *   - Sort ascending by (transactionDate, transactionTime, createdAt) via txnSortKey.
  *   - Start from 0 — the account's `opening` transaction is the first row and
  *     carries the starting balance, so it accumulates like any other delta.
  *   - Add each transaction's per-account signed delta.

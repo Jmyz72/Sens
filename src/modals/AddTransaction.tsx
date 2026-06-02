@@ -9,9 +9,10 @@ import { hexA } from "../theme/tokens";
 import { Btn, Field, Modal, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
-import { parseAmountToCents, todayISO } from "../lib/format";
+import { parseAmountToCents, todayISO, nowTimeHHMM } from "../lib/format";
 import { KIND_META, kindColor } from "../lib/kinds";
 import { categoryPickerItems } from "../lib/categories";
+import { useTimeSetting } from "../lib/useTimeSetting";
 
 const FORM_KINDS: TransactionKind[] = ["expense", "income", "transfer"];
 
@@ -25,6 +26,8 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
   const [desc, setDesc] = useState(editing?.description ?? "");
   const [excluded, setExcluded] = useState(editing?.excludedFromReporting ?? false);
   const [date, setDate] = useState(editing?.transactionDate ?? todayISO());
+  const [timeEnabled] = useTimeSetting();
+  const [time, setTime] = useState(editing?.transactionTime ?? nowTimeHHMM());
   const [accountId, setAccountId] = useState(editing?.accountId ?? active[0]?.id ?? "");
   const [toAccountId, setToAccountId] = useState(editing?.toAccountId ?? active.find((a) => a.id !== accountId)?.id ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +44,7 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
   async function submit() {
     if (!valid || cents == null) return;
     setBusy(true); setError(null);
+    const txTime = timeEnabled ? time : null;
     try {
       if (editing) {
         await client.updateTransaction({
@@ -48,14 +52,15 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
           toAccountId: kind === "transfer" ? toAccountId : null,
           categoryId: kind === "transfer" ? null : effectiveCat,
           amountCents: cents, description: desc.trim() || null, transactionDate: date,
+          transactionTime: txTime,
           excludedFromReporting: kind === "transfer" ? false : excluded,
         });
       } else if (kind === "income") {
-        await client.createIncome(accountId, effectiveCat, cents, desc.trim() || null, date, excluded);
+        await client.createIncome(accountId, effectiveCat, cents, desc.trim() || null, date, txTime, excluded);
       } else if (kind === "expense") {
-        await client.createExpense(accountId, effectiveCat, cents, desc.trim() || null, date, excluded);
+        await client.createExpense(accountId, effectiveCat, cents, desc.trim() || null, date, txTime, excluded);
       } else {
-        await client.createTransfer(accountId, toAccountId, cents, desc.trim() || null, date);
+        await client.createTransfer(accountId, toAccountId, cents, desc.trim() || null, date, txTime);
       }
       onDone();
     } catch (e) {
@@ -136,9 +141,20 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
           </div>
         )}
 
-        <Field label="Date">
-          <input className="sens-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle(t)} />
-        </Field>
+        {timeEnabled ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Field label="Date">
+              <input className="sens-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle(t)} />
+            </Field>
+            <Field label="Time">
+              <input className="sens-input" type="time" value={time} onChange={(e) => setTime(e.target.value)} style={inputStyle(t)} />
+            </Field>
+          </div>
+        ) : (
+          <Field label="Date">
+            <input className="sens-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle(t)} />
+          </Field>
+        )}
 
         {kind !== "transfer" && (
           <button type="button" onClick={() => setExcluded((v) => !v)}

@@ -138,7 +138,8 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
         const input: UpdateTransactionInput = {
           id: tx.id, kind: tx.kind, accountId: tx.accountId, toAccountId: tx.toAccountId,
           categoryId: tx.categoryId, amountCents: tx.amountCents, description: tx.description,
-          transactionDate: tx.transactionDate, excludedFromReporting: tx.excludedFromReporting,
+          transactionDate: tx.transactionDate, transactionTime: tx.transactionTime,
+          excludedFromReporting: tx.excludedFromReporting,
         };
         if (action === "recategorize") {
           const cat = tx.kind === "income" ? target?.incomeCategory : tx.kind === "expense" ? target?.expenseCategory : undefined;
@@ -188,11 +189,11 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
 
   async function onDuplicate(tx: Transaction) {
     if (tx.kind === "income" && tx.categoryId)
-      await client.createIncome(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
+      await client.createIncome(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.transactionTime, tx.excludedFromReporting);
     else if (tx.kind === "expense" && tx.categoryId)
-      await client.createExpense(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
+      await client.createExpense(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.transactionTime, tx.excludedFromReporting);
     else if (tx.kind === "transfer" && tx.toAccountId)
-      await client.createTransfer(tx.accountId, tx.toAccountId, tx.amountCents, tx.description, tx.transactionDate);
+      await client.createTransfer(tx.accountId, tx.toAccountId, tx.amountCents, tx.description, tx.transactionDate, tx.transactionTime);
     else return;
     await reload();
   }

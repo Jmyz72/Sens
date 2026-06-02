@@ -118,6 +118,7 @@ const mkTx = (overrides: Partial<Transaction> & { id: string }): Transaction => 
   amountCents: 1000,
   description: null,
   transactionDate: "2026-01-01",
+  transactionTime: null,
   excludedFromReporting: false,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
@@ -213,7 +214,7 @@ describe("opening kind", () => {
   it("computeRunningBalances starts at 0 with the opening row first", () => {
     const mk = (over: Partial<Transaction>): Transaction => ({
       id: "x", kind: "expense", accountId: "a", toAccountId: null, categoryId: "c",
-      amountCents: 0, description: null, transactionDate: "2026-05-01",
+      amountCents: 0, description: null, transactionDate: "2026-05-01", transactionTime: null,
       excludedFromReporting: false, createdAt: "1", updatedAt: "1", ...over,
     });
     const txns = [

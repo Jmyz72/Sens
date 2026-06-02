@@ -13,6 +13,7 @@ function tx(kind: TransactionKind, amountCents: number, over: Partial<Transactio
     amountCents,
     description: null,
     transactionDate: "2026-06-01",
+    transactionTime: null,
     excludedFromReporting: false,
     createdAt: "2026-06-01T00:00:00Z",
     updatedAt: "2026-06-01T00:00:00Z",
