@@ -218,6 +218,7 @@ fn map_category(r: &Row) -> rusqlite::Result<Category> {
         parent_id: r.get("parent_id")?,
         sort_order: r.get("sort_order")?,
         is_archived: r.get::<_, i64>("is_archived")? != 0,
+        is_system: r.get::<_, i64>("is_system")? != 0,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
