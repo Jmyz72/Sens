@@ -38,13 +38,16 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
 
   const isDest = perspectiveAccountId != null && tx.toAccountId === perspectiveAccountId;
   const signedCents = signedFor(tx.kind, tx.amountCents, isDest);
-  // Income/expense/adjustment carry an inherent sign; transfers are signed only
-  // from an account perspective, otherwise shown neutral in transfer color.
+  // Income/expense carry an inherent sign; transfers are signed only from an
+  // account perspective, otherwise shown neutral in transfer color.
   const signed = tx.kind !== "transfer" || perspectiveAccountId != null;
+  // Structural kinds (opening/adjustment) keep their +/− sign but use their own
+  // kind color — never income-green/expense-red, which would misread as cashflow.
+  const useKindColor = (tx.kind === "transfer" && !signed) || tx.kind === "adjustment" || tx.kind === "opening";
 
   return (
     <div className={`sens-row${onClick ? " click" : ""}`} onClick={onClick}
-      style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 8px", margin: "0 -8px", height: rowH, borderRadius: 9, position: "relative", background: selected ? hexA(t.accent, 0.08) : undefined }}>
+      style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 8px", margin: "0 -8px", height: rowH, borderRadius: 9, position: "relative", background: selected ? hexA(t.accent, 0.08) : undefined, opacity: tx.excludedFromReporting ? 0.6 : undefined }}>
       {onToggleSelect && (
         <button type="button" role="checkbox" aria-checked={selected ?? false} onClick={(e) => { e.stopPropagation(); onToggleSelect(); }} aria-label="Select transaction"
           style={{ width: 18, height: 18, flexShrink: 0, borderRadius: 6, border: `1.5px solid ${selected ? t.accent : t.borderStrong}`, background: selected ? t.accent : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
@@ -71,7 +74,7 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
       </div>
       {quickActions && <div className="sens-row-quick" style={{ display: "flex", gap: 4, flexShrink: 0 }}>{quickActions}</div>}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, width: 110, flexShrink: 0 }}>
-        <Money cents={signed ? signedCents : tx.amountCents} signed={signed} color={tx.kind === "transfer" && !signed ? color : undefined} size={13} />
+        <Money cents={signed ? signedCents : tx.amountCents} signed={signed} color={useKindColor ? color : undefined} size={13} />
         {balanceAfterCents !== undefined && (
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <span style={{ fontSize: 9.5, fontWeight: 600, color: t.faint, textTransform: "uppercase", letterSpacing: 0.4, lineHeight: 1 }}>BAL</span>

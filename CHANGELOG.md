@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Excluded-from-reporting transactions are now visually de-emphasized.** Income/
+  expense rows flagged as excluded render the whole row at reduced opacity in the
+  transactions list (`TxnRow`), so they recede from the normal flow while still
+  showing their green/red direction and the "EXCLUDED" badge — making it clear at a
+  glance that they don't count toward reported cashflow.
+
+### Fixed
+- **Opening-balance and adjustment amounts no longer masquerade as income/expense.**
+  Their amounts were rendered in income-green / expense-red (a misleading cashflow
+  cue); they now use their own neutral kind colors (opening = slate, adjustment =
+  amber) while keeping the meaningful +/− sign, matching their glyphs — in both the
+  transactions list (`TxnRow`) and the detail panel (`TxnDetailPanel`).
+
 ## [0.7.0] — 2026-06-02
 
 ### Added

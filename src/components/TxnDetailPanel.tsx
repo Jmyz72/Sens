@@ -69,7 +69,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
         <div style={{ fontSize: 15, fontWeight: 700, marginTop: 12 }}>{tx.description || meta.label}</div>
         <div style={{ marginTop: 6 }}>
           <Money cents={tx.kind === "transfer" ? tx.amountCents : signedCents} signed={tx.kind !== "transfer"}
-            color={tx.kind === "transfer" ? color : undefined} size={26} weight={700} />
+            color={tx.kind === "transfer" || tx.kind === "adjustment" || tx.kind === "opening" ? color : undefined} size={26} weight={700} />
         </div>
         {before != null && after != null && (
           <div style={{ fontSize: 11.5, color: t.faint, marginTop: 6 }}>
