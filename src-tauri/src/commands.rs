@@ -116,18 +116,18 @@ pub fn set_categories_archived(state: State<'_, DbState>, ids: Vec<String>, arch
 // ── Transactions ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn create_income_transaction(state: State<'_, DbState>, account_id: String, category_id: String, amount_cents: i64, description: Option<String>, date: String, excluded_from_reporting: bool) -> AppResult<Transaction> {
-    with_conn!(state, c => service::create_income(&c, &account_id, &category_id, amount_cents, description.as_deref(), &date, excluded_from_reporting))
+pub fn create_income_transaction(state: State<'_, DbState>, account_id: String, category_id: String, amount_cents: i64, description: Option<String>, date: String, time: Option<String>, excluded_from_reporting: bool) -> AppResult<Transaction> {
+    with_conn!(state, c => service::create_income(&c, &account_id, &category_id, amount_cents, description.as_deref(), &date, time.as_deref(), excluded_from_reporting))
 }
 
 #[tauri::command]
-pub fn create_expense_transaction(state: State<'_, DbState>, account_id: String, category_id: String, amount_cents: i64, description: Option<String>, date: String, excluded_from_reporting: bool) -> AppResult<Transaction> {
-    with_conn!(state, c => service::create_expense(&c, &account_id, &category_id, amount_cents, description.as_deref(), &date, excluded_from_reporting))
+pub fn create_expense_transaction(state: State<'_, DbState>, account_id: String, category_id: String, amount_cents: i64, description: Option<String>, date: String, time: Option<String>, excluded_from_reporting: bool) -> AppResult<Transaction> {
+    with_conn!(state, c => service::create_expense(&c, &account_id, &category_id, amount_cents, description.as_deref(), &date, time.as_deref(), excluded_from_reporting))
 }
 
 #[tauri::command]
-pub fn create_transfer_transaction(state: State<'_, DbState>, from_account_id: String, to_account_id: String, amount_cents: i64, description: Option<String>, date: String) -> AppResult<Transaction> {
-    with_conn!(state, c => service::create_transfer(&c, &from_account_id, &to_account_id, amount_cents, description.as_deref(), &date))
+pub fn create_transfer_transaction(state: State<'_, DbState>, from_account_id: String, to_account_id: String, amount_cents: i64, description: Option<String>, date: String, time: Option<String>) -> AppResult<Transaction> {
+    with_conn!(state, c => service::create_transfer(&c, &from_account_id, &to_account_id, amount_cents, description.as_deref(), &date, time.as_deref()))
 }
 
 #[tauri::command]

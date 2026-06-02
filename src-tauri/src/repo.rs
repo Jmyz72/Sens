@@ -377,6 +377,7 @@ fn map_transaction(r: &Row) -> rusqlite::Result<Transaction> {
         amount_cents: r.get("amount_cents")?,
         description: r.get("description")?,
         transaction_date: r.get("transaction_date")?,
+        transaction_time: r.get("transaction_time")?,
         excluded_from_reporting: r.get::<_, i64>("excluded_from_reporting")? != 0,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
@@ -394,14 +395,15 @@ pub fn insert_transaction(
     amount_cents: i64,
     description: Option<&str>,
     transaction_date: &str,
+    transaction_time: Option<&str>,
     excluded_from_reporting: bool,
     now: &str,
 ) -> AppResult<Transaction> {
     conn.execute(
         "INSERT INTO transactions
-           (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
-        params![id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting as i64, now],
+           (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, transaction_time, excluded_from_reporting, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+        params![id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, transaction_time, excluded_from_reporting as i64, now],
     )
     .map_err(map_check)?;
     get_transaction(conn, id)
@@ -460,14 +462,15 @@ pub fn update_transaction_row(
     amount_cents: i64,
     description: Option<&str>,
     transaction_date: &str,
+    transaction_time: Option<&str>,
     excluded_from_reporting: bool,
     now: &str,
 ) -> AppResult<Transaction> {
     let n = conn
         .execute(
             "UPDATE transactions SET kind=?2, account_id=?3, to_account_id=?4, category_id=?5,
-               amount_cents=?6, description=?7, transaction_date=?8, excluded_from_reporting=?9, updated_at=?10 WHERE id=?1",
-            params![id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting as i64, now],
+               amount_cents=?6, description=?7, transaction_date=?8, transaction_time=?9, excluded_from_reporting=?10, updated_at=?11 WHERE id=?1",
+            params![id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, transaction_time, excluded_from_reporting as i64, now],
         )
         .map_err(map_check)?;
     if n == 0 {
@@ -508,7 +511,7 @@ pub fn list_transactions(conn: &Connection, f: &TransactionFilters) -> AppResult
         sql.push_str(" AND transaction_date < ?");
         args.push(Box::new(v.clone()));
     }
-    sql.push_str(" ORDER BY transaction_date DESC, created_at DESC");
+    sql.push_str(" ORDER BY transaction_date DESC, transaction_time DESC NULLS LAST, created_at DESC");
     let limit = f.limit.unwrap_or(200).clamp(1, 1000);
     sql.push_str(&format!(" LIMIT {}", limit));
     if let Some(off) = f.offset {
