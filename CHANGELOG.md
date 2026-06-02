@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-06-02
+
 ### Changed
 - **Excluded-from-reporting transactions are now visually de-emphasized.** Income/
   expense rows flagged as excluded render the whole row at reduced opacity in the
