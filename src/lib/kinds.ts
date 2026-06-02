@@ -67,15 +67,15 @@ export function postingsFor(
   }
 }
 
-/** Stable ascending sort key for a transaction: date, then createdAt tiebreaker. */
+/** Stable ascending sort key: date, then time (nulls earliest), then createdAt. */
 export function txnSortKey(tx: Transaction): string {
-  return tx.transactionDate + "\x00" + tx.createdAt;
+  return tx.transactionDate + "\x00" + (tx.transactionTime ?? "") + "\x00" + tx.createdAt;
 }
 
 /**
  * Compute a map of transaction id → "balance after this transaction" for a
  * given account. Accumulation follows the spec:
- *   - Sort ascending by (transactionDate, createdAt) as stable tiebreaker.
+ *   - Sort ascending by (transactionDate, transactionTime, createdAt) via txnSortKey.
  *   - Start from 0 — the account's `opening` transaction is the first row and
  *     carries the starting balance, so it accumulates like any other delta.
  *   - Add each transaction's per-account signed delta.

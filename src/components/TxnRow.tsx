@@ -9,7 +9,7 @@ import { GlyphTile, Money } from "./ui";
 import { Icon } from "./Icon";
 import { hexA } from "../theme/tokens";
 import { KIND_META, kindColor, signedFor } from "../lib/kinds";
-import { fmtDate } from "../lib/format";
+import { fmtDate, fmtTime } from "../lib/format";
 
 export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick, showDate = true, balanceAfterCents, density = "comfortable", selected, onToggleSelect, quickActions }: {
   tx: Transaction; accounts: Account[]; categories: Category[]; perspectiveAccountId?: string; onClick?: () => void; showDate?: boolean; balanceAfterCents?: number;
@@ -66,7 +66,7 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
           )}
         </div>
         <div style={{ fontSize: 11.5, color: t.faint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {subtitle}{showDate ? ` · ${fmtDate(tx.transactionDate)}` : ""}
+          {subtitle}{showDate ? ` · ${fmtDate(tx.transactionDate)}` : ""}{tx.transactionTime ? ` · ${fmtTime(tx.transactionTime)}` : ""}
         </div>
       </div>
       {quickActions && <div className="sens-row-quick" style={{ display: "flex", gap: 4, flexShrink: 0 }}>{quickActions}</div>}

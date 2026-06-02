@@ -7,6 +7,8 @@ import {
   fmtMonth,
   currentMonth,
   todayISO,
+  fmtTime,
+  nowTimeHHMM,
 } from "../lib/format";
 
 // ── fmtMoney ─────────────────────────────────────────────────────────────────
@@ -180,5 +182,23 @@ describe("currentMonth and todayISO with faked time", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-30T12:00:00"));
     expect(todayISO()).toBe("2026-05-30");
+  });
+});
+
+// ── fmtTime / nowTimeHHMM ─────────────────────────────────────────────────────
+
+describe("fmtTime", () => {
+  it("formats 24h HH:MM as 12h with am/pm", () => {
+    expect(fmtTime("08:15")).toBe("8:15 am");
+    expect(fmtTime("00:00")).toBe("12:00 am");
+    expect(fmtTime("12:00")).toBe("12:00 pm");
+    expect(fmtTime("13:05")).toBe("1:05 pm");
+    expect(fmtTime("23:59")).toBe("11:59 pm");
+  });
+  it("returns empty string for null", () => {
+    expect(fmtTime(null)).toBe("");
+  });
+  it("nowTimeHHMM returns a valid HH:MM", () => {
+    expect(/^\d{2}:\d{2}$/.test(nowTimeHHMM())).toBe(true);
   });
 });

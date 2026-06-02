@@ -64,6 +64,7 @@ export interface Transaction {
   amountCents: number;
   description: string | null;
   transactionDate: string;
+  transactionTime: string | null;
   excludedFromReporting: boolean;
   createdAt: string;
   updatedAt: string;
@@ -88,6 +89,7 @@ export interface UpdateTransactionInput {
   amountCents: number;
   description: string | null;
   transactionDate: string;
+  transactionTime: string | null;
   excludedFromReporting: boolean;
 }
 

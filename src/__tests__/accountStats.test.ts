@@ -18,7 +18,7 @@ function tx(kind: TransactionKind, accountId: string, amountCents: number, date:
   seq += 1;
   return {
     id: `t${seq}`, kind, accountId, toAccountId, categoryId: null, amountCents,
-    description: null, transactionDate: date, excludedFromReporting: false,
+    description: null, transactionDate: date, transactionTime: null, excludedFromReporting: false,
     createdAt: `${date}T00:00:0${seq % 10}`, updatedAt: `${date}T00:00:00`,
   };
 }

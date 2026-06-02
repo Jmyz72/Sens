@@ -110,8 +110,8 @@ mod tests {
     fn income_and_expense_affect_balance() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
-        service::create_income(&c, &a.id, &income_cat(&c), 5000, None, "2026-05-10", false).unwrap();
-        service::create_expense(&c, &a.id, &expense_cat(&c), 2000, None, "2026-05-11", false).unwrap();
+        service::create_income(&c, &a.id, &income_cat(&c), 5000, None, "2026-05-10", None, false).unwrap();
+        service::create_expense(&c, &a.id, &expense_cat(&c), 2000, None, "2026-05-11", None, false).unwrap();
         assert_eq!(service::get_account_balance(&c, &a.id).unwrap(), 3000);
     }
 
@@ -120,7 +120,7 @@ mod tests {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 10000);
         let b = acct(&c, "Savings", 0);
-        service::create_transfer(&c, &a.id, &b.id, 4000, None, "2026-05-10").unwrap();
+        service::create_transfer(&c, &a.id, &b.id, 4000, None, "2026-05-10", None).unwrap();
         assert_eq!(service::get_account_balance(&c, &a.id).unwrap(), 6000);
         assert_eq!(service::get_account_balance(&c, &b.id).unwrap(), 4000);
     }
@@ -129,7 +129,7 @@ mod tests {
     fn rejects_same_account_transfer() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 10000);
-        assert!(service::create_transfer(&c, &a.id, &a.id, 1000, None, "2026-05-10").is_err());
+        assert!(service::create_transfer(&c, &a.id, &a.id, 1000, None, "2026-05-10", None).is_err());
     }
 
     #[test]
@@ -137,7 +137,7 @@ mod tests {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 1000);
         service::archive_account(&c, &a.id).unwrap();
-        assert!(service::create_expense(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", false).is_err());
+        assert!(service::create_expense(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", None, false).is_err());
     }
 
     #[test]
@@ -145,7 +145,7 @@ mod tests {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
         // expense category used for income → rejected
-        assert!(service::create_income(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", false).is_err());
+        assert!(service::create_income(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", None, false).is_err());
     }
 
     #[test]
@@ -161,7 +161,7 @@ mod tests {
     fn balance_correction_with_txns_inserts_adjustment() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
-        service::create_income(&c, &a.id, &income_cat(&c), 3350_00, None, "2026-05-10", false).unwrap();
+        service::create_income(&c, &a.id, &income_cat(&c), 3350_00, None, "2026-05-10", None, false).unwrap();
         let updated = service::set_account_balance(&c, &a.id, 3400_00).unwrap();
         assert_eq!(updated.opening_balance_cents, 0); // untouched
         assert_eq!(updated.balance_cents, 3400_00); // adjustment applied
@@ -192,10 +192,10 @@ mod tests {
     fn excluded_income_and_expense_skip_the_dashboard() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
-        service::create_income(&c, &a.id, &income_cat(&c), 5000, None, "2026-05-10", false).unwrap();
-        service::create_income(&c, &a.id, &income_cat(&c), 1200, None, "2026-05-11", true).unwrap();
-        service::create_expense(&c, &a.id, &expense_cat(&c), 700, None, "2026-05-12", false).unwrap();
-        service::create_expense(&c, &a.id, &expense_cat(&c), 300, None, "2026-05-13", true).unwrap();
+        service::create_income(&c, &a.id, &income_cat(&c), 5000, None, "2026-05-10", None, false).unwrap();
+        service::create_income(&c, &a.id, &income_cat(&c), 1200, None, "2026-05-11", None, true).unwrap();
+        service::create_expense(&c, &a.id, &expense_cat(&c), 700, None, "2026-05-12", None, false).unwrap();
+        service::create_expense(&c, &a.id, &expense_cat(&c), 300, None, "2026-05-13", None, true).unwrap();
         let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
         assert_eq!(s.income_cents, 5000, "flagged income excluded");
         assert_eq!(s.expense_cents, 700, "flagged expense excluded");
@@ -206,14 +206,14 @@ mod tests {
     fn toggling_excluded_from_reporting_reclassifies_in_dashboard() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
-        let tx = service::create_expense(&c, &a.id, &expense_cat(&c), 800, None, "2026-05-12", false).unwrap();
+        let tx = service::create_expense(&c, &a.id, &expense_cat(&c), 800, None, "2026-05-12", None, false).unwrap();
         assert_eq!(service::get_dashboard_summary(&c, "2026-05").unwrap().expense_cents, 800);
         // Flip it to money movement via update_transaction → it drops out of the dashboard.
         let updated = service::update_transaction(&c, UpdateTransactionInput {
             id: tx.id.clone(), kind: "expense".into(), account_id: a.id.clone(),
             to_account_id: None, category_id: tx.category_id.clone(), amount_cents: 800,
             description: Some("Reimbursement".into()), transaction_date: "2026-05-12".into(),
-            excluded_from_reporting: true,
+            transaction_time: None, excluded_from_reporting: true,
         }).unwrap();
         assert!(updated.excluded_from_reporting);
         assert_eq!(service::get_dashboard_summary(&c, "2026-05").unwrap().expense_cents, 0);
@@ -260,7 +260,7 @@ mod tests {
         let edit = UpdateTransactionInput {
             id: opening.id.clone(), kind: "opening".into(), account_id: a.id.clone(),
             to_account_id: None, category_id: None, amount_cents: 9999,
-            description: None, transaction_date: "2026-05-01".into(), excluded_from_reporting: false,
+            description: None, transaction_date: "2026-05-01".into(), transaction_time: None, excluded_from_reporting: false,
         };
         assert!(service::update_transaction(&c, edit).is_err(), "opening cannot be edited");
         // it is unchanged
@@ -269,10 +269,67 @@ mod tests {
     }
 
     #[test]
+    fn migration_007_adds_nullable_time_column() {
+        let c = open_in_memory().unwrap();
+        // Column exists and defaults to NULL for rows created without a time.
+        let a = acct(&c, "Checking", 1000);
+        let txns = service::list_transactions(
+            &c,
+            TransactionFilters { account_id: Some(a.id.clone()), ..Default::default() },
+        )
+        .unwrap();
+        assert!(txns.iter().all(|t| t.transaction_time.is_none()));
+        // The postings backfilled by migration 006 survive (no cascade delete).
+        let n: i64 = c
+            .query_row("SELECT COUNT(*) FROM postings", [], |r| r.get(0))
+            .unwrap();
+        assert!(n >= 2, "opening transaction still has its two postings");
+    }
+
+    fn enable_time(conn: &rusqlite::Connection) {
+        service::set_setting(conn, "transaction_time_enabled", "1").unwrap();
+    }
+
+    #[test]
+    fn time_required_when_setting_on() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Checking", 0);
+        enable_time(&c);
+        assert!(service::create_expense(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", None, false).is_err());
+        let t = service::create_expense(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", Some("08:15"), false).unwrap();
+        assert_eq!(t.transaction_time.as_deref(), Some("08:15"));
+        assert!(service::create_expense(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", Some("8:1"), false).is_err());
+        assert!(service::create_expense(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", Some("25:00"), false).is_err());
+    }
+
+    #[test]
+    fn time_ignored_when_setting_off() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Checking", 0);
+        let t = service::create_expense(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", Some("08:15"), false).unwrap();
+        assert_eq!(t.transaction_time, None);
+    }
+
+    #[test]
+    fn update_preserves_time_when_setting_off() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Checking", 0);
+        enable_time(&c);
+        let t = service::create_expense(&c, &a.id, &expense_cat(&c), 100, None, "2026-05-10", Some("08:15"), false).unwrap();
+        service::set_setting(&c, "transaction_time_enabled", "0").unwrap();
+        let updated = service::update_transaction(&c, UpdateTransactionInput {
+            id: t.id.clone(), kind: "expense".into(), account_id: a.id.clone(), to_account_id: None,
+            category_id: Some(expense_cat(&c)), amount_cents: 200, description: None,
+            transaction_date: "2026-05-10".into(), transaction_time: None, excluded_from_reporting: false,
+        }).unwrap();
+        assert_eq!(updated.transaction_time.as_deref(), Some("08:15"));
+    }
+
+    #[test]
     fn adjustments_excluded_from_dashboard_income_expense() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
-        service::create_income(&c, &a.id, &income_cat(&c), 1000, None, "2026-05-10", false).unwrap();
+        service::create_income(&c, &a.id, &income_cat(&c), 1000, None, "2026-05-10", None, false).unwrap();
         service::set_account_balance(&c, &a.id, 99999).unwrap(); // big adjustment this month
         let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
         assert_eq!(s.income_cents, 1000); // adjustment not counted as income
@@ -285,8 +342,8 @@ mod tests {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
         let ec = expense_cat(&c);
-        service::create_expense(&c, &a.id, &ec, 500, None, "2026-05-15", false).unwrap();
-        service::create_expense(&c, &a.id, &ec, 700, None, "2026-04-30", false).unwrap();
+        service::create_expense(&c, &a.id, &ec, 500, None, "2026-05-15", None, false).unwrap();
+        service::create_expense(&c, &a.id, &ec, 700, None, "2026-04-30", None, false).unwrap();
         let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
         assert_eq!(s.expense_cents, 500);
     }
@@ -432,8 +489,8 @@ mod tests {
         let food = service::create_category(&c, "Food P6", "expense", "🍔", None, None).unwrap();
         let coffee = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
         // one expense on the PARENT, one on the SUB — both should land in the parent bucket
-        service::create_expense(&c, &a.id, &food.id, 1000, None, "2026-05-10", false).unwrap();
-        service::create_expense(&c, &a.id, &coffee.id, 500, None, "2026-05-11", false).unwrap();
+        service::create_expense(&c, &a.id, &food.id, 1000, None, "2026-05-10", None, false).unwrap();
+        service::create_expense(&c, &a.id, &coffee.id, 500, None, "2026-05-11", None, false).unwrap();
 
         let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
         let row = s.spending_breakdown.iter().find(|b| b.category_id == food.id).unwrap();
@@ -460,7 +517,7 @@ mod tests {
         // Category referenced by a transaction: blocked.
         let acc = service::create_account(&c, "Acc", "cash", 0, None).unwrap();
         let used = service::create_category(&c, "Used Cat", "expense", "💳", None, None).unwrap();
-        service::create_expense(&c, &acc.id, &used.id, 1000, None, "2026-05-10", false).unwrap();
+        service::create_expense(&c, &acc.id, &used.id, 1000, None, "2026-05-10", None, false).unwrap();
         assert!(matches!(service::delete_category(&c, &used.id), Err(AppError::Conflict(_))));
     }
 
@@ -669,9 +726,9 @@ mod tests {
         let xcats = crate::service::list_categories(&c, Some("expense"), false).unwrap();
         let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
 
-        crate::service::create_income(&c, &acc.id, &inc_cat, 5_000, None, "2026-02-01", false).unwrap();
-        crate::service::create_expense(&c, &acc.id, &exp_cat, 2_000, None, "2026-02-02", false).unwrap();
-        crate::service::create_transfer(&c, &acc.id, &bank.id, 1_000, None, "2026-02-03").unwrap();
+        crate::service::create_income(&c, &acc.id, &inc_cat, 5_000, None, "2026-02-01", None, false).unwrap();
+        crate::service::create_expense(&c, &acc.id, &exp_cat, 2_000, None, "2026-02-02", None, false).unwrap();
+        crate::service::create_transfer(&c, &acc.id, &bank.id, 1_000, None, "2026-02-03", None).unwrap();
 
         // Stronger RED assertion: postings must exist before the balance check.
         let posting_count: i64 = c.query_row("SELECT COUNT(*) FROM postings", [], |r| r.get(0)).unwrap();
@@ -690,7 +747,7 @@ mod tests {
         let acc = crate::service::create_account(&c, "Cash", "cash", 0, None).unwrap();
         let xcats = crate::service::list_categories(&c, Some("expense"), false).unwrap();
         let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
-        let t = crate::service::create_expense(&c, &acc.id, &exp_cat, 2_000, None, "2026-02-02", false).unwrap();
+        let t = crate::service::create_expense(&c, &acc.id, &exp_cat, 2_000, None, "2026-02-02", None, false).unwrap();
         assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, -2_000);
 
         // Edit the amount up to 5000.
@@ -698,7 +755,7 @@ mod tests {
             id: t.id.clone(), kind: "expense".into(), account_id: acc.id.clone(),
             to_account_id: None, category_id: Some(exp_cat.clone()),
             amount_cents: 5_000, description: None, transaction_date: "2026-02-02".into(),
-            excluded_from_reporting: false,
+            transaction_time: None, excluded_from_reporting: false,
         };
         crate::service::update_transaction(&c, input).unwrap();
         assert_books_balance(&c);
@@ -730,7 +787,7 @@ mod tests {
         // Now create real activity, then reconcile → inserts a balanced adjustment.
         let xcats = crate::service::list_categories(&c, Some("expense"), false).unwrap();
         let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
-        crate::service::create_expense(&c, &acc.id, &exp_cat, 500, None, "2026-03-01", false).unwrap();
+        crate::service::create_expense(&c, &acc.id, &exp_cat, 500, None, "2026-03-01", None, false).unwrap();
         // balance is now 3500; reconcile to 3000 → adjustment of -500.
         crate::service::set_account_balance(&c, &acc.id, 3_000).unwrap();
         assert_books_balance(&c);
@@ -744,7 +801,7 @@ mod tests {
         // Arrange: an account, a transaction, and a custom category.
         let a = acct(&c, "Wallet", 10_000);
         let cat = expense_cat(&c);
-        service::create_expense(&c, &a.id, &cat, 500, None, "2026-01-01", false).unwrap();
+        service::create_expense(&c, &a.id, &cat, 500, None, "2026-01-01", None, false).unwrap();
         service::create_category(&c, "Bespoke", "expense", "🦄", None, None).unwrap();
         let default_income = service::list_categories(&c, Some("income"), false).unwrap().len();
 

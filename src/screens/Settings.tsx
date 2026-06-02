@@ -228,6 +228,25 @@ export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }
     client.setSetting("bulk_action_preview", val ? "1" : "0").catch(() => {});
   }
 
+  // transaction_time_enabled preference — default off (unset = off)
+  const [timeEnabled, setTimeEnabled] = useState(false);
+  const [timeLoaded, setTimeLoaded] = useState(false);
+
+  useEffect(() => {
+    client
+      .getSetting("transaction_time_enabled")
+      .then((v) => {
+        setTimeEnabled(v === "1");
+        setTimeLoaded(true);
+      })
+      .catch(() => setTimeLoaded(true));
+  }, []);
+
+  function handleTimeToggle(val: boolean) {
+    setTimeEnabled(val);
+    client.setSetting("transaction_time_enabled", val ? "1" : "0").catch(() => {});
+  }
+
   const themeOptions: { value: ThemeMode; label: string; icon: React.ReactNode }[] = [
     {
       value: "dark",
@@ -303,6 +322,17 @@ export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }
           right={
             bulkPreviewLoaded ? (
               <Toggle on={bulkPreview} onChange={handleBulkPreviewToggle} />
+            ) : (
+              <div style={{ width: 42, height: 24, borderRadius: 12, background: t.panel3 }} />
+            )
+          }
+        />
+        <SettingRow
+          label="Record transaction times"
+          hint="Show a required time-of-day field when adding or editing transactions, and sort same-day transactions chronologically."
+          right={
+            timeLoaded ? (
+              <Toggle on={timeEnabled} onChange={handleTimeToggle} />
             ) : (
               <div style={{ width: 42, height: 24, borderRadius: 12, background: t.panel3 }} />
             )

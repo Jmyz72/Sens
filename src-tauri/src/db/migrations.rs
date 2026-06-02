@@ -3,7 +3,7 @@
 //! CHECK constraints, and indexes per the design spec's Database Design.
 
 /// Ordered list of `(version, sql)`. Append-only — never edit a shipped one.
-pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005), (6, MIGRATION_006)];
+pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007)];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
 // `postings` ledger that is the authoritative source for account balances. Each
@@ -46,6 +46,15 @@ SELECT 'p2-' || id, id,
                  WHEN 'transfer' THEN  amount_cents
                  ELSE -amount_cents END
 FROM transactions;
+"#;
+
+// v-next — transaction time support. Adds a nullable `transaction_time` column
+// ("HH:MM", 24-hour) to `transactions`. A plain ADD COLUMN is used (NOT a table
+// rebuild): the column participates in no CHECK, and migration 006 added
+// `postings.transaction_id ... ON DELETE CASCADE`, so a rebuild would
+// cascade-delete every posting. Existing rows get NULL.
+const MIGRATION_007: &str = r#"
+ALTER TABLE transactions ADD COLUMN transaction_time TEXT;
 "#;
 
 // v0.5.0 — non-cashflow transactions. Opening balance becomes a structural

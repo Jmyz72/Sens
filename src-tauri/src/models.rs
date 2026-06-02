@@ -82,6 +82,7 @@ pub struct Transaction {
     pub amount_cents: i64,
     pub description: Option<String>,
     pub transaction_date: String,
+    pub transaction_time: Option<String>,
     pub excluded_from_reporting: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -131,6 +132,7 @@ pub struct UpdateTransactionInput {
     pub amount_cents: i64,
     pub description: Option<String>,
     pub transaction_date: String,
+    pub transaction_time: Option<String>,
     #[serde(default)]
     pub excluded_from_reporting: bool,
 }

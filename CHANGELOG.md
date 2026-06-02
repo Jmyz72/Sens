@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Optional time-of-day on transactions**, gated by a new Settings toggle
+  ("Record transaction times", default off). When enabled, a required time field
+  appears in Add/Edit Transaction (pre-filled with the current time) and same-day
+  transactions sort chronologically.
+
 ## [0.6.0] — 2026-06-01
 
 ### Added

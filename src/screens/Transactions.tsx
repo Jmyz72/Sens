@@ -13,12 +13,13 @@ import { BulkPreviewSheet, type BulkTarget } from "../components/BulkPreviewShee
 import { TargetPicker } from "../components/TargetPicker";
 import { client } from "../client";
 import { useAppData, accountName } from "../store";
-import { dateGroupLabel, todayISO } from "../lib/format";
+import { dateGroupLabel, nowTimeHHMM, todayISO } from "../lib/format";
 import { KIND_META, kindColor, txnSortKey } from "../lib/kinds";
 import { AddTransaction } from "../modals/AddTransaction";
 import { rangeForPreset, type DateRangePreset, type CustomRange } from "../lib/txnFilters";
 import { planBulk, type BulkAction } from "../lib/txnSelection";
 import { useToast } from "../components/Toast";
+import { useTimeSetting } from "../lib/useTimeSetting";
 
 const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "adjustment", "opening"];
 
@@ -26,6 +27,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   const t = useTheme();
   const { notify } = useToast();
   const { accounts, categories, reload, version } = useAppData();
+  const [timeEnabled] = useTimeSetting();
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [query, setQuery] = useState("");
   const [kinds, setKinds] = useState<Set<TransactionKind>>(new Set());
@@ -138,7 +140,8 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
         const input: UpdateTransactionInput = {
           id: tx.id, kind: tx.kind, accountId: tx.accountId, toAccountId: tx.toAccountId,
           categoryId: tx.categoryId, amountCents: tx.amountCents, description: tx.description,
-          transactionDate: tx.transactionDate, excludedFromReporting: tx.excludedFromReporting,
+          transactionDate: tx.transactionDate, transactionTime: tx.transactionTime,
+          excludedFromReporting: tx.excludedFromReporting,
         };
         if (action === "recategorize") {
           const cat = tx.kind === "income" ? target?.incomeCategory : tx.kind === "expense" ? target?.expenseCategory : undefined;
@@ -187,14 +190,19 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   }
 
   async function onDuplicate(tx: Transaction) {
-    if (tx.kind === "income" && tx.categoryId)
-      await client.createIncome(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
-    else if (tx.kind === "expense" && tx.categoryId)
-      await client.createExpense(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, tx.excludedFromReporting);
-    else if (tx.kind === "transfer" && tx.toAccountId)
-      await client.createTransfer(tx.accountId, tx.toAccountId, tx.amountCents, tx.description, tx.transactionDate);
-    else return;
-    await reload();
+    const dupTime = tx.transactionTime ?? (timeEnabled ? nowTimeHHMM() : null);
+    try {
+      if (tx.kind === "income" && tx.categoryId)
+        await client.createIncome(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, dupTime, tx.excludedFromReporting);
+      else if (tx.kind === "expense" && tx.categoryId)
+        await client.createExpense(tx.accountId, tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, dupTime, tx.excludedFromReporting);
+      else if (tx.kind === "transfer" && tx.toAccountId)
+        await client.createTransfer(tx.accountId, tx.toAccountId, tx.amountCents, tx.description, tx.transactionDate, dupTime);
+      else return;
+      await reload();
+    } catch (e) {
+      notify((e as { message?: string })?.message ?? "Couldn't duplicate transaction", "error");
+    }
   }
 
   useEffect(() => {
