@@ -406,13 +406,14 @@ fn validate_hhmm(s: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Resolve the time to store on a CREATE. When the setting is on, a valid time
-/// is required; when off, any supplied time is ignored and NULL is stored.
-fn resolve_create_time(conn: &Connection, time: Option<&str>) -> AppResult<Option<String>> {
+/// Resolve the time to persist. When the setting is on, a valid non-empty time
+/// is required. When off, `fallback` is used (None on create, the existing value
+/// on update) and any supplied time is ignored.
+fn resolve_time(conn: &Connection, supplied: Option<&str>, fallback: Option<String>) -> AppResult<Option<String>> {
     if !time_enabled(conn)? {
-        return Ok(None);
+        return Ok(fallback);
     }
-    let t = time
+    let t = supplied
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| AppError::Validation("A time is required".into()))?;
@@ -424,7 +425,7 @@ pub fn create_income(conn: &Connection, account_id: &str, category_id: &str, amo
     validate_positive(amount_cents)?;
     ensure_active_account(conn, account_id, "selected")?;
     validate_category_for(conn, category_id, KIND_INCOME)?;
-    let time = resolve_create_time(conn, time)?;
+    let time = resolve_time(conn, time, None)?;
     let tx = conn.unchecked_transaction()?;
     let t = repo::insert_transaction(&tx, &new_id(), KIND_INCOME, account_id, None, Some(category_id), amount_cents, description, date, time.as_deref(), excluded_from_reporting, &now())?;
     materialize_postings(&tx, &t)?;
@@ -436,7 +437,7 @@ pub fn create_expense(conn: &Connection, account_id: &str, category_id: &str, am
     validate_positive(amount_cents)?;
     ensure_active_account(conn, account_id, "selected")?;
     validate_category_for(conn, category_id, KIND_EXPENSE)?;
-    let time = resolve_create_time(conn, time)?;
+    let time = resolve_time(conn, time, None)?;
     let tx = conn.unchecked_transaction()?;
     let t = repo::insert_transaction(&tx, &new_id(), KIND_EXPENSE, account_id, None, Some(category_id), amount_cents, description, date, time.as_deref(), excluded_from_reporting, &now())?;
     materialize_postings(&tx, &t)?;
@@ -451,7 +452,7 @@ pub fn create_transfer(conn: &Connection, from_account_id: &str, to_account_id: 
     }
     ensure_active_account(conn, from_account_id, "source")?;
     ensure_active_account(conn, to_account_id, "destination")?;
-    let time = resolve_create_time(conn, time)?;
+    let time = resolve_time(conn, time, None)?;
     let tx = conn.unchecked_transaction()?;
     let t = repo::insert_transaction(&tx, &new_id(), KIND_TRANSFER, from_account_id, Some(to_account_id), None, amount_cents, description, date, time.as_deref(), false, &now())?;
     materialize_postings(&tx, &t)?;
@@ -501,18 +502,7 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
 
     let excluded = matches!(input.kind.as_str(), KIND_INCOME | KIND_EXPENSE) && input.excluded_from_reporting;
 
-    let time: Option<String> = if time_enabled(conn)? {
-        let t = input
-            .transaction_time
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| AppError::Validation("A time is required".into()))?;
-        validate_hhmm(t)?;
-        Some(t.to_string())
-    } else {
-        existing.transaction_time.clone()
-    };
+    let time = resolve_time(conn, input.transaction_time.as_deref(), existing.transaction_time.clone())?;
 
     let dbtx = conn.unchecked_transaction()?;
     let t = repo::update_transaction_row(

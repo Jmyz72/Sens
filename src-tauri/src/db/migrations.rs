@@ -12,15 +12,6 @@ pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002),
 // Data-preserving: backfills two balanced legs per existing transaction using
 // the canonical sign rule, so older databases upgrade automatically. Fresh
 // installs run 001→006; the backfill is a no-op with zero transactions.
-// v-next — transaction time support. Adds a nullable `transaction_time` column
-// ("HH:MM", 24-hour) to `transactions`. A plain ADD COLUMN is used (NOT a table
-// rebuild): the column participates in no CHECK, and migration 006 added
-// `postings.transaction_id ... ON DELETE CASCADE`, so a rebuild would
-// cascade-delete every posting. Existing rows get NULL.
-const MIGRATION_007: &str = r#"
-ALTER TABLE transactions ADD COLUMN transaction_time TEXT;
-"#;
-
 const MIGRATION_006: &str = r#"
 CREATE TABLE postings (
   id             TEXT PRIMARY KEY,
@@ -55,6 +46,15 @@ SELECT 'p2-' || id, id,
                  WHEN 'transfer' THEN  amount_cents
                  ELSE -amount_cents END
 FROM transactions;
+"#;
+
+// v-next — transaction time support. Adds a nullable `transaction_time` column
+// ("HH:MM", 24-hour) to `transactions`. A plain ADD COLUMN is used (NOT a table
+// rebuild): the column participates in no CHECK, and migration 006 added
+// `postings.transaction_id ... ON DELETE CASCADE`, so a rebuild would
+// cascade-delete every posting. Existing rows get NULL.
+const MIGRATION_007: &str = r#"
+ALTER TABLE transactions ADD COLUMN transaction_time TEXT;
 "#;
 
 // v0.5.0 — non-cashflow transactions. Opening balance becomes a structural
