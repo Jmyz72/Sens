@@ -39,7 +39,7 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
   const effectiveCat = categoryId || pickerItems[0]?.id || "";
 
   const cents = parseAmountToCents(amount);
-  const valid = cents != null && accountId && (kind !== "transfer" ? !!effectiveCat : toAccountId && toAccountId !== accountId);
+  const valid = cents != null && accountId && (kind !== "transfer" ? !!effectiveCat : toAccountId && toAccountId !== accountId) && (!timeEnabled || !!time);
 
   async function submit() {
     if (!valid || cents == null) return;

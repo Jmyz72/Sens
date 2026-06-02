@@ -67,7 +67,7 @@ export function fmtTime(hhmm: string | null | undefined): string {
   if (!hhmm) return "";
   const [hStr, mStr] = hhmm.split(":");
   const h = Number(hStr);
-  const m = mStr ?? "00";
+  const m = (mStr ?? "0").padStart(2, "0");
   if (Number.isNaN(h)) return "";
   const ampm = h < 12 ? "am" : "pm";
   const h12 = h % 12 === 0 ? 12 : h % 12;

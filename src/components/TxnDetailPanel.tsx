@@ -128,7 +128,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
             )}
             {error && <div style={{ fontSize: 12, color: t.expense, background: hexA(t.expense, 0.12), padding: "7px 10px", borderRadius: 7 }}>{error}</div>}
             <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
-              <Btn size="sm" onClick={save} disabled={busy} style={{ flex: 1, justifyContent: "center" }}>Save</Btn>
+              <Btn size="sm" onClick={save} disabled={busy || (timeEnabled && !time)} style={{ flex: 1, justifyContent: "center" }}>Save</Btn>
               <Btn variant="outline" icon="copy" size="sm" onClick={onDuplicate} style={{ flex: 1, justifyContent: "center" }}>Duplicate</Btn>
             </div>
             <Btn variant="danger" icon="trash" size="sm" onClick={onDelete} style={{ justifyContent: "center" }}>Delete</Btn>
