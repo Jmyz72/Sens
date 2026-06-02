@@ -848,6 +848,54 @@ mod tests {
     }
 
     #[test]
+    fn seeds_two_protected_adjustment_categories() {
+        let c = crate::db::open_in_memory().unwrap();
+        let count: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM categories WHERE is_system = 1 AND name = 'Adjustment' AND parent_id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2, "expected one income + one expense Adjustment system category");
+        let kinds: Vec<String> = {
+            let mut stmt = c
+                .prepare("SELECT kind FROM categories WHERE is_system = 1 AND name = 'Adjustment' ORDER BY kind")
+                .unwrap();
+            stmt.query_map([], |r| r.get::<_, String>(0)).unwrap().map(|r| r.unwrap()).collect()
+        };
+        assert_eq!(kinds, vec!["expense".to_string(), "income".to_string()]);
+    }
+
+    #[test]
+    fn backfill_promotes_preexisting_adjustment_category() {
+        let c = crate::db::open_in_memory().unwrap();
+        // Simulate an existing user who never hit the v4 gate AND owns a plain
+        // top-level expense "Adjustment". Delete the seeded system rows + clear the
+        // gate so backfill runs seed_categories again.
+        c.execute("UPDATE categories SET is_system = 0 WHERE name = 'Adjustment'", []).unwrap();
+        c.execute("DELETE FROM categories WHERE name = 'Adjustment' AND kind = 'income'", []).unwrap();
+        c.execute("DELETE FROM app_settings WHERE key = 'defaults_v4_seeded'", []).unwrap();
+        crate::db::backfill_defaults_for_test(&c).unwrap();
+        // The pre-existing expense "Adjustment" is promoted; the income one is created.
+        let count: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM categories WHERE is_system = 1 AND name = 'Adjustment' AND parent_id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
+        let kinds: Vec<String> = {
+            let mut stmt = c
+                .prepare("SELECT kind FROM categories WHERE is_system = 1 AND name = 'Adjustment' ORDER BY kind")
+                .unwrap();
+            stmt.query_map([], |r| r.get::<_, String>(0)).unwrap().map(|r| r.unwrap()).collect()
+        };
+        assert_eq!(kinds, vec!["expense".to_string(), "income".to_string()]);
+    }
+
+    #[test]
     fn reset_app_clears_postings() {
         let c = crate::db::open_in_memory().unwrap();
         let _acc = crate::service::create_account(&c, "Cash", "cash", 1_000, None).unwrap();
