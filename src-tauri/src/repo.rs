@@ -253,6 +253,20 @@ pub fn get_category(conn: &Connection, id: &str) -> AppResult<Category> {
         })
 }
 
+/// The protected "Adjustment" category id for a kind ('income' | 'expense').
+/// Guaranteed to exist by the seed; NotFound surfaces a corrupt install loudly.
+pub fn get_system_category_id(conn: &Connection, kind: &str) -> AppResult<String> {
+    conn.query_row(
+        "SELECT id FROM categories WHERE is_system = 1 AND kind = ?1 AND parent_id IS NULL LIMIT 1",
+        [kind],
+        |r| r.get(0),
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("System category missing".into()),
+        other => other.into(),
+    })
+}
+
 pub fn insert_category(
     conn: &Connection,
     id: &str,

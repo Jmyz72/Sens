@@ -618,6 +618,23 @@ mod tests {
     }
 
     #[test]
+    fn system_categories_are_protected() {
+        let c = crate::db::open_in_memory().unwrap();
+        let sys_id: String = c
+            .query_row(
+                "SELECT id FROM categories WHERE is_system = 1 AND kind = 'expense' LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(crate::service::delete_category(&c, &sys_id).is_err(), "delete must be blocked");
+        let upd = crate::models::UpdateCategoryInput { id: sys_id.clone(), name: Some("Renamed".into()), emoji: None, color: None, sort_order: None };
+        assert!(crate::service::update_category(&c, upd).is_err(), "rename must be blocked");
+        assert!(crate::service::archive_category(&c, &sys_id).is_err(), "archive must be blocked");
+        assert!(crate::service::set_category_parent(&c, &sys_id, None).is_err(), "reparent must be blocked");
+    }
+
+    #[test]
     fn account_with_unknown_subtype_still_lists() {
         // An account whose subtype isn't in the taxonomy (e.g. a future rename or
         // a direct DB edit) must stay visible via the LEFT JOIN + COALESCE fallback,

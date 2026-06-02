@@ -78,6 +78,14 @@ fn ensure_active_account(conn: &Connection, id: &str, role: &str) -> AppResult<(
     Ok(())
 }
 
+/// Reject mutating a protected (system) category.
+fn ensure_not_system(conn: &Connection, id: &str) -> AppResult<()> {
+    if repo::get_category(conn, id)?.is_system {
+        return Err(AppError::Conflict("This is a system category and can't be changed".into()));
+    }
+    Ok(())
+}
+
 // ── Accounts ─────────────────────────────────────────────────────────────────
 
 pub fn list_account_templates(conn: &Connection) -> AppResult<Vec<AccountTemplate>> {
@@ -254,6 +262,7 @@ pub fn create_category(
 
 pub fn update_category(conn: &Connection, input: UpdateCategoryInput) -> AppResult<Category> {
     repo::get_category(conn, &input.id)?;
+    ensure_not_system(conn, &input.id)?;
     let name = match &input.name {
         Some(n) => Some(require_nonempty("Category name", n)?),
         None => None,
@@ -271,6 +280,7 @@ pub fn update_category(conn: &Connection, input: UpdateCategoryInput) -> AppResu
 
 pub fn archive_category(conn: &Connection, id: &str) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
+    ensure_not_system(conn, id)?;
     let now = now();
     let updated = repo::set_category_archived(conn, id, true, &now)?;
     if cat.parent_id.is_none() {
@@ -281,6 +291,7 @@ pub fn archive_category(conn: &Connection, id: &str) -> AppResult<Category> {
 
 pub fn restore_category(conn: &Connection, id: &str) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
+    ensure_not_system(conn, id)?;
     let now = now();
     let updated = repo::set_category_archived(conn, id, false, &now)?;
     if cat.parent_id.is_none() {
@@ -295,6 +306,7 @@ pub fn restore_category(conn: &Connection, id: &str) -> AppResult<Category> {
 
 pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
     repo::get_category(conn, id)?; // NotFound if missing
+    ensure_not_system(conn, id)?;
     if repo::count_children(conn, id)? > 0 {
         return Err(AppError::Conflict("Remove or move its subcategories first".into()));
     }
@@ -310,6 +322,7 @@ pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
 /// share the moved category's kind.
 pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
+    ensure_not_system(conn, id)?;
     if let Some(pid) = parent_id {
         if pid == id {
             return Err(AppError::Validation("A category cannot be its own parent".into()));
@@ -353,8 +366,10 @@ pub fn reorder_categories(conn: &Connection, ids: &[String]) -> AppResult<()> {
         return Ok(());
     }
     let first = repo::get_category(conn, &ids[0])?;
+    ensure_not_system(conn, &ids[0])?;
     for id in &ids[1..] {
         let cat = repo::get_category(conn, id)?;
+        ensure_not_system(conn, id)?;
         if cat.kind != first.kind || cat.parent_id != first.parent_id {
             return Err(AppError::Validation("Can only reorder categories within one group".into()));
         }
@@ -370,6 +385,9 @@ pub fn reorder_categories(conn: &Connection, ids: &[String]) -> AppResult<()> {
 /// Validate that a category exists and matches the required kind.
 fn validate_category_for(conn: &Connection, category_id: &str, kind: &str) -> AppResult<()> {
     let c = repo::get_category(conn, category_id)?;
+    if c.is_system {
+        return Err(AppError::Validation("That category can't be selected".into()));
+    }
     if c.kind != kind {
         return Err(AppError::Validation(format!(
             "Category kind '{}' does not match transaction kind '{}'",
