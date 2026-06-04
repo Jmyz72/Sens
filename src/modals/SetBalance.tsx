@@ -33,6 +33,7 @@ export function SetBalance({ account, hasTransactions, onClose, onDone }: {
   );
   // owe only: an overpaid/refunded account is "in credit" (stored positive).
   const [inCredit, setInCredit] = useState(isOwe && account.balanceCents > 0);
+  const [recordAsIE, setRecordAsIE] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,7 +54,7 @@ export function SetBalance({ account, hasTransactions, onClose, onDone }: {
     if (!valid || targetCents == null) return;
     setBusy(true); setError(null);
     try {
-      await client.setAccountBalance(account.id, targetCents);
+      await client.setAccountBalance(account.id, targetCents, hasTransactions && recordAsIE);
       onDone();
     } catch (e) {
       setError((e as { message?: string })?.message ?? "Could not update balance");
@@ -89,11 +90,24 @@ export function SetBalance({ account, hasTransactions, onClose, onDone }: {
           </label>
         )}
 
+        {hasTransactions && (
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: t.dim, cursor: "pointer" }}>
+            <input type="checkbox" checked={recordAsIE} onChange={(e) => setRecordAsIE(e.target.checked)}
+              style={{ width: 15, height: 15, accentColor: t.accent, cursor: "pointer" }} />
+            Record as income/expense (count it in reporting)
+          </label>
+        )}
+
         <div style={{ fontSize: 12.5, color: t.dim, background: t.panel2, borderRadius: 9, padding: "10px 12px", lineHeight: 1.5 }}>
           {!hasTransactions ? (
             <>This account has no transactions, so this updates its <b style={{ color: t.text }}>opening balance</b> directly.</>
           ) : diff === 0 ? (
             <>Balance already matches — no change will be recorded.</>
+          ) : recordAsIE ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Icon name={diff > 0 ? "in" : "out"} size={14} color={diff > 0 ? t.income : t.expense} />
+              Records <b style={{ color: diff > 0 ? t.income : t.expense }}>{(Math.abs(diff) / 100).toFixed(2)}</b> as {diff > 0 ? "income" : "expense"} dated today, counted in reporting.
+            </span>
           ) : (
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <Icon name="sliders" size={14} color={t.adjustment} />

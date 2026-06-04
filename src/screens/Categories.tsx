@@ -265,7 +265,7 @@ export function Categories() {
   }
 
   useEffect(() => {
-    client.listCategories(undefined, true).then(setAll).catch(() => {});
+    client.listCategories(undefined, true).then((rows) => setAll(rows.filter((c) => !c.isSystem))).catch(() => {});
   }, [version]);
 
   const treesByKind = useMemo(() => {
