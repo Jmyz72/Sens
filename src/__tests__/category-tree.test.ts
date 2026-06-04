@@ -6,7 +6,7 @@ function cat(p: Partial<Category> & { id: string; name: string }): Category {
   return {
     id: p.id, name: p.name, kind: p.kind ?? "expense", emoji: p.emoji ?? "•",
     color: p.color ?? null, parentId: p.parentId ?? null, sortOrder: p.sortOrder ?? 0,
-    isArchived: p.isArchived ?? false,
+    isArchived: p.isArchived ?? false, isSystem: p.isSystem ?? false,
     createdAt: "t", updatedAt: "t",
   };
 }
@@ -45,7 +45,7 @@ describe("categoryPickerItems", () => {
 });
 
 function mkCat(partial: Partial<Category> & { id: string }): Category {
-  return { id: partial.id, name: partial.name ?? partial.id, kind: partial.kind ?? "expense", emoji: "x", color: null, parentId: partial.parentId ?? null, sortOrder: partial.sortOrder ?? 0, isArchived: partial.isArchived ?? false, createdAt: "", updatedAt: "" };
+  return { id: partial.id, name: partial.name ?? partial.id, kind: partial.kind ?? "expense", emoji: "x", color: null, parentId: partial.parentId ?? null, sortOrder: partial.sortOrder ?? 0, isArchived: partial.isArchived ?? false, isSystem: partial.isSystem ?? false, createdAt: "", updatedAt: "" };
 }
 
 describe("reorderIds", () => {

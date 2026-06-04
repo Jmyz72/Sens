@@ -95,7 +95,7 @@ const categories: Category[] = [];
 function seedCategories() {
   categories.length = 0;
   CAT_SEED.forEach(([name, kind, emoji, color], i) => {
-    categories.push({ id: uid(), name, kind, emoji, color, parentId: null, sortOrder: i, isArchived: false, createdAt: now(), updatedAt: now() });
+    categories.push({ id: uid(), name, kind, emoji, color, parentId: null, sortOrder: i, isArchived: false, isSystem: false, createdAt: now(), updatedAt: now() });
   });
   const subSortByParent: Record<string, number> = {};
   SUB_SEED.forEach(([parentName, kind, childName, emoji, color]) => {
@@ -103,9 +103,12 @@ function seedCategories() {
     if (parent) {
       const sort = subSortByParent[parent.id] ?? 0;
       subSortByParent[parent.id] = sort + 1;
-      categories.push({ id: uid(), name: childName, kind, emoji, color, parentId: parent.id, sortOrder: sort, isArchived: false, createdAt: now(), updatedAt: now() });
+      categories.push({ id: uid(), name: childName, kind, emoji, color, parentId: parent.id, sortOrder: sort, isArchived: false, isSystem: false, createdAt: now(), updatedAt: now() });
     }
   });
+  for (const kind of ["income", "expense"] as const) {
+    categories.push({ id: uid(), name: "Adjustment", kind, emoji: "⚖️", color: "#9aa4b2", parentId: null, sortOrder: 999, isArchived: false, isSystem: true, createdAt: now(), updatedAt: now() });
+  }
 }
 seedCategories();
 
@@ -214,12 +217,21 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     }
     case "set_account_balance": {
       const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
+      if (acc.isArchived) fail("Conflict", "Cannot reconcile an archived account");
       if (!hasActivity(acc.id)) {
         const op = txns.find((t) => t.kind === "opening" && t.accountId === acc.id);
         if (op) op.amountCents = a.realBalanceCents;
       } else {
         const diff = a.realBalanceCents - balanceOf(acc);
-        if (diff !== 0) txns.unshift({ id: uid(), kind: "adjustment", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: diff, description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+        if (diff !== 0) {
+          if (a.recordAsIncomeExpense) {
+            const kind = diff > 0 ? "income" : "expense";
+            const cat = categories.find((c) => c.isSystem && c.kind === kind && c.parentId == null);
+            txns.unshift({ id: uid(), kind, accountId: acc.id, toAccountId: null, categoryId: cat ? cat.id : null, amountCents: Math.abs(diff), description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+          } else {
+            txns.unshift({ id: uid(), kind: "adjustment", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: diff, description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+          }
+        }
       }
       return hydrate(acc) as T;
     }
@@ -227,6 +239,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       return categories.filter((c) => (a.includeArchived || !c.isArchived) && (!a.kind || c.kind === a.kind)) as T;
     case "update_category": {
       const cat = categories.find((x) => x.id === a.input.id) ?? fail("NotFound", "Category not found");
+      if (cat.isSystem) fail("Conflict", "This is a system category and can't be changed");
       if (a.input.name != null) cat.name = String(a.input.name).trim();
       if (a.input.emoji != null) cat.emoji = a.input.emoji;
       if ("color" in a.input) cat.color = a.input.color ?? null;
@@ -248,13 +261,14 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         (a.parentId != null ? x.parentId === a.parentId : x.parentId == null && x.kind === kind),
       );
       if (clash) fail("Conflict", "A category with this name already exists at this level");
-      const cat: Category = { id: uid(), name, kind, emoji: a.emoji, color: a.color ?? null, parentId: a.parentId ?? null, sortOrder: 100, isArchived: false, createdAt: now(), updatedAt: now() };
+      const cat: Category = { id: uid(), name, kind, emoji: a.emoji, color: a.color ?? null, parentId: a.parentId ?? null, sortOrder: 100, isArchived: false, isSystem: false, createdAt: now(), updatedAt: now() };
       categories.push(cat);
       return cat as T;
     }
     case "archive_category":
     case "restore_category": {
       const c = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
+      if (c.isSystem) fail("Conflict", "This is a system category and can't be changed");
       const archiving = command === "archive_category";
       c.isArchived = archiving;
       c.updatedAt = now();
@@ -265,6 +279,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     }
     case "delete_category": {
       const c = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
+      if (c.isSystem) fail("Conflict", "This is a system category and can't be changed");
       if (categories.some((x) => x.parentId === c.id)) fail("Conflict", "Remove or move its subcategories first");
       if (txns.some((t) => t.categoryId === c.id)) fail("Conflict", "In use by transactions — archive it instead");
       categories.splice(categories.indexOf(c), 1);
@@ -273,6 +288,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "reorder_categories": {
       (a.ids as string[]).forEach((id, i) => {
         const c = categories.find((x) => x.id === id);
+        if (c && c.isSystem) fail("Conflict", "This is a system category and can't be changed");
         if (c) { c.sortOrder = i; c.updatedAt = now(); }
       });
       return undefined as T;
@@ -282,6 +298,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       (a.ids as string[]).forEach((id) => {
         const c = categories.find((x) => x.id === id);
         if (!c) return;
+        if (c.isSystem) fail("Conflict", "This is a system category and can't be changed");
         c.isArchived = archiving;
         c.updatedAt = now();
         if (c.parentId == null) {
@@ -292,6 +309,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     }
     case "set_category_parent": {
       const cat = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
+      if (cat.isSystem) fail("Conflict", "This is a system category and can't be changed");
       const pid: string | null = a.parentId ?? null;
       if (pid != null) {
         if (pid === cat.id) fail("ValidationError", "A category cannot be its own parent");
@@ -321,6 +339,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (a.categoryId) {
         const c = categories.find((x) => x.id === a.categoryId);
         if (c && c.kind !== kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${kind}'`);
+        if (c && c.isSystem) fail("ValidationError", "That category can't be selected");
       }
       const transactionTime = resolveTime(a.time, null);
       const tx: Transaction = { id: uid(), kind, accountId: a.accountId, toAccountId: null, categoryId: a.categoryId, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: !!a.excludedFromReporting };
@@ -351,9 +370,12 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (i < 0) fail("NotFound", "Transaction not found");
       if (txns[i].kind === "opening" || a.input.kind === "opening") fail("ValidationError", "The opening balance can't be edited here; change it from the account's opening balance field");
       if (txns[i].kind === "adjustment" || a.input.kind === "adjustment") fail("ValidationError", "Adjustments cannot be edited; delete it and reconcile again");
+      const exCat = categories.find((x) => x.id === txns[i].categoryId);
+      if (exCat?.isSystem) fail("ValidationError", "Balance corrections can't be edited; delete it and reconcile again");
       if ((a.input.kind === "income" || a.input.kind === "expense") && a.input.categoryId) {
         const c = categories.find((x) => x.id === a.input.categoryId);
         if (c && c.kind !== a.input.kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${a.input.kind}'`);
+        if (c && c.isSystem) fail("ValidationError", "That category can't be selected");
       }
       const excluded = (a.input.kind === "income" || a.input.kind === "expense") && !!a.input.excludedFromReporting;
       const transactionTime = resolveTime(a.input.transactionTime, txns[i].transactionTime);

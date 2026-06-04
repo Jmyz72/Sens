@@ -51,6 +51,7 @@ export interface Category {
   parentId: string | null;
   sortOrder: number;
   isArchived: boolean;
+  isSystem: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -29,8 +29,8 @@ export const client = {
     dispatch<Account>("update_account", { input }),
   archiveAccount: (id: string) => dispatch<Account>("archive_account", { id }),
   restoreAccount: (id: string) => dispatch<Account>("restore_account", { id }),
-  setAccountBalance: (accountId: string, realBalanceCents: number) =>
-    dispatch<Account>("set_account_balance", { accountId, realBalanceCents }),
+  setAccountBalance: (accountId: string, realBalanceCents: number, recordAsIncomeExpense = false) =>
+    dispatch<Account>("set_account_balance", { accountId, realBalanceCents, recordAsIncomeExpense }),
 
   // Categories
   listCategories: (kind?: CategoryKind, includeArchived = false) => dispatch<Category[]>("list_categories", { kind: kind ?? null, includeArchived }),

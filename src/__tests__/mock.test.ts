@@ -10,6 +10,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { mockInvoke } from "../client/mock";
+import { client } from "../client";
 import type { Account, AccountBalance, DashboardSummary, Transaction } from "../types";
 
 // Helper to create a fresh custom account with zero opening balance
@@ -418,5 +419,50 @@ describe("get_setting / set_setting round-trip", () => {
     await expect(
       mockInvoke("set_setting", { key: "  ", value: "v" }),
     ).rejects.toMatchObject({ code: "ValidationError" });
+  });
+});
+
+// ── balance correction as income/expense ──────────────────────────────────────
+
+describe("balance correction as income/expense (mock)", () => {
+  it("books income with the system category when diff > 0", async () => {
+    const acc = await client.createAccount("Cash", "cash", 1_000_00, null);
+    const expCat = (await client.listCategories("expense")).find((c) => !c.isSystem)!;
+    await client.createExpense(acc.id, expCat.id, 100_00, null, "2026-06-01");
+    await client.setAccountBalance(acc.id, 950_00, true);
+    const txns = await client.listTransactions({ accountId: acc.id });
+    const corr = txns.find((t) => t.kind === "income")!;
+    const sys = (await client.listCategories("income", true)).find((c) => c.isSystem)!;
+    expect(corr).toBeTruthy();
+    expect(corr.amountCents).toBe(50_00);
+    expect(corr.categoryId).toBe(sys.id);
+    expect(await client.getAccountBalance(acc.id)).toBe(950_00);
+  });
+
+  it("books expense when diff < 0", async () => {
+    const acc = await client.createAccount("Cash2", "cash", 1_000_00, null);
+    const expCat = (await client.listCategories("expense")).find((c) => !c.isSystem)!;
+    await client.createExpense(acc.id, expCat.id, 100_00, null, "2026-06-01");
+    await client.setAccountBalance(acc.id, 850_00, true);
+    const txns = await client.listTransactions({ accountId: acc.id });
+    const sysExp = (await client.listCategories("expense", true)).find((c) => c.isSystem)!;
+    const corr = txns.find((t) => t.kind === "expense" && t.description === "Balance adjustment")!;
+    expect(corr).toBeTruthy();
+    expect(corr.categoryId).toBe(sysExp.id);
+    expect(corr.amountCents).toBe(50_00);
+    expect(await client.getAccountBalance(acc.id)).toBe(850_00);
+  });
+
+  it("excludes system categories from the transaction picker tree", async () => {
+    const { categoryTree } = await import("../lib/categories");
+    const all = await client.listCategories(undefined, true);
+    const tree = categoryTree(all, "expense");
+    expect(tree.some((n) => n.category.isSystem)).toBe(false);
+  });
+
+  it("blocks deleting and editing a system category", async () => {
+    const sys = (await client.listCategories("expense", true)).find((c) => c.isSystem)!;
+    await expect(client.deleteCategory(sys.id)).rejects.toMatchObject({ code: "Conflict" });
+    await expect(client.updateCategory({ id: sys.id, name: "Nope" })).rejects.toMatchObject({ code: "Conflict" });
   });
 });

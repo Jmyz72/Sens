@@ -17,7 +17,7 @@ const bySort = (a: Category, b: Category) =>
 export function categoryTree(cats: Category[], kind: CategoryKind): CategoryNode[] {
   const sorted = [...cats].sort(bySort);
   return sorted
-    .filter((c) => c.kind === kind && c.parentId == null)
+    .filter((c) => c.kind === kind && c.parentId == null && !c.isSystem)
     .map((parent) => ({
       category: parent,
       // children share the parent's kind (enforced by the backend); filter on it
@@ -68,6 +68,7 @@ export function moveTargets(cats: Category[], category: Category): Category[] {
       c.parentId == null &&
       c.kind === category.kind &&
       !c.isArchived &&
+      !c.isSystem &&
       c.id !== category.id &&
       c.id !== category.parentId,
   );
