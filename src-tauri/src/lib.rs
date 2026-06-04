@@ -980,6 +980,30 @@ mod tests {
     }
 
     #[test]
+    fn correction_income_expense_cannot_be_edited() {
+        let c = crate::db::open_in_memory().unwrap();
+        let a = crate::service::create_account(&c, "Cash", "cash", 1_000_00, None).unwrap();
+        let cat: String = c.query_row("SELECT id FROM categories WHERE kind='expense' AND is_system=0 LIMIT 1", [], |r| r.get(0)).unwrap();
+        crate::service::create_expense(&c, &a.id, &cat, 100_00, None, "2026-06-01", None, false).unwrap();
+        crate::service::set_account_balance(&c, &a.id, 950_00, true).unwrap();
+        let corr_id: String = c.query_row("SELECT id FROM transactions WHERE kind='income' AND account_id=?1 LIMIT 1", [&a.id], |r| r.get(0)).unwrap();
+        let income_cat: String = c.query_row("SELECT id FROM categories WHERE kind='income' AND is_system=0 LIMIT 1", [], |r| r.get(0)).unwrap();
+        let input = crate::models::UpdateTransactionInput {
+            id: corr_id,
+            kind: "income".into(),
+            account_id: a.id.clone(),
+            to_account_id: None,
+            category_id: Some(income_cat),
+            amount_cents: 50_00,
+            description: None,
+            transaction_date: "2026-06-02".into(),
+            transaction_time: None,
+            excluded_from_reporting: false,
+        };
+        assert!(crate::service::update_transaction(&c, input).is_err(), "editing a balance correction must be blocked");
+    }
+
+    #[test]
     fn balance_reads_from_postings() {
         use rusqlite::Connection;
         let c = Connection::open_in_memory().unwrap();

@@ -519,6 +519,13 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
     if existing.kind == KIND_ADJUSTMENT || input.kind == KIND_ADJUSTMENT {
         return Err(AppError::Validation("Adjustments cannot be edited; delete it and reconcile again".into()));
     }
+    // Corrections booked as income/expense carry a protected (system) category.
+    // They are structural like adjustments — edit by deleting and reconciling.
+    if let Some(cid) = existing.category_id.as_deref() {
+        if repo::get_category(conn, cid)?.is_system {
+            return Err(AppError::Validation("Balance corrections can't be edited; delete it and reconcile again".into()));
+        }
+    }
     validate_positive(input.amount_cents)?;
     ensure_active_account(conn, &input.account_id, "selected")?;
 
