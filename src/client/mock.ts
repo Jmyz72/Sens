@@ -314,6 +314,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (pid != null) {
         if (pid === cat.id) fail("ValidationError", "A category cannot be its own parent");
         const parent = categories.find((x) => x.id === pid) ?? fail("NotFound", "Category not found");
+        if (parent.isSystem) fail("ValidationError", "That category can't be a parent");
         if (parent.parentId != null) fail("ValidationError", "The new parent must be a top-level category");
         if (parent.kind !== cat.kind) fail("ValidationError", "Cannot move a category to a different kind");
         if (cat.parentId == null && categories.some((x) => x.parentId === cat.id)) {

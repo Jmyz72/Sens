@@ -355,6 +355,9 @@ pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>)
             return Err(AppError::Validation("A category cannot be its own parent".into()));
         }
         let parent = repo::get_category(conn, pid)?; // NotFound if bogus
+        if parent.is_system {
+            return Err(AppError::Validation("That category can't be a parent".into()));
+        }
         if parent.parent_id.is_some() {
             return Err(AppError::Validation("The new parent must be a top-level category".into()));
         }

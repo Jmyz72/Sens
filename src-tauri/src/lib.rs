@@ -576,6 +576,25 @@ mod tests {
     }
 
     #[test]
+    fn cannot_reparent_under_system_category() {
+        let c = open_in_memory().unwrap();
+        let sys_id: String = c
+            .query_row(
+                "SELECT id FROM categories WHERE is_system=1 AND kind='expense' LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // Create a normal top-level expense leaf to attempt moving under the system category.
+        let leaf =
+            service::create_category(&c, "Temp Leaf", "expense", "🧪", None, None).unwrap();
+        assert!(
+            service::set_category_parent(&c, &leaf.id, Some(&sys_id)).is_err(),
+            "must not allow reparenting under a system category"
+        );
+    }
+
+    #[test]
     fn set_categories_archived_bulk_with_cascade() {
         let c = open_in_memory().unwrap();
         let food = service::create_category(&c, "Food B", "expense", "🍔", None, None).unwrap();
