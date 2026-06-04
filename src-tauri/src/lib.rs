@@ -152,7 +152,7 @@ mod tests {
     fn balance_correction_no_txns_edits_opening() {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 1000);
-        let updated = service::set_account_balance(&c, &a.id, 5000).unwrap();
+        let updated = service::set_account_balance(&c, &a.id, 5000, false).unwrap();
         assert_eq!(updated.opening_balance_cents, 5000);
         assert_eq!(updated.balance_cents, 5000);
     }
@@ -162,7 +162,7 @@ mod tests {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
         service::create_income(&c, &a.id, &income_cat(&c), 3350_00, None, "2026-05-10", None, false).unwrap();
-        let updated = service::set_account_balance(&c, &a.id, 3400_00).unwrap();
+        let updated = service::set_account_balance(&c, &a.id, 3400_00, false).unwrap();
         assert_eq!(updated.opening_balance_cents, 0); // untouched
         assert_eq!(updated.balance_cents, 3400_00); // adjustment applied
     }
@@ -330,7 +330,7 @@ mod tests {
         let c = open_in_memory().unwrap();
         let a = acct(&c, "Checking", 0);
         service::create_income(&c, &a.id, &income_cat(&c), 1000, None, "2026-05-10", None, false).unwrap();
-        service::set_account_balance(&c, &a.id, 99999).unwrap(); // big adjustment this month
+        service::set_account_balance(&c, &a.id, 99999, false).unwrap(); // big adjustment this month
         let s = service::get_dashboard_summary(&c, "2026-05").unwrap();
         assert_eq!(s.income_cents, 1000); // adjustment not counted as income
         assert_eq!(s.expense_cents, 0);
@@ -795,7 +795,7 @@ mod tests {
         let c = crate::db::open_in_memory().unwrap();
         // Fresh account, only the opening row exists → reconcile edits opening.
         let acc = crate::service::create_account(&c, "Cash", "cash", 1_000, None).unwrap();
-        crate::service::set_account_balance(&c, &acc.id, 4_000).unwrap();
+        crate::service::set_account_balance(&c, &acc.id, 4_000, false).unwrap();
         assert_books_balance(&c);
         let pbal = |id: &str| c.query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE account_id = ?1", [id], |r| r.get::<_, i64>(0)).unwrap();
         assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, 4_000);
@@ -806,7 +806,7 @@ mod tests {
         let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
         crate::service::create_expense(&c, &acc.id, &exp_cat, 500, None, "2026-03-01", None, false).unwrap();
         // balance is now 3500; reconcile to 3000 → adjustment of -500.
-        crate::service::set_account_balance(&c, &acc.id, 3_000).unwrap();
+        crate::service::set_account_balance(&c, &acc.id, 3_000, false).unwrap();
         assert_books_balance(&c);
         assert_eq!(crate::repo::get_account(&c, &acc.id).unwrap().balance_cents, 3_000);
         assert_eq!(pbal(&acc.id), 3_000, "adjustment postings must reflect the reconciled balance");
@@ -921,6 +921,62 @@ mod tests {
         crate::db::reset_to_defaults(&c).unwrap();
         let after: i64 = c.query_row("SELECT COUNT(*) FROM postings", [], |r| r.get(0)).unwrap();
         assert_eq!(after, 0, "factory reset must clear postings");
+    }
+
+    #[test]
+    fn correction_as_income_books_income_with_system_category() {
+        let c = crate::db::open_in_memory().unwrap();
+        let a = crate::service::create_account(&c, "Cash", "cash", 1_000_00, None).unwrap();
+        // Real activity so the income/expense path (not opening edit) is used.
+        let cat: String = c.query_row("SELECT id FROM categories WHERE kind='expense' AND is_system=0 LIMIT 1", [], |r| r.get(0)).unwrap();
+        crate::service::create_expense(&c, &a.id, &cat, 100_00, None, "2026-06-01", None, false).unwrap();
+        // Balance now 900.00; correct UP to 950.00 → +50.00 income.
+        crate::service::set_account_balance(&c, &a.id, 950_00, true).unwrap();
+        let sys: String = c.query_row("SELECT id FROM categories WHERE is_system=1 AND kind='income' LIMIT 1", [], |r| r.get(0)).unwrap();
+        let (kind, amt, cat_id): (String, i64, Option<String>) = c
+            .query_row(
+                "SELECT kind, amount_cents, category_id FROM transactions WHERE kind IN ('income','expense','adjustment') AND account_id=?1 ORDER BY created_at DESC LIMIT 1",
+                [&a.id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, "income");
+        assert_eq!(amt, 50_00);
+        assert_eq!(cat_id.as_deref(), Some(sys.as_str()));
+        assert_eq!(crate::service::get_account_balance(&c, &a.id).unwrap(), 950_00);
+    }
+
+    #[test]
+    fn correction_as_income_books_expense_when_diff_negative() {
+        let c = crate::db::open_in_memory().unwrap();
+        let a = crate::service::create_account(&c, "Cash", "cash", 1_000_00, None).unwrap();
+        let cat: String = c.query_row("SELECT id FROM categories WHERE kind='expense' AND is_system=0 LIMIT 1", [], |r| r.get(0)).unwrap();
+        crate::service::create_expense(&c, &a.id, &cat, 100_00, None, "2026-06-01", None, false).unwrap();
+        // Balance 900.00; correct DOWN to 850.00 → -50.00 expense.
+        crate::service::set_account_balance(&c, &a.id, 850_00, true).unwrap();
+        let sys: String = c.query_row("SELECT id FROM categories WHERE is_system=1 AND kind='expense' LIMIT 1", [], |r| r.get(0)).unwrap();
+        let (kind, amt, cat_id): (String, i64, Option<String>) = c
+            .query_row(
+                "SELECT kind, amount_cents, category_id FROM transactions WHERE kind IN ('income','expense','adjustment') AND account_id=?1 ORDER BY created_at DESC LIMIT 1",
+                [&a.id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, "expense");
+        assert_eq!(amt, 50_00);
+        assert_eq!(cat_id.as_deref(), Some(sys.as_str()));
+        assert_eq!(crate::service::get_account_balance(&c, &a.id).unwrap(), 850_00);
+    }
+
+    #[test]
+    fn correction_flag_ignored_when_no_activity_edits_opening() {
+        let c = crate::db::open_in_memory().unwrap();
+        let a = crate::service::create_account(&c, "Cash", "cash", 1_000_00, None).unwrap();
+        crate::service::set_account_balance(&c, &a.id, 1_500_00, true).unwrap();
+        // No income/expense/adjustment row created; opening was edited instead.
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM transactions WHERE account_id=?1 AND kind IN ('income','expense','adjustment')", [&a.id], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+        assert_eq!(crate::service::get_account_balance(&c, &a.id).unwrap(), 1_500_00);
     }
 
     #[test]

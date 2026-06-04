@@ -176,13 +176,19 @@ pub fn restore_account(conn: &Connection, id: &str) -> AppResult<Account> {
 /// Reconcile an account to a real balance. With no transactions, edit the
 /// opening balance; with transactions, insert a signed adjustment for the
 /// difference dated today. No-op if already matching.
-pub fn set_account_balance(conn: &Connection, account_id: &str, real_balance_cents: i64) -> AppResult<Account> {
+pub fn set_account_balance(
+    conn: &Connection,
+    account_id: &str,
+    real_balance_cents: i64,
+    record_as_income_expense: bool,
+) -> AppResult<Account> {
     let acc = repo::get_account(conn, account_id)?;
     if acc.is_archived {
         return Err(AppError::Conflict("Cannot reconcile an archived account".into()));
     }
     if !repo::account_has_nonopening_activity(conn, account_id)? {
         // Only the opening row exists — edit it so the balance equals the target.
+        // The income/expense flag has no meaning here (nothing to classify).
         let tx = conn.unchecked_transaction()?;
         repo::set_opening_amount(&tx, account_id, real_balance_cents, &now())?;
         let opening = repo::get_opening_transaction(&tx, account_id)?;
@@ -196,21 +202,42 @@ pub fn set_account_balance(conn: &Connection, account_id: &str, real_balance_cen
     }
     let today = crate::today();
     let tx = conn.unchecked_transaction()?;
-    let adj = repo::insert_transaction(
-        &tx,
-        &new_id(),
-        KIND_ADJUSTMENT,
-        account_id,
-        None,
-        None,
-        diff,
-        Some("Balance adjustment"),
-        &today,
-        None,
-        false,
-        &now(),
-    )?;
-    materialize_postings(&tx, &adj)?;
+    let txn = if record_as_income_expense {
+        // Sign decides: surplus → income, shortfall → expense. Amount is the
+        // positive magnitude; the posting engine applies the sign per kind.
+        let kind = if diff > 0 { KIND_INCOME } else { KIND_EXPENSE };
+        let cat_id = repo::get_system_category_id(&tx, kind)?;
+        repo::insert_transaction(
+            &tx,
+            &new_id(),
+            kind,
+            account_id,
+            None,
+            Some(&cat_id),
+            diff.abs(),
+            Some("Balance adjustment"),
+            &today,
+            None,
+            false,
+            &now(),
+        )?
+    } else {
+        repo::insert_transaction(
+            &tx,
+            &new_id(),
+            KIND_ADJUSTMENT,
+            account_id,
+            None,
+            None,
+            diff,
+            Some("Balance adjustment"),
+            &today,
+            None,
+            false,
+            &now(),
+        )?
+    };
+    materialize_postings(&tx, &txn)?;
     tx.commit()?;
     repo::get_account(conn, account_id)
 }
