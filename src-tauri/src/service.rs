@@ -583,14 +583,20 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
     ensure_active_account(conn, &input.account_id, "selected")?;
 
     let (to_account_id, category_id) = match input.kind.as_str() {
-        KIND_INCOME | KIND_EXPENSE => {
-            let cat = input
-                .category_id
-                .as_deref()
-                .ok_or_else(|| AppError::Validation("A category is required".into()))?;
-            validate_category_for(conn, cat, &input.kind)?;
-            (None, Some(cat.to_string()))
-        }
+        KIND_INCOME | KIND_EXPENSE => match &input.splits {
+            Some(s) if !s.is_empty() => {
+                validate_splits(conn, &input.kind, s, input.amount_cents)?;
+                (None, Some(s[0].category_id.clone())) // header = first split (CHECK needs non-null)
+            }
+            _ => {
+                let cat = input
+                    .category_id
+                    .as_deref()
+                    .ok_or_else(|| AppError::Validation("A category is required".into()))?;
+                validate_category_for(conn, cat, &input.kind)?;
+                (None, Some(cat.to_string()))
+            }
+        },
         KIND_TRANSFER => {
             let to = input
                 .to_account_id
@@ -624,9 +630,17 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
         excluded,
         &now(),
     )?;
+    repo::delete_splits_for(&dbtx, &input.id)?;
+    if let Some(s) = &input.splits {
+        if !s.is_empty() {
+            for (i, line) in s.iter().enumerate() {
+                repo::insert_split(&dbtx, &new_id(), &input.id, &line.category_id, line.amount_cents, i as i64, &now())?;
+            }
+        }
+    }
     materialize_postings(&dbtx, &t)?;
     dbtx.commit()?;
-    Ok(t)
+    repo::get_transaction(conn, &input.id)
 }
 
 pub fn delete_transaction(conn: &Connection, id: &str) -> AppResult<()> {

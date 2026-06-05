@@ -173,6 +173,37 @@ mod tests {
     }
 
     #[test]
+    fn update_single_to_split_and_back() {
+        let conn = open_in_memory().unwrap();
+        let acc = service::create_account(&conn, "Cash", "cash", 0, None).unwrap();
+        let a = nth_expense_category_id(&conn, 0);
+        let b = nth_expense_category_id(&conn, 1);
+        let t = service::create_expense(&conn, &acc.id, Some(&a), 15000, None, "2026-06-06", None, false, None).unwrap();
+        // single -> split
+        let upd = UpdateTransactionInput {
+            id: t.id.clone(), kind: "expense".into(), account_id: acc.id.clone(), to_account_id: None,
+            category_id: None, amount_cents: 15000, description: None, transaction_date: "2026-06-06".into(),
+            transaction_time: None, excluded_from_reporting: false,
+            splits: Some(vec![
+                SplitInput { category_id: a.clone(), amount_cents: 9000 },
+                SplitInput { category_id: b.clone(), amount_cents: 6000 },
+            ]),
+        };
+        let t2 = service::update_transaction(&conn, upd).unwrap();
+        assert_eq!(t2.splits.len(), 2);
+        assert_eq!(t2.category_id.as_deref(), Some(a.as_str())); // header = first split
+        // split -> single
+        let upd2 = UpdateTransactionInput {
+            id: t.id.clone(), kind: "expense".into(), account_id: acc.id.clone(), to_account_id: None,
+            category_id: Some(a.clone()), amount_cents: 15000, description: None, transaction_date: "2026-06-06".into(),
+            transaction_time: None, excluded_from_reporting: false, splits: None,
+        };
+        let t3 = service::update_transaction(&conn, upd2).unwrap();
+        assert_eq!(t3.splits.len(), 0);
+        assert_eq!(t3.category_id.as_deref(), Some(a.as_str()));
+    }
+
+    #[test]
     fn seeds_templates_and_categories() {
         let c = open_in_memory().unwrap();
         assert_eq!(service::list_account_templates(&c).unwrap().len(), 51); // +Luno, +Cash
