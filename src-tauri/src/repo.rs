@@ -396,6 +396,7 @@ fn map_transaction(r: &Row) -> rusqlite::Result<Transaction> {
         excluded_from_reporting: r.get::<_, i64>("excluded_from_reporting")? != 0,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
+        splits: Vec::new(),
     })
 }
 

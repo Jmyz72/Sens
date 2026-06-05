@@ -226,7 +226,7 @@ mod tests {
             id: tx.id.clone(), kind: "expense".into(), account_id: a.id.clone(),
             to_account_id: None, category_id: tx.category_id.clone(), amount_cents: 800,
             description: Some("Reimbursement".into()), transaction_date: "2026-05-12".into(),
-            transaction_time: None, excluded_from_reporting: true,
+            transaction_time: None, excluded_from_reporting: true, splits: None,
         }).unwrap();
         assert!(updated.excluded_from_reporting);
         assert_eq!(service::get_dashboard_summary(&c, "2026-05").unwrap().expense_cents, 0);
@@ -273,7 +273,7 @@ mod tests {
         let edit = UpdateTransactionInput {
             id: opening.id.clone(), kind: "opening".into(), account_id: a.id.clone(),
             to_account_id: None, category_id: None, amount_cents: 9999,
-            description: None, transaction_date: "2026-05-01".into(), transaction_time: None, excluded_from_reporting: false,
+            description: None, transaction_date: "2026-05-01".into(), transaction_time: None, excluded_from_reporting: false, splits: None,
         };
         assert!(service::update_transaction(&c, edit).is_err(), "opening cannot be edited");
         // it is unchanged
@@ -333,7 +333,7 @@ mod tests {
         let updated = service::update_transaction(&c, UpdateTransactionInput {
             id: t.id.clone(), kind: "expense".into(), account_id: a.id.clone(), to_account_id: None,
             category_id: Some(expense_cat(&c)), amount_cents: 200, description: None,
-            transaction_date: "2026-05-10".into(), transaction_time: None, excluded_from_reporting: false,
+            transaction_date: "2026-05-10".into(), transaction_time: None, excluded_from_reporting: false, splits: None,
         }).unwrap();
         assert_eq!(updated.transaction_time.as_deref(), Some("08:15"));
     }
@@ -804,7 +804,7 @@ mod tests {
             id: t.id.clone(), kind: "expense".into(), account_id: acc.id.clone(),
             to_account_id: None, category_id: Some(exp_cat.clone()),
             amount_cents: 5_000, description: None, transaction_date: "2026-02-02".into(),
-            transaction_time: None, excluded_from_reporting: false,
+            transaction_time: None, excluded_from_reporting: false, splits: None,
         };
         crate::service::update_transaction(&c, input).unwrap();
         assert_books_balance(&c);
@@ -1031,6 +1031,7 @@ mod tests {
             transaction_date: "2026-06-02".into(),
             transaction_time: None,
             excluded_from_reporting: false,
+            splits: None,
         };
         assert!(crate::service::update_transaction(&c, input).is_err(), "editing a balance correction must be blocked");
     }
