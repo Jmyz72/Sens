@@ -302,7 +302,7 @@ fn create_split_expense_sums_and_attributes() {
         models::SplitInput { category_id: b.clone(), amount_cents: 5000 },
     ];
     let t = service::create_expense(&conn, &acc.id, None, 15000, None, "2026-06-06", None, false, Some(splits)).unwrap();
-    assert!(t.category_id.is_none());
+    assert_eq!(t.category_id.as_deref(), Some(a.as_str())); // header = first split's category (CHECK requires non-null)
     assert_eq!(t.splits.len(), 2);
     assert_eq!(t.amount_cents, 15000);
     // balance unaffected by attribution: account dropped by 15000
@@ -368,19 +368,22 @@ pub fn create_expense(conn: &Connection, account_id: &str, category_id: Option<&
     let time = resolve_time(conn, time, None)?;
     let tx = conn.unchecked_transaction()?;
 
-    let header_cat = match &splits {
+    // The transactions CHECK requires category_id NOT NULL for income/expense, so
+    // a split stores its FIRST line's category as a representative header. "Is a
+    // split" is decided by the presence of split rows, never by a null category.
+    let header_cat: Option<String> = match &splits {
         Some(s) if !s.is_empty() => {
             validate_splits(&tx, KIND_EXPENSE, s, amount_cents)?;
-            None
+            Some(s[0].category_id.clone())
         }
         _ => {
             let cat = category_id.ok_or_else(|| AppError::Validation("A category is required".into()))?;
             validate_category_for(&tx, cat, KIND_EXPENSE)?;
-            Some(cat)
+            Some(cat.to_string())
         }
     };
 
-    let t = repo::insert_transaction(&tx, &new_id(), KIND_EXPENSE, account_id, None, header_cat, amount_cents, description, date, time.as_deref(), excluded_from_reporting, &now())?;
+    let t = repo::insert_transaction(&tx, &new_id(), KIND_EXPENSE, account_id, None, header_cat.as_deref(), amount_cents, description, date, time.as_deref(), excluded_from_reporting, &now())?;
     if let Some(s) = &splits {
         if !s.is_empty() {
             for (i, line) in s.iter().enumerate() {
@@ -437,7 +440,7 @@ fn update_single_to_split_and_back() {
     };
     let t2 = service::update_transaction(&conn, upd).unwrap();
     assert_eq!(t2.splits.len(), 2);
-    assert!(t2.category_id.is_none());
+    assert_eq!(t2.category_id.as_deref(), Some(a.as_str())); // header = first split's category
     // split -> single
     let upd2 = models::UpdateTransactionInput {
         id: t.id.clone(), kind: "expense".into(), account_id: acc.id.clone(), to_account_id: None,
@@ -464,7 +467,7 @@ In the `KIND_INCOME | KIND_EXPENSE` match arm, branch on `input.splits`. Replace
             match &input.splits {
                 Some(s) if !s.is_empty() => {
                     validate_splits(conn, &input.kind, s, input.amount_cents)?;
-                    (None, None) // header category NULL; splits applied below
+                    (None, Some(s[0].category_id.clone())) // header = first split's category (CHECK needs non-null)
                 }
                 _ => {
                     let cat = input.category_id.as_deref()
@@ -569,8 +572,9 @@ pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<
         "WITH attrib AS (
            SELECT t.category_id AS cat, t.amount_cents AS amt
            FROM transactions t
-           WHERE t.kind='expense' AND t.excluded_from_reporting=0 AND t.category_id IS NOT NULL
+           WHERE t.kind='expense' AND t.excluded_from_reporting=0
              AND t.transaction_date >= ?1 AND t.transaction_date < ?2
+             AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
            UNION ALL
            SELECT s.category_id AS cat, s.amount_cents AS amt
            FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
@@ -759,7 +763,7 @@ describe("mock splits", () => {
       ],
     });
     expect(tx.splits).toHaveLength(2);
-    expect(tx.categoryId).toBeNull();
+    expect(tx.categoryId).toBe(cats[0].id); // header = first split's category
     const after = await mockInvoke<number>("get_account_balance", { accountId: acc.id });
     expect(before - after).toBe(15000);
     const dash = await mockInvoke<any>("get_dashboard_summary", { month: "2026-06" });
@@ -823,7 +827,7 @@ In the create handler, branch:
       }
       const tx: Transaction = {
         id: uid(), kind, accountId: a.accountId, toAccountId: null,
-        categoryId: hasSplits ? null : a.categoryId,
+        categoryId: hasSplits ? a.splits[0].categoryId : a.categoryId, // header = first split (mirrors Rust CHECK)
         amountCents: a.amountCents, description: a.description,
         transactionDate: a.date, transactionTime,
         createdAt: now(), updatedAt: now(),
@@ -832,7 +836,7 @@ In the create handler, branch:
       };
 ```
 
-3. In `update_transaction` handler (~372-383), mirror: if `a.input.splits?.length` validate and set `categoryId: null, splits: [...]`; else clear splits (`splits: []`) and keep single `categoryId`.
+3. In `update_transaction` handler (~372-383), mirror: if `a.input.splits?.length` validate and set `categoryId: a.input.splits[0].categoryId, splits: [...]`; else clear splits (`splits: []`) and keep the single `categoryId`.
 
 4. `balanceOf` (~136) is unchanged — `postingsFor` uses the header only. Confirm no change needed.
 

@@ -103,12 +103,13 @@ CREATE INDEX idx_splits_cat ON transaction_splits(category_id);
 ```
 
 **Invariant (enforced in the service layer, mirrored in mock):**
-- A transaction is **either** single-category (`category_id` set, **zero** split rows) **or** split (`category_id` IS NULL, **≥2** split rows).
+- A transaction is **single-category** (no split rows) or **split** (**≥2** split rows). "Is a split" is defined by **the presence of split rows**, never by a null `category_id`.
+- **`transactions.category_id` is always set for income/expense** — including splits, where it holds the **first split line's category** as a representative header. This is mandatory: migration 005's table CHECK requires `category_id IS NOT NULL` for `income`/`expense`, and rebuilding `transactions` to relax it is unsafe (migration 006's `postings.transaction_id ON DELETE CASCADE` would cascade-delete every posting on a rebuild). The header category is **ignored for attribution** whenever split rows exist.
 - Split rows exist only for `income`/`expense`.
-- `SUM(transaction_splits.amount_cents) = transactions.amount_cents` (all positive; the header sign/representation is unchanged — income/expense `amount_cents` is positive).
-- Every split line's category must be valid for the transaction's kind (`validate_category_for`) and **non-system** (`ensure_not_system`).
+- `SUM(transaction_splits.amount_cents) = transactions.amount_cents` (all positive; income/expense `amount_cents` is positive).
+- Every split line's category must be valid for the transaction's kind (`validate_category_for`) and **non-system** (`ensure_not_system`). The header category equals `splits[0].category_id`, so it inherits that validity.
 
-> **Migration is data-preserving and trivial:** existing transactions keep their `category_id`; no backfill needed (no existing transaction is a split). `ON DELETE CASCADE` means deleting a transaction removes its split rows. Note migration 007's caution — `transactions` is **not** rebuilt; we only add a new table, so the postings cascade concern does not apply.
+> **Migration is data-preserving and trivial:** existing transactions keep their `category_id`; no backfill needed (no existing transaction is a split). `ON DELETE CASCADE` means deleting a transaction removes its split rows. **`transactions` is NOT rebuilt** — we only add a new table, so neither the CHECK constraint nor the postings cascade is touched.
 
 **Alternative considered & rejected:** making *every* income/expense transaction a list of ≥1 `transaction_lines` rows (dropping `category_id`). Conceptually uniform with the builder, but requires a large migration touching all existing rows and every `category_id` read path, for little gain. The hybrid leaves the majority path untouched.
 
@@ -121,13 +122,14 @@ Unchanged. `postings_for` still emits the real-account leg + one bucket leg for 
 - **`repo.rs`**
   - New: `insert_split`, `list_splits_for(transaction_id)`, `delete_splits_for(transaction_id)`, `splits_for_many(ids)` (batch-load for list hydration).
   - `Transaction` row mapping gains `splits: Vec<TxnSplit>` (empty for single-category).
-  - **`spending_breakdown`** rewritten to attribute split lines per category. Conceptually a UNION of (a) non-split expense rows keyed by `t.category_id`, amount `t.amount_cents`; and (b) split lines keyed by `s.category_id`, amount `s.amount_cents`; both then rolled up `GROUP BY COALESCE(parent_id, id)` exactly as today:
+  - **`spending_breakdown`** rewritten to attribute split lines per category. A UNION of (a) **non-split** expense rows keyed by `t.category_id` (those with NO split rows), and (b) split lines keyed by `s.category_id`; both rolled up `GROUP BY COALESCE(parent_id, id)`. Crucially, the non-split branch must **exclude transactions that have split rows** (`NOT EXISTS`) so a split's representative header category is not double-counted:
     ```sql
     WITH attrib AS (
       SELECT t.category_id AS cat, t.amount_cents AS amt
       FROM transactions t
-      WHERE t.kind='expense' AND t.excluded_from_reporting=0 AND t.category_id IS NOT NULL
+      WHERE t.kind='expense' AND t.excluded_from_reporting=0
         AND t.transaction_date >= ?1 AND t.transaction_date < ?2
+        AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
       UNION ALL
       SELECT s.category_id AS cat, s.amount_cents AS amt
       FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
@@ -143,7 +145,7 @@ Unchanged. `postings_for` still emits the real-account leg + one bucket leg for 
   - `sum_kind_in_range` — **unchanged** (reads header `amount_cents`).
   - `count_transactions_for_category` — extend to also count split-line references, so category delete/restrict still works correctly when a category is only used inside splits.
 - **`service.rs`**
-  - `create_income` / `create_expense` gain an optional `splits: Vec<SplitInput>` parameter. When `splits.len() >= 2`: validate (sum, kinds, non-system), insert the transaction with `category_id = NULL` and `amount_cents = Σ`, then insert split rows — all in one DB transaction. When 0/1 item: behave exactly as today (single `category_id`).
+  - `create_income` / `create_expense` gain an optional `splits: Vec<SplitInput>` parameter. When `splits.len() >= 2`: validate (sum, kinds, non-system), insert the transaction with **`category_id = splits[0].category_id`** (the representative header — required by the CHECK) and `amount_cents = Σ`, then insert split rows — all in one DB transaction. When 0/1 item: behave exactly as today (single `category_id`).
   - `update_transaction`: support replacing splits (delete + re-insert under the same invariant). Re-derive single↔split. Keep existing guards: opening/adjustment rows and **system-category correction rows** remain non-editable / non-splittable.
   - New shared validator `validate_splits(conn, kind, &splits, total)`.
 - **`commands.rs`**: thread the optional `splits` arg through `create_income`/`create_expense`/`update_transaction` (camelCase `splits: Array<{categoryId, amountCents}>`).
