@@ -89,6 +89,14 @@ mod tests {
     fn income_cat(conn: &rusqlite::Connection) -> String {
         service::list_categories(conn, Some("income"), false).unwrap()[0].id.clone()
     }
+    fn nth_expense_category_id(conn: &rusqlite::Connection, n: i64) -> String {
+        conn.query_row(
+            "SELECT id FROM categories WHERE kind='expense' AND is_system=0 ORDER BY sort_order LIMIT 1 OFFSET ?1",
+            [n],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
 
     #[test]
     fn migration_009_creates_splits_table() {
@@ -101,6 +109,25 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn splits_insert_and_hydrate() {
+        use crate::repo;
+        let conn = open_in_memory().unwrap();
+        let acc = service::create_account(&conn, "Checking", "cash", 0, None).unwrap();
+        let cat_a = nth_expense_category_id(&conn, 0);
+        let cat_b = nth_expense_category_id(&conn, 1);
+        let now = "2026-06-06T00:00:00Z";
+        let t = repo::insert_transaction(
+            &conn, "tx1", "expense", &acc.id, None, Some(&cat_a), 15000, Some("Lotus"), "2026-06-06", None, false, now,
+        )
+        .unwrap();
+        repo::insert_split(&conn, "s1", &t.id, &cat_a, 10000, 0, now).unwrap();
+        repo::insert_split(&conn, "s2", &t.id, &cat_b, 5000, 1, now).unwrap();
+        let got = repo::get_transaction(&conn, &t.id).unwrap();
+        assert_eq!(got.splits.len(), 2);
+        assert_eq!(got.splits.iter().map(|s| s.amount_cents).sum::<i64>(), 15000);
     }
 
     #[test]

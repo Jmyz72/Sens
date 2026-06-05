@@ -447,12 +447,55 @@ pub fn delete_postings_for(conn: &Connection, transaction_id: &str) -> AppResult
     Ok(())
 }
 
+// ── Transaction splits ───────────────────────────────────────────────────────
+
+pub fn insert_split(
+    conn: &Connection,
+    id: &str,
+    transaction_id: &str,
+    category_id: &str,
+    amount_cents: i64,
+    sort_order: i64,
+    now: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO transaction_splits (id, transaction_id, category_id, amount_cents, sort_order, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![id, transaction_id, category_id, amount_cents, sort_order, now],
+    )
+    .map_err(map_check)?;
+    Ok(())
+}
+
+pub fn list_splits_for(conn: &Connection, transaction_id: &str) -> AppResult<Vec<TxnSplit>> {
+    let mut stmt = conn.prepare(
+        "SELECT category_id, amount_cents FROM transaction_splits WHERE transaction_id = ?1 ORDER BY sort_order, created_at",
+    )?;
+    let rows = stmt
+        .query_map([transaction_id], |r| {
+            Ok(TxnSplit {
+                category_id: r.get(0)?,
+                amount_cents: r.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn delete_splits_for(conn: &Connection, transaction_id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM transaction_splits WHERE transaction_id = ?1", [transaction_id])?;
+    Ok(())
+}
+
 pub fn get_transaction(conn: &Connection, id: &str) -> AppResult<Transaction> {
-    conn.query_row("SELECT * FROM transactions WHERE id = ?1", [id], map_transaction)
+    let mut t = conn
+        .query_row("SELECT * FROM transactions WHERE id = ?1", [id], map_transaction)
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Transaction not found".into()),
             other => other.into(),
-        })
+        })?;
+    t.splits = list_splits_for(conn, id)?;
+    Ok(t)
 }
 
 pub fn get_opening_transaction(conn: &Connection, account_id: &str) -> AppResult<Transaction> {
@@ -535,9 +578,12 @@ pub fn list_transactions(conn: &Connection, f: &TransactionFilters) -> AppResult
     }
     let mut stmt = conn.prepare(&sql)?;
     let refs: Vec<&dyn rusqlite::types::ToSql> = args.iter().map(|b| b.as_ref()).collect();
-    let rows = stmt
+    let mut rows = stmt
         .query_map(refs.as_slice(), map_transaction)?
         .collect::<Result<Vec<_>, _>>()?;
+    for t in rows.iter_mut() {
+        t.splits = list_splits_for(conn, &t.id)?;
+    }
     Ok(rows)
 }
 
@@ -602,9 +648,12 @@ pub fn recent_transactions(conn: &Connection, limit: i64) -> AppResult<Vec<Trans
     let mut stmt = conn.prepare(
         "SELECT * FROM transactions ORDER BY transaction_date DESC, created_at DESC LIMIT ?1",
     )?;
-    let rows = stmt
+    let mut rows = stmt
         .query_map([limit], map_transaction)?
         .collect::<Result<Vec<_>, _>>()?;
+    for t in rows.iter_mut() {
+        t.splits = list_splits_for(conn, &t.id)?;
+    }
     Ok(rows)
 }
 
