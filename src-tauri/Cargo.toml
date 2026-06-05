@@ -1,6 +1,6 @@
 [package]
 name = "sens"
-version = "0.7.1"
+version = "0.8.0"
 description = "Sens — local-first personal finance tracker"
 authors = ["Sens"]
 edition = "2021"

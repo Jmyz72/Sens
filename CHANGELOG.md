@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-06-05
+
 ### Added
 - Balance correction can now be recorded as real income or expense (not just a neutral adjustment), so forgotten interest or fees count in reporting. Such corrections are tagged a protected "Adjustment" category that's hidden from the Categories screen and locked from editing.
 
