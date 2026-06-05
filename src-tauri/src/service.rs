@@ -78,6 +78,14 @@ fn ensure_active_account(conn: &Connection, id: &str, role: &str) -> AppResult<(
     Ok(())
 }
 
+/// Reject mutating a protected (system) category.
+fn ensure_not_system(conn: &Connection, id: &str) -> AppResult<()> {
+    if repo::get_category(conn, id)?.is_system {
+        return Err(AppError::Conflict("This is a system category and can't be changed".into()));
+    }
+    Ok(())
+}
+
 // ── Accounts ─────────────────────────────────────────────────────────────────
 
 pub fn list_account_templates(conn: &Connection) -> AppResult<Vec<AccountTemplate>> {
@@ -168,13 +176,19 @@ pub fn restore_account(conn: &Connection, id: &str) -> AppResult<Account> {
 /// Reconcile an account to a real balance. With no transactions, edit the
 /// opening balance; with transactions, insert a signed adjustment for the
 /// difference dated today. No-op if already matching.
-pub fn set_account_balance(conn: &Connection, account_id: &str, real_balance_cents: i64) -> AppResult<Account> {
+pub fn set_account_balance(
+    conn: &Connection,
+    account_id: &str,
+    real_balance_cents: i64,
+    record_as_income_expense: bool,
+) -> AppResult<Account> {
     let acc = repo::get_account(conn, account_id)?;
     if acc.is_archived {
         return Err(AppError::Conflict("Cannot reconcile an archived account".into()));
     }
     if !repo::account_has_nonopening_activity(conn, account_id)? {
         // Only the opening row exists — edit it so the balance equals the target.
+        // The income/expense flag has no meaning here (nothing to classify).
         let tx = conn.unchecked_transaction()?;
         repo::set_opening_amount(&tx, account_id, real_balance_cents, &now())?;
         let opening = repo::get_opening_transaction(&tx, account_id)?;
@@ -188,21 +202,42 @@ pub fn set_account_balance(conn: &Connection, account_id: &str, real_balance_cen
     }
     let today = crate::today();
     let tx = conn.unchecked_transaction()?;
-    let adj = repo::insert_transaction(
-        &tx,
-        &new_id(),
-        KIND_ADJUSTMENT,
-        account_id,
-        None,
-        None,
-        diff,
-        Some("Balance adjustment"),
-        &today,
-        None,
-        false,
-        &now(),
-    )?;
-    materialize_postings(&tx, &adj)?;
+    let txn = if record_as_income_expense {
+        // Sign decides: surplus → income, shortfall → expense. Amount is the
+        // positive magnitude; the posting engine applies the sign per kind.
+        let kind = if diff > 0 { KIND_INCOME } else { KIND_EXPENSE };
+        let cat_id = repo::get_system_category_id(&tx, kind)?;
+        repo::insert_transaction(
+            &tx,
+            &new_id(),
+            kind,
+            account_id,
+            None,
+            Some(&cat_id),
+            diff.abs(),
+            Some("Balance adjustment"),
+            &today,
+            None,
+            false,
+            &now(),
+        )?
+    } else {
+        repo::insert_transaction(
+            &tx,
+            &new_id(),
+            KIND_ADJUSTMENT,
+            account_id,
+            None,
+            None,
+            diff,
+            Some("Balance adjustment"),
+            &today,
+            None,
+            false,
+            &now(),
+        )?
+    };
+    materialize_postings(&tx, &txn)?;
     tx.commit()?;
     repo::get_account(conn, account_id)
 }
@@ -254,6 +289,7 @@ pub fn create_category(
 
 pub fn update_category(conn: &Connection, input: UpdateCategoryInput) -> AppResult<Category> {
     repo::get_category(conn, &input.id)?;
+    ensure_not_system(conn, &input.id)?;
     let name = match &input.name {
         Some(n) => Some(require_nonempty("Category name", n)?),
         None => None,
@@ -271,6 +307,7 @@ pub fn update_category(conn: &Connection, input: UpdateCategoryInput) -> AppResu
 
 pub fn archive_category(conn: &Connection, id: &str) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
+    ensure_not_system(conn, id)?;
     let now = now();
     let updated = repo::set_category_archived(conn, id, true, &now)?;
     if cat.parent_id.is_none() {
@@ -281,6 +318,7 @@ pub fn archive_category(conn: &Connection, id: &str) -> AppResult<Category> {
 
 pub fn restore_category(conn: &Connection, id: &str) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
+    ensure_not_system(conn, id)?;
     let now = now();
     let updated = repo::set_category_archived(conn, id, false, &now)?;
     if cat.parent_id.is_none() {
@@ -295,6 +333,7 @@ pub fn restore_category(conn: &Connection, id: &str) -> AppResult<Category> {
 
 pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
     repo::get_category(conn, id)?; // NotFound if missing
+    ensure_not_system(conn, id)?;
     if repo::count_children(conn, id)? > 0 {
         return Err(AppError::Conflict("Remove or move its subcategories first".into()));
     }
@@ -310,11 +349,15 @@ pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
 /// share the moved category's kind.
 pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
+    ensure_not_system(conn, id)?;
     if let Some(pid) = parent_id {
         if pid == id {
             return Err(AppError::Validation("A category cannot be its own parent".into()));
         }
         let parent = repo::get_category(conn, pid)?; // NotFound if bogus
+        if parent.is_system {
+            return Err(AppError::Validation("That category can't be a parent".into()));
+        }
         if parent.parent_id.is_some() {
             return Err(AppError::Validation("The new parent must be a top-level category".into()));
         }
@@ -353,8 +396,10 @@ pub fn reorder_categories(conn: &Connection, ids: &[String]) -> AppResult<()> {
         return Ok(());
     }
     let first = repo::get_category(conn, &ids[0])?;
+    ensure_not_system(conn, &ids[0])?;
     for id in &ids[1..] {
         let cat = repo::get_category(conn, id)?;
+        ensure_not_system(conn, id)?;
         if cat.kind != first.kind || cat.parent_id != first.parent_id {
             return Err(AppError::Validation("Can only reorder categories within one group".into()));
         }
@@ -370,6 +415,9 @@ pub fn reorder_categories(conn: &Connection, ids: &[String]) -> AppResult<()> {
 /// Validate that a category exists and matches the required kind.
 fn validate_category_for(conn: &Connection, category_id: &str, kind: &str) -> AppResult<()> {
     let c = repo::get_category(conn, category_id)?;
+    if c.is_system {
+        return Err(AppError::Validation("That category can't be selected".into()));
+    }
     if c.kind != kind {
         return Err(AppError::Validation(format!(
             "Category kind '{}' does not match transaction kind '{}'",
@@ -473,6 +521,13 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
     }
     if existing.kind == KIND_ADJUSTMENT || input.kind == KIND_ADJUSTMENT {
         return Err(AppError::Validation("Adjustments cannot be edited; delete it and reconcile again".into()));
+    }
+    // Corrections booked as income/expense carry a protected (system) category.
+    // They are structural like adjustments — edit by deleting and reconciling.
+    if let Some(cid) = existing.category_id.as_deref() {
+        if repo::get_category(conn, cid)?.is_system {
+            return Err(AppError::Validation("Balance corrections can't be edited; delete it and reconcile again".into()));
+        }
     }
     validate_positive(input.amount_cents)?;
     ensure_active_account(conn, &input.account_id, "selected")?;

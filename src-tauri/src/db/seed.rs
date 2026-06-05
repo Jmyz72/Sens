@@ -279,5 +279,25 @@ pub fn seed_categories(conn: &Connection, now: &str) -> AppResult<()> {
             )?;
         }
     }
+    // Protected "Adjustment" categories (one income, one expense) for balance
+    // corrections booked as income/expense. INSERT OR IGNORE then promote, so
+    // exactly one system row exists per side even if the user already owns a
+    // plain top-level "Adjustment" (the unique index would block a 2nd insert).
+    // sort_order 999: places these system rows after all user categories; they
+    // are hidden from pickers anyway so the value only matters for raw queries.
+    for kind in ["income", "expense"] {
+        let id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT OR IGNORE INTO categories
+               (id, name, kind, emoji, color, sort_order, is_archived, is_system, created_at, updated_at)
+             VALUES (?1, 'Adjustment', ?2, '\u{2696}\u{FE0F}', '#9aa4b2', 999, 0, 1, ?3, ?3)",
+            rusqlite::params![id, kind, now],
+        )?;
+        conn.execute(
+            "UPDATE categories SET is_system = 1
+             WHERE kind = ?1 AND name = 'Adjustment' AND parent_id IS NULL AND is_system = 0",
+            rusqlite::params![kind],
+        )?;
+    }
     Ok(())
 }

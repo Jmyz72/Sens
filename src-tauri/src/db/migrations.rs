@@ -3,7 +3,7 @@
 //! CHECK constraints, and indexes per the design spec's Database Design.
 
 /// Ordered list of `(version, sql)`. Append-only — never edit a shipped one.
-pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007)];
+pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008)];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
 // `postings` ledger that is the authoritative source for account balances. Each
@@ -46,6 +46,15 @@ SELECT 'p2-' || id, id,
                  WHEN 'transfer' THEN  amount_cents
                  ELSE -amount_cents END
 FROM transactions;
+"#;
+
+// Protected ("system") categories. Adds a boolean flag so balance corrections
+// booked as income/expense can be auto-assigned to a locked "Adjustment"
+// category the user can't delete, rename, archive, reparent, or hand-pick.
+// Plain ADD COLUMN with a default — NOT a table rebuild (a rebuild would
+// cascade-delete every posting via migration 006's ON DELETE CASCADE).
+const MIGRATION_008: &str = r#"
+ALTER TABLE categories ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0, 1));
 "#;
 
 // v-next — transaction time support. Adds a nullable `transaction_time` column

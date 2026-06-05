@@ -62,8 +62,8 @@ pub fn restore_account(state: State<'_, DbState>, id: String) -> AppResult<Accou
 }
 
 #[tauri::command]
-pub fn set_account_balance(state: State<'_, DbState>, account_id: String, real_balance_cents: i64) -> AppResult<Account> {
-    with_conn!(state, c => service::set_account_balance(&c, &account_id, real_balance_cents))
+pub fn set_account_balance(state: State<'_, DbState>, account_id: String, real_balance_cents: i64, record_as_income_expense: bool) -> AppResult<Account> {
+    with_conn!(state, c => service::set_account_balance(&c, &account_id, real_balance_cents, record_as_income_expense))
 }
 
 // ── Categories ───────────────────────────────────────────────────────────────

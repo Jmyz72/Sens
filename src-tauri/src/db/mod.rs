@@ -12,13 +12,14 @@ use std::path::Path;
 const FIRST_RUN_KEY: &str = "seeded";
 const DEFAULTS_V2_KEY: &str = "defaults_v2_seeded";
 const DEFAULTS_V3_KEY: &str = "defaults_v3_seeded";
+const DEFAULTS_V4_KEY: &str = "defaults_v4_seeded";
 
 /// Backfill gate flags, applied in order on every open. Each gate runs the
 /// idempotent category seed at most once; bump with a new flag whenever the
 /// default category tree is enriched so existing users pick up the additions.
 /// `seed_categories` always seeds the *current* full tree, so a single later
 /// gate also covers users who never hit an earlier one.
-const BACKFILL_GATES: &[&str] = &[DEFAULTS_V2_KEY, DEFAULTS_V3_KEY];
+const BACKFILL_GATES: &[&str] = &[DEFAULTS_V2_KEY, DEFAULTS_V3_KEY, DEFAULTS_V4_KEY];
 
 /// Open the database, enforce foreign keys, run migrations, and seed once.
 pub fn open(path: &Path) -> AppResult<Connection> {
@@ -55,6 +56,12 @@ fn backfill_defaults(conn: &Connection) -> AppResult<()> {
         backfill_gate(conn, gate)?;
     }
     Ok(())
+}
+
+/// Test hook: re-run the backfill gates (used to exercise the promotion path).
+#[cfg(test)]
+pub fn backfill_defaults_for_test(conn: &Connection) -> AppResult<()> {
+    backfill_defaults(conn)
 }
 
 /// Open an in-memory database (used by tests).
@@ -184,7 +191,7 @@ pub fn reset_to_defaults(conn: &Connection) -> AppResult<()> {
         conn.execute("DELETE FROM accounts", [])?;
         conn.execute("DELETE FROM app_settings", [])?;
         seed::seed(conn, &now)?;
-        for key in [FIRST_RUN_KEY, DEFAULTS_V2_KEY, DEFAULTS_V3_KEY] {
+        for key in [FIRST_RUN_KEY, DEFAULTS_V2_KEY, DEFAULTS_V3_KEY, DEFAULTS_V4_KEY] {
             conn.execute(
                 "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, '1', ?2)",
                 rusqlite::params![key, now],
