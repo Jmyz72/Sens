@@ -117,12 +117,12 @@ pub fn set_categories_archived(state: State<'_, DbState>, ids: Vec<String>, arch
 
 #[tauri::command]
 pub fn create_income_transaction(state: State<'_, DbState>, account_id: String, category_id: String, amount_cents: i64, description: Option<String>, date: String, time: Option<String>, excluded_from_reporting: bool) -> AppResult<Transaction> {
-    with_conn!(state, c => service::create_income(&c, &account_id, &category_id, amount_cents, description.as_deref(), &date, time.as_deref(), excluded_from_reporting))
+    with_conn!(state, c => service::create_income(&c, &account_id, Some(&category_id), amount_cents, description.as_deref(), &date, time.as_deref(), excluded_from_reporting, None))
 }
 
 #[tauri::command]
 pub fn create_expense_transaction(state: State<'_, DbState>, account_id: String, category_id: String, amount_cents: i64, description: Option<String>, date: String, time: Option<String>, excluded_from_reporting: bool) -> AppResult<Transaction> {
-    with_conn!(state, c => service::create_expense(&c, &account_id, &category_id, amount_cents, description.as_deref(), &date, time.as_deref(), excluded_from_reporting))
+    with_conn!(state, c => service::create_expense(&c, &account_id, Some(&category_id), amount_cents, description.as_deref(), &date, time.as_deref(), excluded_from_reporting, None))
 }
 
 #[tauri::command]
