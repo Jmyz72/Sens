@@ -91,6 +91,19 @@ mod tests {
     }
 
     #[test]
+    fn migration_009_creates_splits_table() {
+        let conn = open_in_memory().unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='transaction_splits'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
     fn seeds_templates_and_categories() {
         let c = open_in_memory().unwrap();
         assert_eq!(service::list_account_templates(&c).unwrap().len(), 51); // +Luno, +Cash

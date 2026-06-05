@@ -3,7 +3,7 @@
 //! CHECK constraints, and indexes per the design spec's Database Design.
 
 /// Ordered list of `(version, sql)`. Append-only — never edit a shipped one.
-pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008)];
+pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008), (9, MIGRATION_009)];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
 // `postings` ledger that is the authoritative source for account balances. Each
@@ -46,6 +46,24 @@ SELECT 'p2-' || id, id,
                  WHEN 'transfer' THEN  amount_cents
                  ELSE -amount_cents END
 FROM transactions;
+"#;
+
+// v-next — category splits. A transaction may divide its amount across multiple
+// categories. Splits are a category-attribution layer only — they never touch
+// the `postings` ledger or balances. Data-preserving: a NEW table only (no
+// rebuild of `transactions`, so migration 006's posting cascade is irrelevant).
+// No backfill needed — no existing transaction is a split.
+const MIGRATION_009: &str = r#"
+CREATE TABLE transaction_splits (
+  id              TEXT PRIMARY KEY,
+  transaction_id  TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  category_id     TEXT NOT NULL REFERENCES categories(id)   ON DELETE RESTRICT,
+  amount_cents    INTEGER NOT NULL CHECK (amount_cents > 0),
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX idx_splits_txn ON transaction_splits(transaction_id);
+CREATE INDEX idx_splits_cat ON transaction_splits(category_id);
 "#;
 
 // Protected ("system") categories. Adds a boolean flag so balance corrections
