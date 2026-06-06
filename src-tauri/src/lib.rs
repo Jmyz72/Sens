@@ -1193,3 +1193,183 @@ mod tests {
         assert_eq!(acc.balance_cents, 9000, "balance must come from postings, not the transaction header");
     }
 }
+
+#[cfg(test)]
+mod seed_catalog {
+    //! Generates src/generated/seed-catalog.json from a freshly migrated+seeded
+    //! in-memory DB and fails CI if the committed file is stale. The browser mock
+    //! consumes that JSON, so this is the single source of truth for mock seed data.
+    use crate::db::open_in_memory;
+    use rusqlite::Connection;
+    use serde::Serialize;
+    use std::path::PathBuf;
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SubtypeRow {
+        key: String,
+        label: String,
+        #[serde(rename = "type")]
+        ty: String,
+        group: String,
+        sort_order: i64,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct TemplateRow {
+        key: String,
+        name: String,
+        group_name: String,
+        default_subtype: String,
+        sort_order: i64,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct CategoryRow {
+        name: String,
+        kind: String,
+        emoji: String,
+        color: Option<String>,
+        parent_name: Option<String>,
+        is_system: bool,
+        sort_order: i64,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SeedCatalog {
+        subtypes: Vec<SubtypeRow>,
+        templates: Vec<TemplateRow>,
+        categories: Vec<CategoryRow>,
+    }
+
+    fn catalog_path() -> PathBuf {
+        PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../src/generated/seed-catalog.json"
+        ))
+    }
+
+    fn build(conn: &Connection) -> SeedCatalog {
+        let subtypes = conn
+            .prepare(
+                "SELECT key, label, type, account_group, sort_order
+                 FROM account_subtypes ORDER BY sort_order, key",
+            )
+            .unwrap()
+            .query_map([], |r| {
+                Ok(SubtypeRow {
+                    key: r.get(0)?,
+                    label: r.get(1)?,
+                    ty: r.get(2)?,
+                    group: r.get(3)?,
+                    sort_order: r.get(4)?,
+                })
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        let templates = conn
+            .prepare(
+                "SELECT key, name, group_name, default_subtype, sort_order
+                 FROM account_templates ORDER BY sort_order, key",
+            )
+            .unwrap()
+            .query_map([], |r| {
+                Ok(TemplateRow {
+                    key: r.get(0)?,
+                    name: r.get(1)?,
+                    group_name: r.get(2)?,
+                    default_subtype: r.get(3)?,
+                    sort_order: r.get(4)?,
+                })
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        // Top-level rows (parent_id IS NULL) sort first so the mock can resolve a
+        // child's parent by (parentName, kind) in a second pass.
+        let categories = conn
+            .prepare(
+                "SELECT c.name, c.kind, c.emoji, c.color, p.name AS parent_name,
+                        c.is_system, c.sort_order
+                 FROM categories c
+                 LEFT JOIN categories p ON c.parent_id = p.id
+                 ORDER BY (c.parent_id IS NOT NULL), c.kind, c.sort_order, c.name",
+            )
+            .unwrap()
+            .query_map([], |r| {
+                Ok(CategoryRow {
+                    name: r.get(0)?,
+                    kind: r.get(1)?,
+                    emoji: r.get(2)?,
+                    color: r.get(3)?,
+                    parent_name: r.get(4)?,
+                    is_system: r.get::<_, i64>(5)? != 0,
+                    sort_order: r.get(6)?,
+                })
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        SeedCatalog {
+            subtypes,
+            templates,
+            categories,
+        }
+    }
+
+    fn generate(conn: &Connection) -> String {
+        let mut s = serde_json::to_string_pretty(&build(conn)).unwrap();
+        s.push('\n');
+        s
+    }
+
+    #[test]
+    fn seed_catalog_is_non_empty() {
+        let conn = open_in_memory().unwrap();
+        let catalog = build(&conn);
+        assert_eq!(catalog.subtypes.len(), 16, "expected 16 account subtypes");
+        assert!(
+            catalog.templates.len() > 40,
+            "expected the full provider template catalog"
+        );
+        assert!(
+            catalog.categories.len() > 100,
+            "expected the full category + subcategory tree"
+        );
+        // The two protected Adjustment system categories must be present.
+        assert_eq!(
+            catalog.categories.iter().filter(|c| c.is_system).count(),
+            2,
+            "expected exactly two system (Adjustment) categories"
+        );
+    }
+
+    #[test]
+    fn seed_catalog_json_is_fresh() {
+        let conn = open_in_memory().unwrap();
+        let generated = generate(&conn);
+        let path = catalog_path();
+        if std::env::var("UPDATE_SEED_CATALOG").is_ok() {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, &generated).unwrap();
+            return;
+        }
+        let committed = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!(
+                "seed catalog missing at {} ({e}) — run `npm run gen:seed-catalog` and commit it",
+                path.display()
+            )
+        });
+        assert_eq!(
+            committed, generated,
+            "seed catalog is stale — run `npm run gen:seed-catalog` and commit src/generated/seed-catalog.json"
+        );
+    }
+}

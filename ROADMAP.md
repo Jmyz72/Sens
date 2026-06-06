@@ -14,7 +14,7 @@ The next minor is decided **at release time** (`npm run release -- minor`), so
 re-ordering, inserting, or dropping a phase never renumbers the rest. Versions live
 in the Shipped table below *after* a phase ships, never before.
 
-**Last shipped:** `v0.6.0` — Transactions screen redesign ("Evolved List") ·
+**Last shipped:** `v0.9.0` — Category splits ·
 **Next up:** Credit & debt behavior ·
 **Later:** the climb to `v1.0.0`
 
@@ -133,15 +133,16 @@ Accounts screen and the dashboard (`list_accounts` / `get_account` /
       (no pagination UI); once histories grow past that, add range-aware paging
 — spec: _TBD_
 
-### ⚪ Rust↔mock drift guard
-The subtype taxonomy and default category tree are hand-maintained in **both** the
-Rust seed (`db/seed.rs`, migration 002) and `src/client/mock.ts` (`SUBTYPE_ROWS`,
-`CAT_SEED`/`SUB_SEED`); the mock also re-implements service validation (e.g. the
-category-kind check added in v0.6.0). CLAUDE.md already warns every behavior change
-must land in both places — a standing drift hazard.
-- [ ] CI check (or shared generated JSON) asserting the mock's taxonomy/seed/validation
-      matches the Rust source, so divergence fails the build
-— spec: _TBD_
+### 🟡 Rust↔mock drift guard
+The mock's seed data (account subtypes, provider templates, category tree) is now
+**generated** from the Rust source into `src/generated/seed-catalog.json`.
+`mock.ts` and `providers.ts` consume that JSON directly — the hand-maintained
+`SUBTYPE_ROWS`, `CAT_SEED`/`SUB_SEED`, and `PROVIDER_GROUPS` arrays are deleted.
+Guarded by the `seed_catalog_json_is_fresh` cargo test, which CI already runs
+(`cargo test --lib --locked`). Regenerate via `npm run gen:seed-catalog`.
+- [x] CI check (shared generated JSON) asserting the mock's taxonomy/seed matches
+      the Rust source, so divergence fails the build
+— spec: `docs/superpowers/specs/2026-06-06-rust-mock-seed-drift-guard-design.md`
 
 ### ⚪ Test coverage — UI & integration
 Backend services/repos and frontend libs are well covered; there are **no React
