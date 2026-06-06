@@ -14,7 +14,7 @@ The next minor is decided **at release time** (`npm run release -- minor`), so
 re-ordering, inserting, or dropping a phase never renumbers the rest. Versions live
 in the Shipped table below *after* a phase ships, never before.
 
-**Last shipped:** `v0.6.0` — Transactions screen redesign ("Evolved List") ·
+**Last shipped:** `v0.9.0` — Category splits ·
 **Next up:** Credit & debt behavior ·
 **Later:** the climb to `v1.0.0`
 

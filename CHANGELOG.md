@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Internal: the browser mock's seed data (account subtypes, provider templates,
+  and the category tree) is now generated from the Rust source into
+  `src/generated/seed-catalog.json` and consumed by the mock, so it can no longer
+  silently drift from the packaged app. A `cargo test` (`seed_catalog_json_is_fresh`)
+  fails CI if the artifact is stale; regenerate with `npm run gen:seed-catalog`
+  after editing the Rust seed.
+
 ## [0.9.0] — 2026-06-06
 
 ### Added
