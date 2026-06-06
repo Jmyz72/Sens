@@ -1,0 +1,1701 @@
+{
+  "subtypes": [
+    {
+      "key": "cash",
+      "label": "Cash",
+      "type": "fund",
+      "group": "own",
+      "sortOrder": 0
+    },
+    {
+      "key": "ewallet",
+      "label": "E-wallet",
+      "type": "fund",
+      "group": "own",
+      "sortOrder": 1
+    },
+    {
+      "key": "savings",
+      "label": "Savings account",
+      "type": "fund",
+      "group": "own",
+      "sortOrder": 2
+    },
+    {
+      "key": "current",
+      "label": "Current / Checking",
+      "type": "fund",
+      "group": "own",
+      "sortOrder": 3
+    },
+    {
+      "key": "fixed-deposit",
+      "label": "Fixed deposit",
+      "type": "financial",
+      "group": "own",
+      "sortOrder": 4
+    },
+    {
+      "key": "investment",
+      "label": "Investment / Brokerage",
+      "type": "financial",
+      "group": "own",
+      "sortOrder": 5
+    },
+    {
+      "key": "unit-trust",
+      "label": "Unit trust / ASNB",
+      "type": "financial",
+      "group": "own",
+      "sortOrder": 6
+    },
+    {
+      "key": "crypto",
+      "label": "Crypto",
+      "type": "financial",
+      "group": "own",
+      "sortOrder": 7
+    },
+    {
+      "key": "lent",
+      "label": "Lent to someone (IOU)",
+      "type": "receivable",
+      "group": "own",
+      "sortOrder": 8
+    },
+    {
+      "key": "borrowed",
+      "label": "Borrowed from someone",
+      "type": "payable",
+      "group": "owe",
+      "sortOrder": 9
+    },
+    {
+      "key": "credit-card",
+      "label": "Credit card",
+      "type": "credit",
+      "group": "owe",
+      "sortOrder": 10
+    },
+    {
+      "key": "bnpl",
+      "label": "BNPL",
+      "type": "credit",
+      "group": "owe",
+      "sortOrder": 11
+    },
+    {
+      "key": "personal-loan",
+      "label": "Personal loan",
+      "type": "credit",
+      "group": "owe",
+      "sortOrder": 12
+    },
+    {
+      "key": "mortgage",
+      "label": "Mortgage",
+      "type": "credit",
+      "group": "owe",
+      "sortOrder": 13
+    },
+    {
+      "key": "car-loan",
+      "label": "Car / Hire-purchase loan",
+      "type": "credit",
+      "group": "owe",
+      "sortOrder": 14
+    },
+    {
+      "key": "other-debt",
+      "label": "Other debt",
+      "type": "credit",
+      "group": "owe",
+      "sortOrder": 15
+    }
+  ],
+  "templates": [
+    {
+      "key": "cash",
+      "name": "Cash",
+      "groupName": "Cash",
+      "defaultSubtype": "cash",
+      "sortOrder": -1
+    },
+    {
+      "key": "maybank",
+      "name": "Maybank",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 0
+    },
+    {
+      "key": "cimb",
+      "name": "CIMB",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 1
+    },
+    {
+      "key": "public-bank",
+      "name": "Public Bank",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 2
+    },
+    {
+      "key": "rhb",
+      "name": "RHB",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 3
+    },
+    {
+      "key": "hong-leong-bank",
+      "name": "Hong Leong Bank",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 4
+    },
+    {
+      "key": "ambank",
+      "name": "AmBank",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 5
+    },
+    {
+      "key": "bank-islam",
+      "name": "Bank Islam",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 6
+    },
+    {
+      "key": "bank-rakyat",
+      "name": "Bank Rakyat",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 7
+    },
+    {
+      "key": "bank-muamalat",
+      "name": "Bank Muamalat",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 8
+    },
+    {
+      "key": "affin-bank",
+      "name": "Affin Bank",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 9
+    },
+    {
+      "key": "alliance-bank",
+      "name": "Alliance Bank",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 10
+    },
+    {
+      "key": "bsn",
+      "name": "BSN",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 11
+    },
+    {
+      "key": "agrobank",
+      "name": "Agrobank",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 12
+    },
+    {
+      "key": "mbsb-bank",
+      "name": "MBSB Bank",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 13
+    },
+    {
+      "key": "al-rajhi-bank",
+      "name": "Al Rajhi Bank",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 14
+    },
+    {
+      "key": "ocbc",
+      "name": "OCBC",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 15
+    },
+    {
+      "key": "uob",
+      "name": "UOB",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 16
+    },
+    {
+      "key": "hsbc",
+      "name": "HSBC",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 17
+    },
+    {
+      "key": "standard-chartered",
+      "name": "Standard Chartered",
+      "groupName": "Banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 18
+    },
+    {
+      "key": "gxbank",
+      "name": "GXBank",
+      "groupName": "Digital banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 19
+    },
+    {
+      "key": "boost-bank",
+      "name": "Boost Bank",
+      "groupName": "Digital banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 20
+    },
+    {
+      "key": "aeon-bank",
+      "name": "AEON Bank",
+      "groupName": "Digital banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 21
+    },
+    {
+      "key": "kaf-digital-bank",
+      "name": "KAF Digital Bank",
+      "groupName": "Digital banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 22
+    },
+    {
+      "key": "ryt-bank",
+      "name": "Ryt Bank",
+      "groupName": "Digital banks",
+      "defaultSubtype": "savings",
+      "sortOrder": 23
+    },
+    {
+      "key": "tng-ewallet",
+      "name": "Touch 'n Go eWallet",
+      "groupName": "E-wallets",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 24
+    },
+    {
+      "key": "grabpay",
+      "name": "GrabPay",
+      "groupName": "E-wallets",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 25
+    },
+    {
+      "key": "boost",
+      "name": "Boost",
+      "groupName": "E-wallets",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 26
+    },
+    {
+      "key": "shopeepay",
+      "name": "ShopeePay",
+      "groupName": "E-wallets",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 27
+    },
+    {
+      "key": "mae",
+      "name": "MAE",
+      "groupName": "E-wallets",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 28
+    },
+    {
+      "key": "setel",
+      "name": "Setel",
+      "groupName": "E-wallets",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 29
+    },
+    {
+      "key": "bigpay",
+      "name": "BigPay",
+      "groupName": "E-wallets",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 30
+    },
+    {
+      "key": "lazada-wallet",
+      "name": "Lazada Wallet",
+      "groupName": "E-wallets",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 31
+    },
+    {
+      "key": "atome",
+      "name": "Atome",
+      "groupName": "Buy now, pay later",
+      "defaultSubtype": "bnpl",
+      "sortOrder": 32
+    },
+    {
+      "key": "shopee-paylater",
+      "name": "Shopee PayLater",
+      "groupName": "Buy now, pay later",
+      "defaultSubtype": "bnpl",
+      "sortOrder": 33
+    },
+    {
+      "key": "grab-paylater",
+      "name": "Grab PayLater",
+      "groupName": "Buy now, pay later",
+      "defaultSubtype": "bnpl",
+      "sortOrder": 34
+    },
+    {
+      "key": "boost-payflex",
+      "name": "Boost PayFlex",
+      "groupName": "Buy now, pay later",
+      "defaultSubtype": "bnpl",
+      "sortOrder": 35
+    },
+    {
+      "key": "riipay",
+      "name": "Riipay",
+      "groupName": "Buy now, pay later",
+      "defaultSubtype": "bnpl",
+      "sortOrder": 36
+    },
+    {
+      "key": "asnb",
+      "name": "ASNB",
+      "groupName": "Investment",
+      "defaultSubtype": "investment",
+      "sortOrder": 37
+    },
+    {
+      "key": "stashaway",
+      "name": "StashAway",
+      "groupName": "Investment",
+      "defaultSubtype": "investment",
+      "sortOrder": 38
+    },
+    {
+      "key": "versa",
+      "name": "Versa",
+      "groupName": "Investment",
+      "defaultSubtype": "investment",
+      "sortOrder": 39
+    },
+    {
+      "key": "wahed",
+      "name": "Wahed",
+      "groupName": "Investment",
+      "defaultSubtype": "investment",
+      "sortOrder": 40
+    },
+    {
+      "key": "rakuten-trade",
+      "name": "Rakuten Trade",
+      "groupName": "Investment",
+      "defaultSubtype": "investment",
+      "sortOrder": 41
+    },
+    {
+      "key": "moomoo",
+      "name": "Moomoo",
+      "groupName": "Investment",
+      "defaultSubtype": "investment",
+      "sortOrder": 42
+    },
+    {
+      "key": "kdi",
+      "name": "KDI",
+      "groupName": "Investment",
+      "defaultSubtype": "investment",
+      "sortOrder": 43
+    },
+    {
+      "key": "paypal",
+      "name": "PayPal",
+      "groupName": "Global fintech",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 44
+    },
+    {
+      "key": "wise",
+      "name": "Wise",
+      "groupName": "Global fintech",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 45
+    },
+    {
+      "key": "revolut",
+      "name": "Revolut",
+      "groupName": "Global fintech",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 46
+    },
+    {
+      "key": "n26",
+      "name": "N26",
+      "groupName": "Global fintech",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 47
+    },
+    {
+      "key": "payoneer",
+      "name": "Payoneer",
+      "groupName": "Global fintech",
+      "defaultSubtype": "ewallet",
+      "sortOrder": 48
+    },
+    {
+      "key": "luno",
+      "name": "Luno",
+      "groupName": "Crypto",
+      "defaultSubtype": "crypto",
+      "sortOrder": 49
+    }
+  ],
+  "categories": [
+    {
+      "name": "Food",
+      "kind": "expense",
+      "emoji": "🍔",
+      "color": "#e0a13c",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 10
+    },
+    {
+      "name": "Groceries",
+      "kind": "expense",
+      "emoji": "🛒",
+      "color": "#5aa66d",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 11
+    },
+    {
+      "name": "Transport",
+      "kind": "expense",
+      "emoji": "🚗",
+      "color": "#8b7bd8",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 12
+    },
+    {
+      "name": "Bills",
+      "kind": "expense",
+      "emoji": "🧾",
+      "color": "#56b3c4",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 13
+    },
+    {
+      "name": "Family & Dependents",
+      "kind": "expense",
+      "emoji": "👪",
+      "color": "#e08a5c",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 14
+    },
+    {
+      "name": "Kids",
+      "kind": "expense",
+      "emoji": "🧸",
+      "color": "#f0a868",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 15
+    },
+    {
+      "name": "Insurance & Protection",
+      "kind": "expense",
+      "emoji": "🛡️",
+      "color": "#e96680",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 16
+    },
+    {
+      "name": "Health",
+      "kind": "expense",
+      "emoji": "🏥",
+      "color": "#f0708c",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 17
+    },
+    {
+      "name": "Personal Care",
+      "kind": "expense",
+      "emoji": "💈",
+      "color": "#d98fb0",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 18
+    },
+    {
+      "name": "Shopping",
+      "kind": "expense",
+      "emoji": "🛍",
+      "color": "#d9728f",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 19
+    },
+    {
+      "name": "Home & Living",
+      "kind": "expense",
+      "emoji": "🏡",
+      "color": "#c98a6a",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 20
+    },
+    {
+      "name": "Entertainment",
+      "kind": "expense",
+      "emoji": "🎬",
+      "color": "#a78bfa",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 21
+    },
+    {
+      "name": "Education",
+      "kind": "expense",
+      "emoji": "📚",
+      "color": "#5b8def",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 22
+    },
+    {
+      "name": "Travel",
+      "kind": "expense",
+      "emoji": "✈",
+      "color": "#33c9d6",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 23
+    },
+    {
+      "name": "Donations & Religious",
+      "kind": "expense",
+      "emoji": "🙏",
+      "color": "#b39bd8",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 24
+    },
+    {
+      "name": "Government & Fees",
+      "kind": "expense",
+      "emoji": "🏛️",
+      "color": "#7a93c4",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 25
+    },
+    {
+      "name": "Pets",
+      "kind": "expense",
+      "emoji": "🐾",
+      "color": "#9ab06a",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 26
+    },
+    {
+      "name": "Fees & Charges",
+      "kind": "expense",
+      "emoji": "💳",
+      "color": "#9aa4b2",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 27
+    },
+    {
+      "name": "Other Expense",
+      "kind": "expense",
+      "emoji": "💸",
+      "color": "#9aa4b2",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 28
+    },
+    {
+      "name": "Adjustment",
+      "kind": "expense",
+      "emoji": "⚖️",
+      "color": "#9aa4b2",
+      "parentName": null,
+      "isSystem": true,
+      "sortOrder": 999
+    },
+    {
+      "name": "Salary",
+      "kind": "income",
+      "emoji": "💰",
+      "color": "#46d39a",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Bonus",
+      "kind": "income",
+      "emoji": "🎉",
+      "color": "#3fcf8e",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Freelance",
+      "kind": "income",
+      "emoji": "💻",
+      "color": "#5aa66d",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Business",
+      "kind": "income",
+      "emoji": "🏪",
+      "color": "#4bd699",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Rental Income",
+      "kind": "income",
+      "emoji": "🏘️",
+      "color": "#5bddaa",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 4
+    },
+    {
+      "name": "Government & Aid",
+      "kind": "income",
+      "emoji": "🏛️",
+      "color": "#37c886",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 5
+    },
+    {
+      "name": "Cashback & Rewards",
+      "kind": "income",
+      "emoji": "🪙",
+      "color": "#66b079",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 6
+    },
+    {
+      "name": "Gift",
+      "kind": "income",
+      "emoji": "🎁",
+      "color": "#56b3c4",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 7
+    },
+    {
+      "name": "Other Income",
+      "kind": "income",
+      "emoji": "➕",
+      "color": "#7bbf8f",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 8
+    },
+    {
+      "name": "Adjustment",
+      "kind": "income",
+      "emoji": "⚖️",
+      "color": "#9aa4b2",
+      "parentName": null,
+      "isSystem": true,
+      "sortOrder": 999
+    },
+    {
+      "name": "Transfer",
+      "kind": "transfer",
+      "emoji": "🔁",
+      "color": "#9aa4b2",
+      "parentName": null,
+      "isSystem": false,
+      "sortOrder": 30
+    },
+    {
+      "name": "Bank charges",
+      "kind": "expense",
+      "emoji": "🏦",
+      "color": "#9aa4b2",
+      "parentName": "Fees & Charges",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Clothing",
+      "kind": "expense",
+      "emoji": "👗",
+      "color": "#d9728f",
+      "parentName": "Shopping",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Courses",
+      "kind": "expense",
+      "emoji": "🎓",
+      "color": "#5b8def",
+      "parentName": "Education",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Diapers/Milk",
+      "kind": "expense",
+      "emoji": "🍼",
+      "color": "#f0a868",
+      "parentName": "Kids",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Dining out",
+      "kind": "expense",
+      "emoji": "🍽️",
+      "color": "#e0a13c",
+      "parentName": "Food",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Flights",
+      "kind": "expense",
+      "emoji": "✈️",
+      "color": "#33c9d6",
+      "parentName": "Travel",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Food",
+      "kind": "expense",
+      "emoji": "🦴",
+      "color": "#9ab06a",
+      "parentName": "Pets",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Fuel",
+      "kind": "expense",
+      "emoji": "⛽",
+      "color": "#8b7bd8",
+      "parentName": "Transport",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Furniture",
+      "kind": "expense",
+      "emoji": "🛋️",
+      "color": "#c98a6a",
+      "parentName": "Home & Living",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Haircut/Salon",
+      "kind": "expense",
+      "emoji": "💇",
+      "color": "#d98fb0",
+      "parentName": "Personal Care",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Life/Medical",
+      "kind": "expense",
+      "emoji": "🏥",
+      "color": "#e96680",
+      "parentName": "Insurance & Protection",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Movies",
+      "kind": "expense",
+      "emoji": "🎬",
+      "color": "#a78bfa",
+      "parentName": "Entertainment",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Parents' allowance",
+      "kind": "expense",
+      "emoji": "👴",
+      "color": "#e08a5c",
+      "parentName": "Family & Dependents",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Pharmacy",
+      "kind": "expense",
+      "emoji": "💊",
+      "color": "#f0708c",
+      "parentName": "Health",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Rent",
+      "kind": "expense",
+      "emoji": "🏠",
+      "color": "#56b3c4",
+      "parentName": "Bills",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Road tax",
+      "kind": "expense",
+      "emoji": "🚗",
+      "color": "#7a93c4",
+      "parentName": "Government & Fees",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Supermarket",
+      "kind": "expense",
+      "emoji": "🛒",
+      "color": "#5aa66d",
+      "parentName": "Groceries",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Zakat",
+      "kind": "expense",
+      "emoji": "🕌",
+      "color": "#b39bd8",
+      "parentName": "Donations & Religious",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "ATM/transfer fees",
+      "kind": "expense",
+      "emoji": "🏧",
+      "color": "#a6afbc",
+      "parentName": "Fees & Charges",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Accommodation",
+      "kind": "expense",
+      "emoji": "🏨",
+      "color": "#45d0dc",
+      "parentName": "Travel",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Appliances",
+      "kind": "expense",
+      "emoji": "🔌",
+      "color": "#d1977a",
+      "parentName": "Home & Living",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Books",
+      "kind": "expense",
+      "emoji": "📖",
+      "color": "#6b97f1",
+      "parentName": "Education",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Car (Takaful)",
+      "kind": "expense",
+      "emoji": "🚗",
+      "color": "#ee7891",
+      "parentName": "Insurance & Protection",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Childcare/Nursery",
+      "kind": "expense",
+      "emoji": "👶",
+      "color": "#e6976c",
+      "parentName": "Family & Dependents",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Clinic/Doctor",
+      "kind": "expense",
+      "emoji": "🩺",
+      "color": "#f37e98",
+      "parentName": "Health",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Electricity",
+      "kind": "expense",
+      "emoji": "💡",
+      "color": "#5fbecf",
+      "parentName": "Bills",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Electronics",
+      "kind": "expense",
+      "emoji": "🔌",
+      "color": "#e07f9a",
+      "parentName": "Shopping",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Games",
+      "kind": "expense",
+      "emoji": "🎮",
+      "color": "#b39bfb",
+      "parentName": "Entertainment",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Mamak/Kopitiam",
+      "kind": "expense",
+      "emoji": "🍜",
+      "color": "#dba24a",
+      "parentName": "Food",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Saman/Summons",
+      "kind": "expense",
+      "emoji": "🚨",
+      "color": "#8aa0cc",
+      "parentName": "Government & Fees",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Skincare/Cosmetics",
+      "kind": "expense",
+      "emoji": "💄",
+      "color": "#e09cbb",
+      "parentName": "Personal Care",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Tithe/Offering",
+      "kind": "expense",
+      "emoji": "⛪",
+      "color": "#bda8e0",
+      "parentName": "Donations & Religious",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "TnG/Toll reload",
+      "kind": "expense",
+      "emoji": "🛣️",
+      "color": "#9a8be0",
+      "parentName": "Transport",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Toys",
+      "kind": "expense",
+      "emoji": "🧸",
+      "color": "#f3b67e",
+      "parentName": "Kids",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Vet",
+      "kind": "expense",
+      "emoji": "🐶",
+      "color": "#a8bb7c",
+      "parentName": "Pets",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Wet market",
+      "kind": "expense",
+      "emoji": "🐟",
+      "color": "#6cb47d",
+      "parentName": "Groceries",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Activities",
+      "kind": "expense",
+      "emoji": "🏝️",
+      "color": "#28bdca",
+      "parentName": "Travel",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Activities/Classes",
+      "kind": "expense",
+      "emoji": "⚽",
+      "color": "#ed9a54",
+      "parentName": "Kids",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Coffee",
+      "kind": "expense",
+      "emoji": "☕",
+      "color": "#c08a4a",
+      "parentName": "Food",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Convenience store",
+      "kind": "expense",
+      "emoji": "🏪",
+      "color": "#4f9862",
+      "parentName": "Groceries",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Dental",
+      "kind": "expense",
+      "emoji": "🦷",
+      "color": "#ee6a87",
+      "parentName": "Health",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Events",
+      "kind": "expense",
+      "emoji": "🎟️",
+      "color": "#9b7df9",
+      "parentName": "Entertainment",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Grooming",
+      "kind": "expense",
+      "emoji": "✂️",
+      "color": "#8da55e",
+      "parentName": "Pets",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Home",
+      "kind": "expense",
+      "emoji": "🏠",
+      "color": "#e35a76",
+      "parentName": "Insurance & Protection",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Home",
+      "kind": "expense",
+      "emoji": "🛋️",
+      "color": "#cf6685",
+      "parentName": "Shopping",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "JPJ/Immigration",
+      "kind": "expense",
+      "emoji": "🛂",
+      "color": "#6f88bc",
+      "parentName": "Government & Fees",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Late fees",
+      "kind": "expense",
+      "emoji": "⏰",
+      "color": "#8e99a8",
+      "parentName": "Fees & Charges",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Parking & Tolls",
+      "kind": "expense",
+      "emoji": "🅿️",
+      "color": "#9a8be0",
+      "parentName": "Transport",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Repairs/Maintenance",
+      "kind": "expense",
+      "emoji": "🔧",
+      "color": "#c08160",
+      "parentName": "Home & Living",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "School fees",
+      "kind": "expense",
+      "emoji": "🏫",
+      "color": "#da7f50",
+      "parentName": "Family & Dependents",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Sedekah/Charity",
+      "kind": "expense",
+      "emoji": "🤲",
+      "color": "#a78ed0",
+      "parentName": "Donations & Religious",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Spa/Grooming",
+      "kind": "expense",
+      "emoji": "💆",
+      "color": "#d385a8",
+      "parentName": "Personal Care",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Tuition",
+      "kind": "expense",
+      "emoji": "🧑",
+      "color": "#4f83ed",
+      "parentName": "Education",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Water",
+      "kind": "expense",
+      "emoji": "🚿",
+      "color": "#4aa6b8",
+      "parentName": "Bills",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Bubble tea/Drinks",
+      "kind": "expense",
+      "emoji": "🧋",
+      "color": "#e0b060",
+      "parentName": "Food",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Cleaning supplies",
+      "kind": "expense",
+      "emoji": "🧼",
+      "color": "#d9a288",
+      "parentName": "Home & Living",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Gifts",
+      "kind": "expense",
+      "emoji": "🎁",
+      "color": "#e58aa3",
+      "parentName": "Shopping",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Hobbies",
+      "kind": "expense",
+      "emoji": "🎨",
+      "color": "#bfa9fc",
+      "parentName": "Entertainment",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Internet",
+      "kind": "expense",
+      "emoji": "📶",
+      "color": "#63c5d6",
+      "parentName": "Bills",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Laundry",
+      "kind": "expense",
+      "emoji": "🧺",
+      "color": "#e6a8c4",
+      "parentName": "Personal Care",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Maid/Helper",
+      "kind": "expense",
+      "emoji": "🧹",
+      "color": "#eba074",
+      "parentName": "Family & Dependents",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Optical",
+      "kind": "expense",
+      "emoji": "👓",
+      "color": "#f58aa2",
+      "parentName": "Health",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Passport/Visa",
+      "kind": "expense",
+      "emoji": "📘",
+      "color": "#97aad4",
+      "parentName": "Government & Fees",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Ride-hailing",
+      "kind": "expense",
+      "emoji": "🚕",
+      "color": "#7d6dd0",
+      "parentName": "Transport",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "School supplies",
+      "kind": "expense",
+      "emoji": "✏️",
+      "color": "#f5be8c",
+      "parentName": "Kids",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Service charge",
+      "kind": "expense",
+      "emoji": "🧾",
+      "color": "#b2bac6",
+      "parentName": "Fees & Charges",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Supplies",
+      "kind": "expense",
+      "emoji": "🐾",
+      "color": "#b3c48e",
+      "parentName": "Pets",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Temple/Church",
+      "kind": "expense",
+      "emoji": "🛕",
+      "color": "#c7b3e8",
+      "parentName": "Donations & Religious",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Travel",
+      "kind": "expense",
+      "emoji": "✈️",
+      "color": "#f0859b",
+      "parentName": "Insurance & Protection",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Delivery/Takeaway",
+      "kind": "expense",
+      "emoji": "🛵",
+      "color": "#d99a3c",
+      "parentName": "Food",
+      "isSystem": false,
+      "sortOrder": 4
+    },
+    {
+      "name": "Mental health",
+      "kind": "expense",
+      "emoji": "🧠",
+      "color": "#f0738e",
+      "parentName": "Health",
+      "isSystem": false,
+      "sortOrder": 4
+    },
+    {
+      "name": "Mobile",
+      "kind": "expense",
+      "emoji": "📱",
+      "color": "#52aebf",
+      "parentName": "Bills",
+      "isSystem": false,
+      "sortOrder": 4
+    },
+    {
+      "name": "Pocket money",
+      "kind": "expense",
+      "emoji": "💵",
+      "color": "#d97848",
+      "parentName": "Family & Dependents",
+      "isSystem": false,
+      "sortOrder": 4
+    },
+    {
+      "name": "Public transit",
+      "kind": "expense",
+      "emoji": "🚇",
+      "color": "#a89bea",
+      "parentName": "Transport",
+      "isSystem": false,
+      "sortOrder": 4
+    },
+    {
+      "name": "Renovation",
+      "kind": "expense",
+      "emoji": "🛠️",
+      "color": "#b87a58",
+      "parentName": "Home & Living",
+      "isSystem": false,
+      "sortOrder": 4
+    },
+    {
+      "name": "Astro/TV",
+      "kind": "expense",
+      "emoji": "📡",
+      "color": "#4f9fb0",
+      "parentName": "Bills",
+      "isSystem": false,
+      "sortOrder": 5
+    },
+    {
+      "name": "Car maintenance",
+      "kind": "expense",
+      "emoji": "🔧",
+      "color": "#6f5fc0",
+      "parentName": "Transport",
+      "isSystem": false,
+      "sortOrder": 5
+    },
+    {
+      "name": "Fitness",
+      "kind": "expense",
+      "emoji": "🏋️",
+      "color": "#f58aa2",
+      "parentName": "Health",
+      "isSystem": false,
+      "sortOrder": 5
+    },
+    {
+      "name": "Snacks",
+      "kind": "expense",
+      "emoji": "🍪",
+      "color": "#e3b15c",
+      "parentName": "Food",
+      "isSystem": false,
+      "sortOrder": 5
+    },
+    {
+      "name": "Subscriptions",
+      "kind": "expense",
+      "emoji": "📺",
+      "color": "#48a2b4",
+      "parentName": "Bills",
+      "isSystem": false,
+      "sortOrder": 6
+    },
+    {
+      "name": "Annual bonus",
+      "kind": "income",
+      "emoji": "🎊",
+      "color": "#3fcf8e",
+      "parentName": "Bonus",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Base pay",
+      "kind": "income",
+      "emoji": "💵",
+      "color": "#46d39a",
+      "parentName": "Salary",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Card cashback",
+      "kind": "income",
+      "emoji": "💳",
+      "color": "#66b079",
+      "parentName": "Cashback & Rewards",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Cash gift",
+      "kind": "income",
+      "emoji": "💵",
+      "color": "#56b3c4",
+      "parentName": "Gift",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Projects",
+      "kind": "income",
+      "emoji": "💻",
+      "color": "#5aa66d",
+      "parentName": "Freelance",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Property rent",
+      "kind": "income",
+      "emoji": "🏠",
+      "color": "#5bddaa",
+      "parentName": "Rental Income",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "STR/BR1M",
+      "kind": "income",
+      "emoji": "🤲",
+      "color": "#37c886",
+      "parentName": "Government & Aid",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Sales",
+      "kind": "income",
+      "emoji": "💵",
+      "color": "#4bd699",
+      "parentName": "Business",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Angpow/Duit raya",
+      "kind": "income",
+      "emoji": "🧧",
+      "color": "#63c0cf",
+      "parentName": "Gift",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Consulting",
+      "kind": "income",
+      "emoji": "💼",
+      "color": "#66b079",
+      "parentName": "Freelance",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Overtime",
+      "kind": "income",
+      "emoji": "⏰",
+      "color": "#52d8a2",
+      "parentName": "Salary",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Performance",
+      "kind": "income",
+      "emoji": "⭐",
+      "color": "#52d8a2",
+      "parentName": "Bonus",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Room rent",
+      "kind": "income",
+      "emoji": "🛏️",
+      "color": "#66e0b4",
+      "parentName": "Rental Income",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Side hustle",
+      "kind": "income",
+      "emoji": "🛠️",
+      "color": "#5bddaa",
+      "parentName": "Business",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Tax refund (LHDN)",
+      "kind": "income",
+      "emoji": "🧾",
+      "color": "#46d39a",
+      "parentName": "Government & Aid",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "e-Wallet rewards",
+      "kind": "income",
+      "emoji": "📲",
+      "color": "#73bb8a",
+      "parentName": "Cashback & Rewards",
+      "isSystem": false,
+      "sortOrder": 1
+    },
+    {
+      "name": "Allowances",
+      "kind": "income",
+      "emoji": "🧾",
+      "color": "#3fcf8e",
+      "parentName": "Salary",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Asset rent",
+      "kind": "income",
+      "emoji": "🚗",
+      "color": "#4fd6a4",
+      "parentName": "Rental Income",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Festive/THR",
+      "kind": "income",
+      "emoji": "🧧",
+      "color": "#5bddaa",
+      "parentName": "Bonus",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Online/Dropship",
+      "kind": "income",
+      "emoji": "📦",
+      "color": "#3fcf8e",
+      "parentName": "Business",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Points redeemed",
+      "kind": "income",
+      "emoji": "🎁",
+      "color": "#5aa66d",
+      "parentName": "Cashback & Rewards",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Subsidies",
+      "kind": "income",
+      "emoji": "🎫",
+      "color": "#2fbf71",
+      "parentName": "Government & Aid",
+      "isSystem": false,
+      "sortOrder": 2
+    },
+    {
+      "name": "Commission",
+      "kind": "income",
+      "emoji": "📊",
+      "color": "#5bddaa",
+      "parentName": "Salary",
+      "isSystem": false,
+      "sortOrder": 3
+    },
+    {
+      "name": "Own accounts",
+      "kind": "transfer",
+      "emoji": "🔁",
+      "color": "#9aa4b2",
+      "parentName": "Transfer",
+      "isSystem": false,
+      "sortOrder": 0
+    },
+    {
+      "name": "Savings transfer",
+      "kind": "transfer",
+      "emoji": "💰",
+      "color": "#a6afbc",
+      "parentName": "Transfer",
+      "isSystem": false,
+      "sortOrder": 1
+    }
+  ]
+}
