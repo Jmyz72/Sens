@@ -15,7 +15,7 @@ import type {
   DashboardSummary,
   Transaction,
 } from "../types";
-import { PROVIDER_GROUPS } from "../lib/providers";
+import catalog from "../generated/seed-catalog.json";
 import { postingsFor } from "../lib/kinds";
 
 const fail = (code: string, message: string): never => {
@@ -26,31 +26,27 @@ const now = () => new Date().toISOString();
 const today = () => new Date().toISOString().slice(0, 10);
 
 // ── taxonomy ──
-const SUBTYPE_ROWS: [string, string, AccountTypeName, AccountGroup][] = [
-  ["cash","Cash","fund","own"],["ewallet","E-wallet","fund","own"],
-  ["savings","Savings account","fund","own"],["current","Current / Checking","fund","own"],
-  ["fixed-deposit","Fixed deposit","financial","own"],["investment","Investment / Brokerage","financial","own"],
-  ["unit-trust","Unit trust / ASNB","financial","own"],["crypto","Crypto","financial","own"],
-  ["lent","Lent to someone (IOU)","receivable","own"],["borrowed","Borrowed from someone","payable","owe"],
-  ["credit-card","Credit card","credit","owe"],["bnpl","BNPL","credit","owe"],
-  ["personal-loan","Personal loan","credit","owe"],["mortgage","Mortgage","credit","owe"],
-  ["car-loan","Car / Hire-purchase loan","credit","owe"],["other-debt","Other debt","credit","owe"],
-];
-const SUBTYPES: AccountSubtype[] = SUBTYPE_ROWS.map(([key, label, type, group], i) => ({
-  key, label, type, group, sortOrder: i, isActive: true,
+const SUBTYPES: AccountSubtype[] = catalog.subtypes.map((s) => ({
+  key: s.key,
+  label: s.label,
+  type: s.type as AccountTypeName,
+  group: s.group as AccountGroup,
+  sortOrder: s.sortOrder,
+  isActive: true,
 }));
 const subtypeOf = (key: string) => SUBTYPES.find((s) => s.key === key);
 
-// ── seed templates (mirrors src/lib/providers.ts → Rust seed) ──
-const templates: AccountTemplate[] = [];
-PROVIDER_GROUPS.forEach(({ group, defaultSubtype, providers }) =>
-  providers.forEach(([key, name]) =>
-    templates.push({
-      key, name, groupName: group, defaultSubtype,
-      iconAsset: key, brandColor: null, sortOrder: templates.length, isActive: true,
-    }),
-  ),
-);
+// ── seed templates (from src/generated/seed-catalog.json → Rust seed) ──
+const templates: AccountTemplate[] = catalog.templates.map((t) => ({
+  key: t.key,
+  name: t.name,
+  groupName: t.groupName,
+  defaultSubtype: t.defaultSubtype,
+  iconAsset: t.key,
+  brandColor: null,
+  sortOrder: t.sortOrder,
+  isActive: true,
+}));
 
 // Mirrors src-tauri/src/db/seed.rs CATEGORIES (append-only; no renames/removals
 // across versions). Saving/investing, loans/debt, reimbursements and credit-card
