@@ -1,7 +1,9 @@
-// Frontend mirror of the Rust account-template seed (src-tauri/src/db/seed.rs).
-// Providers are BRANDING ONLY — `group` organises the picker and `defaultSubtype`
-// is a suggested starting subtype; neither determines an account's type/group.
-// KEEP IN SYNC with seed.rs, which is authoritative for the packaged app.
+// Mock-only provider catalog, DERIVED from src/generated/seed-catalog.json
+// (which is generated from the Rust seed in src-tauri/src/db/seed.rs and is the
+// single source of truth). The packaged app gets providers from the
+// `list_templates` Rust command, not from this file. Do not hand-edit the
+// provider list here — edit the Rust seed and run `npm run gen:seed-catalog`.
+import catalog from "../generated/seed-catalog.json";
 
 export type ProviderGroup = {
   group: string;
@@ -9,47 +11,20 @@ export type ProviderGroup = {
   providers: [key: string, name: string][];
 };
 
-export const PROVIDER_GROUPS: ProviderGroup[] = [
-  { group: "Cash", defaultSubtype: "cash", providers: [
-    ["cash", "Cash"],
-  ] },
-  { group: "Banks", defaultSubtype: "savings", providers: [
-    ["maybank", "Maybank"], ["cimb", "CIMB"], ["public-bank", "Public Bank"],
-    ["rhb", "RHB"], ["hong-leong-bank", "Hong Leong Bank"], ["ambank", "AmBank"],
-    ["bank-islam", "Bank Islam"], ["bank-rakyat", "Bank Rakyat"],
-    ["bank-muamalat", "Bank Muamalat"], ["affin-bank", "Affin Bank"],
-    ["alliance-bank", "Alliance Bank"], ["bsn", "BSN"], ["agrobank", "Agrobank"],
-    ["mbsb-bank", "MBSB Bank"], ["al-rajhi-bank", "Al Rajhi Bank"],
-    ["ocbc", "OCBC"], ["uob", "UOB"], ["hsbc", "HSBC"],
-    ["standard-chartered", "Standard Chartered"],
-  ] },
-  { group: "Digital banks", defaultSubtype: "savings", providers: [
-    ["gxbank", "GXBank"], ["boost-bank", "Boost Bank"], ["aeon-bank", "AEON Bank"],
-    ["kaf-digital-bank", "KAF Digital Bank"], ["ryt-bank", "Ryt Bank"],
-  ] },
-  { group: "E-wallets", defaultSubtype: "ewallet", providers: [
-    ["tng-ewallet", "Touch 'n Go eWallet"], ["grabpay", "GrabPay"], ["boost", "Boost"],
-    ["shopeepay", "ShopeePay"], ["mae", "MAE"], ["setel", "Setel"],
-    ["bigpay", "BigPay"], ["lazada-wallet", "Lazada Wallet"],
-  ] },
-  { group: "Buy now, pay later", defaultSubtype: "bnpl", providers: [
-    ["atome", "Atome"], ["shopee-paylater", "Shopee PayLater"],
-    ["grab-paylater", "Grab PayLater"], ["boost-payflex", "Boost PayFlex"],
-    ["riipay", "Riipay"],
-  ] },
-  { group: "Investment", defaultSubtype: "investment", providers: [
-    ["asnb", "ASNB"], ["stashaway", "StashAway"], ["versa", "Versa"],
-    ["wahed", "Wahed"], ["rakuten-trade", "Rakuten Trade"], ["moomoo", "Moomoo"],
-    ["kdi", "KDI"],
-  ] },
-  { group: "Global fintech", defaultSubtype: "ewallet", providers: [
-    ["paypal", "PayPal"], ["wise", "Wise"], ["revolut", "Revolut"],
-    ["n26", "N26"], ["payoneer", "Payoneer"],
-  ] },
-  { group: "Crypto", defaultSubtype: "crypto", providers: [
-    ["luno", "Luno"],
-  ] },
-];
+// Group the catalog templates by groupName, preserving catalog order (sort_order).
+export const PROVIDER_GROUPS: ProviderGroup[] = (() => {
+  const groups: ProviderGroup[] = [];
+  const byName = new Map<string, ProviderGroup>();
+  for (const t of catalog.templates) {
+    let g = byName.get(t.groupName);
+    if (!g) {
+      g = { group: t.groupName, defaultSubtype: t.defaultSubtype, providers: [] };
+      byName.set(t.groupName, g);
+      groups.push(g);
+    }
+    g.providers.push([t.key, t.name]);
+  }
+  return groups;
+})();
 
-export const PROVIDER_KEYS: string[] =
-  PROVIDER_GROUPS.flatMap((g) => g.providers.map(([key]) => key));
+export const PROVIDER_KEYS: string[] = catalog.templates.map((t) => t.key);
