@@ -120,6 +120,7 @@ const mkTx = (overrides: Partial<Transaction> & { id: string }): Transaction => 
   transactionDate: "2026-01-01",
   transactionTime: null,
   excludedFromReporting: false,
+  splits: [],
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
   ...overrides,
@@ -215,7 +216,7 @@ describe("opening kind", () => {
     const mk = (over: Partial<Transaction>): Transaction => ({
       id: "x", kind: "expense", accountId: "a", toAccountId: null, categoryId: "c",
       amountCents: 0, description: null, transactionDate: "2026-05-01", transactionTime: null,
-      excludedFromReporting: false, createdAt: "1", updatedAt: "1", ...over,
+      excludedFromReporting: false, splits: [], createdAt: "1", updatedAt: "1", ...over,
     });
     const txns = [
       mk({ id: "open", kind: "opening", categoryId: null, amountCents: 10000, transactionDate: "2026-05-01", createdAt: "1" }),

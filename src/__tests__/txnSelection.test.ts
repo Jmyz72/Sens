@@ -15,6 +15,7 @@ function tx(kind: TransactionKind, amountCents: number, over: Partial<Transactio
     transactionDate: "2026-06-01",
     transactionTime: null,
     excludedFromReporting: false,
+    splits: [],
     createdAt: "2026-06-01T00:00:00Z",
     updatedAt: "2026-06-01T00:00:00Z",
     ...over,

@@ -56,6 +56,11 @@ export interface Category {
   updatedAt: string;
 }
 
+export interface TxnSplit {
+  categoryId: string;
+  amountCents: number;
+}
+
 export interface Transaction {
   id: string;
   kind: TransactionKind;
@@ -67,6 +72,7 @@ export interface Transaction {
   transactionDate: string;
   transactionTime: string | null;
   excludedFromReporting: boolean;
+  splits: TxnSplit[];
   createdAt: string;
   updatedAt: string;
 }
@@ -92,6 +98,7 @@ export interface UpdateTransactionInput {
   transactionDate: string;
   transactionTime: string | null;
   excludedFromReporting: boolean;
+  splits?: TxnSplit[] | null;
 }
 
 export interface CategoryBreakdown {
