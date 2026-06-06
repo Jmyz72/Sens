@@ -340,7 +340,8 @@ pub fn count_children(conn: &Connection, parent_id: &str) -> AppResult<i64> {
 
 pub fn count_transactions_for_category(conn: &Connection, category_id: &str) -> AppResult<i64> {
     Ok(conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE category_id = ?1",
+        "SELECT (SELECT COUNT(*) FROM transactions WHERE category_id = ?1)
+              + (SELECT COUNT(*) FROM transaction_splits WHERE category_id = ?1)",
         [category_id],
         |r| r.get(0),
     )?)
@@ -396,6 +397,7 @@ fn map_transaction(r: &Row) -> rusqlite::Result<Transaction> {
         excluded_from_reporting: r.get::<_, i64>("excluded_from_reporting")? != 0,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
+        splits: Vec::new(),
     })
 }
 
@@ -446,12 +448,55 @@ pub fn delete_postings_for(conn: &Connection, transaction_id: &str) -> AppResult
     Ok(())
 }
 
+// ── Transaction splits ───────────────────────────────────────────────────────
+
+pub fn insert_split(
+    conn: &Connection,
+    id: &str,
+    transaction_id: &str,
+    category_id: &str,
+    amount_cents: i64,
+    sort_order: i64,
+    now: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO transaction_splits (id, transaction_id, category_id, amount_cents, sort_order, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![id, transaction_id, category_id, amount_cents, sort_order, now],
+    )
+    .map_err(map_check)?;
+    Ok(())
+}
+
+pub fn list_splits_for(conn: &Connection, transaction_id: &str) -> AppResult<Vec<TxnSplit>> {
+    let mut stmt = conn.prepare(
+        "SELECT category_id, amount_cents FROM transaction_splits WHERE transaction_id = ?1 ORDER BY sort_order, created_at",
+    )?;
+    let rows = stmt
+        .query_map([transaction_id], |r| {
+            Ok(TxnSplit {
+                category_id: r.get(0)?,
+                amount_cents: r.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn delete_splits_for(conn: &Connection, transaction_id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM transaction_splits WHERE transaction_id = ?1", [transaction_id])?;
+    Ok(())
+}
+
 pub fn get_transaction(conn: &Connection, id: &str) -> AppResult<Transaction> {
-    conn.query_row("SELECT * FROM transactions WHERE id = ?1", [id], map_transaction)
+    let mut t = conn
+        .query_row("SELECT * FROM transactions WHERE id = ?1", [id], map_transaction)
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Transaction not found".into()),
             other => other.into(),
-        })
+        })?;
+    t.splits = list_splits_for(conn, id)?;
+    Ok(t)
 }
 
 pub fn get_opening_transaction(conn: &Connection, account_id: &str) -> AppResult<Transaction> {
@@ -511,7 +556,8 @@ pub fn list_transactions(conn: &Connection, f: &TransactionFilters) -> AppResult
         args.push(Box::new(v.clone()));
     }
     if let Some(v) = &f.category_id {
-        sql.push_str(" AND category_id = ?");
+        sql.push_str(" AND (category_id = ? OR id IN (SELECT transaction_id FROM transaction_splits WHERE category_id = ?))");
+        args.push(Box::new(v.clone()));
         args.push(Box::new(v.clone()));
     }
     if let Some(v) = &f.kind {
@@ -534,9 +580,12 @@ pub fn list_transactions(conn: &Connection, f: &TransactionFilters) -> AppResult
     }
     let mut stmt = conn.prepare(&sql)?;
     let refs: Vec<&dyn rusqlite::types::ToSql> = args.iter().map(|b| b.as_ref()).collect();
-    let rows = stmt
+    let mut rows = stmt
         .query_map(refs.as_slice(), map_transaction)?
         .collect::<Result<Vec<_>, _>>()?;
+    for t in rows.iter_mut() {
+        t.splits = list_splits_for(conn, &t.id)?;
+    }
     Ok(rows)
 }
 
@@ -554,11 +603,22 @@ pub fn sum_kind_in_range(conn: &Connection, kind: &str, from: &str, to: &str) ->
 
 pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<Vec<CategoryBreakdown>> {
     let mut stmt = conn.prepare(
-        "SELECT COALESCE(c.parent_id, c.id) AS group_id, pc.name, pc.emoji, pc.color, SUM(t.amount_cents) AS total
-         FROM transactions t
-         JOIN categories c  ON c.id = t.category_id
+        "WITH attrib AS (
+           SELECT t.category_id AS cat, t.amount_cents AS amt
+           FROM transactions t
+           WHERE t.kind='expense' AND t.excluded_from_reporting=0
+             AND t.transaction_date >= ?1 AND t.transaction_date < ?2
+             AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
+           UNION ALL
+           SELECT s.category_id AS cat, s.amount_cents AS amt
+           FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
+           WHERE t.kind='expense' AND t.excluded_from_reporting=0
+             AND t.transaction_date >= ?1 AND t.transaction_date < ?2
+         )
+         SELECT COALESCE(c.parent_id, c.id) AS group_id, pc.name, pc.emoji, pc.color, SUM(a.amt) AS total
+         FROM attrib a
+         JOIN categories c  ON c.id = a.cat
          JOIN categories pc ON pc.id = COALESCE(c.parent_id, c.id)
-         WHERE t.kind = 'expense' AND t.excluded_from_reporting = 0 AND t.transaction_date >= ?1 AND t.transaction_date < ?2
          GROUP BY group_id ORDER BY total DESC",
     )?;
     let rows = stmt
@@ -601,9 +661,12 @@ pub fn recent_transactions(conn: &Connection, limit: i64) -> AppResult<Vec<Trans
     let mut stmt = conn.prepare(
         "SELECT * FROM transactions ORDER BY transaction_date DESC, created_at DESC LIMIT ?1",
     )?;
-    let rows = stmt
+    let mut rows = stmt
         .query_map([limit], map_transaction)?
         .collect::<Result<Vec<_>, _>>()?;
+    for t in rows.iter_mut() {
+        t.splits = list_splits_for(conn, &t.id)?;
+    }
     Ok(rows)
 }
 

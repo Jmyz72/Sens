@@ -427,6 +427,27 @@ fn validate_category_for(conn: &Connection, category_id: &str, kind: &str) -> Ap
     Ok(())
 }
 
+/// Validate split lines for an income/expense transaction: >= 2 lines, all
+/// positive, summing to `total`, each category valid for `kind` and non-system.
+fn validate_splits(conn: &Connection, kind: &str, splits: &[crate::models::SplitInput], total: i64) -> AppResult<()> {
+    if splits.len() < 2 {
+        return Err(AppError::Validation("A split needs at least two categories".into()));
+    }
+    let mut sum = 0i64;
+    for s in splits {
+        if s.amount_cents <= 0 {
+            return Err(AppError::Validation("Each split amount must be positive".into()));
+        }
+        // validate_category_for already rejects system categories and kind mismatches.
+        validate_category_for(conn, &s.category_id, kind)?;
+        sum += s.amount_cents;
+    }
+    if sum != total {
+        return Err(AppError::Validation("Split amounts must add up to the total".into()));
+    }
+    Ok(())
+}
+
 fn validate_positive(amount_cents: i64) -> AppResult<()> {
     if amount_cents <= 0 {
         return Err(AppError::Validation("Amount must be greater than zero".into()));
@@ -469,28 +490,57 @@ fn resolve_time(conn: &Connection, supplied: Option<&str>, fallback: Option<Stri
     Ok(Some(t.to_string()))
 }
 
-pub fn create_income(conn: &Connection, account_id: &str, category_id: &str, amount_cents: i64, description: Option<&str>, date: &str, time: Option<&str>, excluded_from_reporting: bool) -> AppResult<Transaction> {
-    validate_positive(amount_cents)?;
-    ensure_active_account(conn, account_id, "selected")?;
-    validate_category_for(conn, category_id, KIND_INCOME)?;
-    let time = resolve_time(conn, time, None)?;
-    let tx = conn.unchecked_transaction()?;
-    let t = repo::insert_transaction(&tx, &new_id(), KIND_INCOME, account_id, None, Some(category_id), amount_cents, description, date, time.as_deref(), excluded_from_reporting, &now())?;
-    materialize_postings(&tx, &t)?;
-    tx.commit()?;
-    Ok(t)
+pub fn create_income(conn: &Connection, account_id: &str, category_id: Option<&str>, amount_cents: i64, description: Option<&str>, date: &str, time: Option<&str>, excluded_from_reporting: bool, splits: Option<Vec<crate::models::SplitInput>>) -> AppResult<Transaction> {
+    create_income_expense(conn, KIND_INCOME, account_id, category_id, amount_cents, description, date, time, excluded_from_reporting, splits)
 }
 
-pub fn create_expense(conn: &Connection, account_id: &str, category_id: &str, amount_cents: i64, description: Option<&str>, date: &str, time: Option<&str>, excluded_from_reporting: bool) -> AppResult<Transaction> {
+pub fn create_expense(conn: &Connection, account_id: &str, category_id: Option<&str>, amount_cents: i64, description: Option<&str>, date: &str, time: Option<&str>, excluded_from_reporting: bool, splits: Option<Vec<crate::models::SplitInput>>) -> AppResult<Transaction> {
+    create_income_expense(conn, KIND_EXPENSE, account_id, category_id, amount_cents, description, date, time, excluded_from_reporting, splits)
+}
+
+/// Shared create path for income/expense, with optional split lines.
+///
+/// The `transactions` CHECK requires `category_id IS NOT NULL` for income/expense,
+/// so a SPLIT transaction stores its FIRST split line's category as the header.
+/// "Is a split" is defined by the presence of split rows, not by a null category.
+fn create_income_expense(
+    conn: &Connection,
+    kind: &'static str,
+    account_id: &str,
+    category_id: Option<&str>,
+    amount_cents: i64,
+    description: Option<&str>,
+    date: &str,
+    time: Option<&str>,
+    excluded_from_reporting: bool,
+    splits: Option<Vec<crate::models::SplitInput>>,
+) -> AppResult<Transaction> {
     validate_positive(amount_cents)?;
     ensure_active_account(conn, account_id, "selected")?;
-    validate_category_for(conn, category_id, KIND_EXPENSE)?;
     let time = resolve_time(conn, time, None)?;
     let tx = conn.unchecked_transaction()?;
-    let t = repo::insert_transaction(&tx, &new_id(), KIND_EXPENSE, account_id, None, Some(category_id), amount_cents, description, date, time.as_deref(), excluded_from_reporting, &now())?;
+
+    let is_split = splits.as_ref().is_some_and(|s| !s.is_empty());
+    let header_cat: String = if is_split {
+        let s = splits.as_ref().unwrap();
+        validate_splits(&tx, kind, s, amount_cents)?;
+        s[0].category_id.clone()
+    } else {
+        let cat = category_id.ok_or_else(|| AppError::Validation("A category is required".into()))?;
+        validate_category_for(&tx, cat, kind)?;
+        cat.to_string()
+    };
+
+    let t = repo::insert_transaction(&tx, &new_id(), kind, account_id, None, Some(&header_cat), amount_cents, description, date, time.as_deref(), excluded_from_reporting, &now())?;
+    if is_split {
+        for (i, line) in splits.as_ref().unwrap().iter().enumerate() {
+            repo::insert_split(&tx, &new_id(), &t.id, &line.category_id, line.amount_cents, i as i64, &now())?;
+        }
+    }
     materialize_postings(&tx, &t)?;
     tx.commit()?;
-    Ok(t)
+    // Re-read so the returned Transaction carries hydrated splits.
+    repo::get_transaction(conn, &t.id)
 }
 
 pub fn create_transfer(conn: &Connection, from_account_id: &str, to_account_id: &str, amount_cents: i64, description: Option<&str>, date: &str, time: Option<&str>) -> AppResult<Transaction> {
@@ -533,14 +583,20 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
     ensure_active_account(conn, &input.account_id, "selected")?;
 
     let (to_account_id, category_id) = match input.kind.as_str() {
-        KIND_INCOME | KIND_EXPENSE => {
-            let cat = input
-                .category_id
-                .as_deref()
-                .ok_or_else(|| AppError::Validation("A category is required".into()))?;
-            validate_category_for(conn, cat, &input.kind)?;
-            (None, Some(cat.to_string()))
-        }
+        KIND_INCOME | KIND_EXPENSE => match &input.splits {
+            Some(s) if !s.is_empty() => {
+                validate_splits(conn, &input.kind, s, input.amount_cents)?;
+                (None, Some(s[0].category_id.clone())) // header = first split (CHECK needs non-null)
+            }
+            _ => {
+                let cat = input
+                    .category_id
+                    .as_deref()
+                    .ok_or_else(|| AppError::Validation("A category is required".into()))?;
+                validate_category_for(conn, cat, &input.kind)?;
+                (None, Some(cat.to_string()))
+            }
+        },
         KIND_TRANSFER => {
             let to = input
                 .to_account_id
@@ -574,9 +630,17 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
         excluded,
         &now(),
     )?;
+    repo::delete_splits_for(&dbtx, &input.id)?;
+    if let Some(s) = &input.splits {
+        if !s.is_empty() {
+            for (i, line) in s.iter().enumerate() {
+                repo::insert_split(&dbtx, &new_id(), &input.id, &line.category_id, line.amount_cents, i as i64, &now())?;
+            }
+        }
+    }
     materialize_postings(&dbtx, &t)?;
     dbtx.commit()?;
-    Ok(t)
+    repo::get_transaction(conn, &input.id)
 }
 
 pub fn delete_transaction(conn: &Connection, id: &str) -> AppResult<()> {

@@ -1,6 +1,11 @@
 // Add / edit a transaction. Supports income, expense, and transfer. The kind
 // segmented control is color-coded per the UI Color System. Adjustments are
 // not editable here (handled by balance correction).
+//
+// Income/expense use an itemized builder: type an amount, tap a category tile,
+// "Add item" to stack it; a live Total auto-sums items. One item = an ordinary
+// single-category transaction; two or more = a split (header category derived
+// from splits[0] by the backend). The transfer path is unchanged.
 
 import { useMemo, useState } from "react";
 import type { Account, Category, Transaction, TransactionKind } from "../types";
@@ -9,9 +14,10 @@ import { hexA } from "../theme/tokens";
 import { Btn, Field, Modal, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
-import { parseAmountToCents, todayISO, nowTimeHHMM } from "../lib/format";
+import { parseAmountToCents, todayISO, nowTimeHHMM, fmtMoney } from "../lib/format";
 import { KIND_META, kindColor } from "../lib/kinds";
 import { categoryPickerItems } from "../lib/categories";
+import { addItem, removeItem, itemsTotal, isSplit, finalize, isPendingValid, type BuilderItem } from "../lib/txnBuilder";
 import { useTimeSetting } from "../lib/useTimeSetting";
 
 const FORM_KINDS: TransactionKind[] = ["expense", "income", "transfer"];
@@ -22,7 +28,10 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
   const t = useTheme();
   const active = accounts.filter((a) => !a.isArchived);
   const [kind, setKind] = useState<TransactionKind>(editing?.kind ?? "expense");
-  const [amount, setAmount] = useState(editing ? (editing.amountCents / 100).toFixed(2) : "");
+  // The amount field is the PENDING item amount for income/expense, and the
+  // whole amount for transfer. Prefill it only when editing a transfer (a
+  // single-item income/expense and splits are rebuilt as items below).
+  const [amount, setAmount] = useState(editing?.kind === "transfer" ? (editing.amountCents / 100).toFixed(2) : "");
   const [desc, setDesc] = useState(editing?.description ?? "");
   const [excluded, setExcluded] = useState(editing?.excludedFromReporting ?? false);
   const [date, setDate] = useState(editing?.transactionDate ?? todayISO());
@@ -35,32 +44,76 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
 
   const catKind: Category["kind"] = kind === "income" ? "income" : kind === "transfer" ? "transfer" : "expense";
   const pickerItems = useMemo(() => categoryPickerItems(categories, catKind), [categories, catKind]);
-  const [categoryId, setCategoryId] = useState(editing?.categoryId ?? "");
-  const effectiveCat = categoryId || pickerItems[0]?.id || "";
+
+  // Itemized builder state (income/expense only).
+  const [items, setItems] = useState<BuilderItem[]>(
+    editing && editing.splits.length
+      ? editing.splits.map((s) => ({ categoryId: s.categoryId, amountCents: s.amountCents }))
+      : editing && editing.categoryId && editing.kind !== "transfer"
+        ? [{ categoryId: editing.categoryId, amountCents: editing.amountCents }]
+        : [],
+  );
+  const [pendingCat, setPendingCat] = useState<string>("");
+  const [catFilter, setCatFilter] = useState("");
+  const [showFilter, setShowFilter] = useState(false);
 
   const cents = parseAmountToCents(amount);
-  const valid = cents != null && accountId && (kind !== "transfer" ? !!effectiveCat : toAccountId && toAccountId !== accountId) && (!timeEnabled || !!time);
+  const pendingItem: BuilderItem = { categoryId: pendingCat, amountCents: cents ?? 0 };
+  const totalCents = itemsTotal(items) + (isPendingValid(pendingItem) ? pendingItem.amountCents : 0);
+  const finalItems = finalize(items, pendingItem);
+
+  const valid = kind === "transfer"
+    ? !!(cents != null && accountId && toAccountId && toAccountId !== accountId && (!timeEnabled || !!time))
+    : !!(accountId && finalItems.length >= 1 && (!timeEnabled || !!time));
+
+  function changeKind(k: TransactionKind) {
+    if (k === kind) return;
+    setKind(k);
+    setItems([]);
+    setPendingCat("");
+    setAmount("");
+    setCatFilter("");
+  }
 
   async function submit() {
-    if (!valid || cents == null) return;
+    if (!valid) return;
     setBusy(true); setError(null);
     const txTime = timeEnabled ? time : null;
     try {
+      if (kind === "transfer") {
+        if (cents == null) return;
+        if (editing) {
+          await client.updateTransaction({
+            id: editing.id, kind, accountId, toAccountId,
+            categoryId: null, amountCents: cents, description: desc.trim() || null,
+            transactionDate: date, transactionTime: txTime, excludedFromReporting: false, splits: null,
+          });
+        } else {
+          await client.createTransfer(accountId, toAccountId, cents, desc.trim() || null, date, txTime);
+        }
+        onDone();
+        return;
+      }
+
+      // income / expense
+      const list = finalize(items, pendingItem);
+      if (list.length === 0) return;
+      const total = itemsTotal(list);
+      const split = list.length >= 2;
+      const splits = split ? list.map((it) => ({ categoryId: it.categoryId, amountCents: it.amountCents })) : null;
+      const singleCat = !split ? list[0].categoryId : null;
+
       if (editing) {
         await client.updateTransaction({
-          id: editing.id, kind, accountId,
-          toAccountId: kind === "transfer" ? toAccountId : null,
-          categoryId: kind === "transfer" ? null : effectiveCat,
-          amountCents: cents, description: desc.trim() || null, transactionDate: date,
-          transactionTime: txTime,
-          excludedFromReporting: kind === "transfer" ? false : excluded,
+          id: editing.id, kind, accountId, toAccountId: null,
+          categoryId: split ? null : singleCat,
+          amountCents: total, description: desc.trim() || null, transactionDate: date,
+          transactionTime: txTime, excludedFromReporting: excluded, splits,
         });
       } else if (kind === "income") {
-        await client.createIncome(accountId, effectiveCat, cents, desc.trim() || null, date, txTime, excluded);
-      } else if (kind === "expense") {
-        await client.createExpense(accountId, effectiveCat, cents, desc.trim() || null, date, txTime, excluded);
+        await client.createIncome(accountId, singleCat, total, desc.trim() || null, date, txTime, excluded, splits);
       } else {
-        await client.createTransfer(accountId, toAccountId, cents, desc.trim() || null, date, txTime);
+        await client.createExpense(accountId, singleCat, total, desc.trim() || null, date, txTime, excluded, splits);
       }
       onDone();
     } catch (e) {
@@ -87,7 +140,7 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
             const on = k === kind;
             const col = kindColor(t, k);
             return (
-              <button key={k} className="sens-btn" onClick={() => setKind(k)}
+              <button key={k} className="sens-btn" onClick={() => changeKind(k)}
                 style={{ flex: 1, height: 32, justifyContent: "center", borderRadius: 7, fontSize: 12.5, fontWeight: 600,
                   color: on ? "#fff" : t.dim, background: on ? col : "transparent" }}>
                 <Icon name={KIND_META[k].icon} size={14} color={on ? "#fff" : t.dim} stroke={2} />
@@ -123,22 +176,66 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
             </Field>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <Field label="Category">
-              <select className="sens-input" value={effectiveCat} onChange={(e) => setCategoryId(e.target.value)} style={sel}>
-                {pickerItems.map((it) => (
-                  <option key={it.id} value={it.id} style={{ background: t.panel2 }}>
-                    {it.depth === 1 ? " " : ""}{it.emoji} {it.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
+          <>
             <Field label="Account">
               <select className="sens-input" value={accountId} onChange={(e) => setAccountId(e.target.value)} style={sel}>
                 {active.map((a) => <option key={a.id} value={a.id} style={{ background: t.panel2 }}>{a.name}</option>)}
               </select>
             </Field>
-          </div>
+
+            {/* Category grid */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: t.dim }}>Category</span>
+                <button type="button" className="sens-btn" onClick={() => setShowFilter((v) => !v)} style={{ fontSize: 11, color: t.dim }}>Filter</button>
+              </div>
+              {showFilter && (
+                <input className="sens-input" autoFocus value={catFilter} onChange={(e) => setCatFilter(e.target.value)}
+                  placeholder="Type to filter…" style={{ ...inputStyle(t), marginBottom: 8 }} />
+              )}
+              <div style={{ maxHeight: 180, overflowY: "auto", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7 }}>
+                {pickerItems
+                  .filter((it) => !catFilter || it.label.toLowerCase().includes(catFilter.toLowerCase()))
+                  .map((it) => {
+                    const on = pendingCat === it.id;
+                    return (
+                      <button type="button" key={it.id} className="sens-btn" onClick={() => setPendingCat(it.id)}
+                        style={{ flexDirection: "column", gap: 3, padding: "9px 4px", borderRadius: 11, fontSize: 10,
+                          border: `1.5px solid ${on ? accentForKind : t.border}`, background: on ? hexA(accentForKind, 0.18) : t.panel2,
+                          color: on ? t.text : t.dim }}>
+                        <span style={{ fontSize: 18 }}>{it.emoji}</span>{it.label}
+                      </button>
+                    );
+                  })}
+              </div>
+              <Btn variant="outline" disabled={!isPendingValid(pendingItem)}
+                onClick={() => { setItems((xs) => addItem(xs, pendingItem)); setAmount(""); setPendingCat(""); }}
+                style={{ width: "100%", justifyContent: "center", marginTop: 10 }}>+ Add item</Btn>
+            </div>
+
+            {/* Items list + total */}
+            {items.length > 0 && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: t.dim, marginBottom: 4 }}>
+                  <span>Items</span><span>{items.length}{isSplit(items) ? " · split" : ""}</span>
+                </div>
+                {items.map((it, i) => {
+                  const c = categories.find((x) => x.id === it.categoryId);
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 0", borderBottom: `0.5px solid ${t.divider}` }}>
+                      <span>{c?.emoji}</span><span style={{ flex: 1 }}>{c?.name}</span>
+                      <span style={{ fontFamily: t.mono }}>{fmtMoney(it.amountCents, { cents: true })}</span>
+                      <button type="button" className="sens-icon-btn" onClick={() => setItems((xs) => removeItem(xs, i))} style={{ color: t.dim }}>✕</button>
+                    </div>
+                  );
+                })}
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontWeight: 700 }}>
+                  <span style={{ color: t.dim }}>Total</span>
+                  <span style={{ fontFamily: t.mono }}>{fmtMoney(totalCents, { cents: true })}</span>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {timeEnabled ? (

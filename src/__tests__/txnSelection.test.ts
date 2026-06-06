@@ -15,6 +15,7 @@ function tx(kind: TransactionKind, amountCents: number, over: Partial<Transactio
     transactionDate: "2026-06-01",
     transactionTime: null,
     excludedFromReporting: false,
+    splits: [],
     createdAt: "2026-06-01T00:00:00Z",
     updatedAt: "2026-06-01T00:00:00Z",
     ...over,
@@ -108,6 +109,28 @@ describe("planBulk", () => {
   it("recategorize with both targets: all change", () => {
     const p = planBulk("recategorize", [tx("income", 100, { id: "i" }), tx("expense", 200, { id: "e" })], { incomeCategory: { id: "c2", name: "Salary" }, expenseCategory: { id: "c1", name: "Food" } });
     expect(p.changeable.map((t) => t.id).sort()).toEqual(["e", "i"]);
+    expect(p.lockedSkipped).toEqual([]);
+  });
+
+  const splitTx = tx("expense", 150, {
+    id: "split",
+    categoryId: "a",
+    splits: [
+      { categoryId: "a", amountCents: 100 },
+      { categoryId: "b", amountCents: 50 },
+    ],
+  });
+
+  it("recategorize: a split is locked (not changeable) with a split reason", () => {
+    const p = planBulk("recategorize", [splitTx], { expenseCategory: { id: "x", name: "X" } });
+    expect(p.changeable.map((t) => t.id)).toEqual([]);
+    expect(p.lockedSkipped.map((l) => l.tx.id)).toEqual(["split"]);
+    expect(p.lockedSkipped[0].reason).toMatch(/split/i);
+  });
+
+  it("move: a split stays changeable (splits preserved at apply time)", () => {
+    const p = planBulk("move", [splitTx], { accountId: "acc2" });
+    expect(p.changeable.map((t) => t.id)).toEqual(["split"]);
     expect(p.lockedSkipped).toEqual([]);
   });
 });

@@ -54,6 +54,7 @@ export function planBulk(action: BulkAction, txns: Transaction[], target?: BulkT
     switch (action) {
       case "recategorize": {
         if (t.kind === "income" || t.kind === "expense") {
+          if (t.splits.length >= 2) { lockedSkipped.push({ tx: t, reason: "Split — edit categories individually" }); break; }
           if (!target) { changeable.push(t); break; }            // no target chosen yet → potential (panel count)
           const has = t.kind === "income" ? !!target.incomeCategory : !!target.expenseCategory;
           if (has) changeable.push(t);

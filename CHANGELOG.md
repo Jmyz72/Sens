@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Category splits** — divide an income or expense across multiple categories
+  using the new itemized Add Transaction builder; splits appear as a single row
+  (with a Split·N badge) in the list, a per-category breakdown in the detail
+  panel, and are attributed to each category in the dashboard spending breakdown.
+
 ## [0.8.0] — 2026-06-05
 
 ### Added

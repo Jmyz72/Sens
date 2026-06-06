@@ -74,6 +74,20 @@ pub struct Category {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TxnSplit {
+    pub category_id: String,
+    pub amount_cents: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SplitInput {
+    pub category_id: String,
+    pub amount_cents: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Transaction {
     pub id: String,
     pub kind: String,
@@ -85,6 +99,8 @@ pub struct Transaction {
     pub transaction_date: String,
     pub transaction_time: Option<String>,
     pub excluded_from_reporting: bool,
+    #[serde(default)]
+    pub splits: Vec<TxnSplit>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -136,6 +152,8 @@ pub struct UpdateTransactionInput {
     pub transaction_time: Option<String>,
     #[serde(default)]
     pub excluded_from_reporting: bool,
+    #[serde(default)]
+    pub splits: Option<Vec<SplitInput>>,
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────

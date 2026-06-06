@@ -45,6 +45,7 @@ Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
 | 🟢 `v0.5.3` | Dashboard redesign — unified net-worth + month-KPI hero, responsive account tile grid — spec: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.md` |
 | 🟢 `v0.5.4` | Kind-aware wording for the income/expense reporting-exclusion toggle |
 | 🟢 `v0.6.0` | **Transactions screen redesign ("Evolved List")** — toolbar (search / date-range / sort / density), date-grouped list with sticky day-net subtotals + hover quick-actions, three-state sidebar (inline-edit detail / adaptive multi-select), bulk-action preview sheet with per-kind re-categorize, keyboard nav; frontend-only — spec: `docs/superpowers/specs/2026-06-02-transactions-screen-redesign-design.md` |
+| 🟡 `Unreleased` | **Category splits** — divide an income/expense across ≥2 categories (`transaction_splits`, migration 009) via the itemized Add Transaction builder; single list row with a Split·N badge, per-category detail breakdown, attributed in the dashboard spending breakdown; balances untouched — spec: `docs/superpowers/specs/2026-06-06-category-splits-and-add-transaction-redesign-design.md` |
 
 ## Planned — the climb to 1.0
 

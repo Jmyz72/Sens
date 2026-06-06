@@ -20,6 +20,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
   const color = kindColor(t, tx.kind);
   const meta = KIND_META[tx.kind];
   const editable = tx.kind === "income" || tx.kind === "expense" || tx.kind === "transfer";
+  const split = tx.splits.length >= 2;
 
   const [categoryId, setCategoryId] = useState(tx.categoryId);
   const [accountId, setAccountId] = useState(tx.accountId);
@@ -44,10 +45,11 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
       await client.updateTransaction({
         id: tx.id, kind: tx.kind, accountId,
         toAccountId: tx.kind === "transfer" ? toAccountId : null,
-        categoryId: tx.kind === "transfer" ? null : categoryId,
+        categoryId: tx.kind === "transfer" ? null : (split ? null : categoryId),
         amountCents: tx.amountCents, description: desc.trim() || null, transactionDate: date,
         transactionTime: timeEnabled ? time : tx.transactionTime,
         excludedFromReporting: tx.kind === "transfer" ? false : excluded,
+        splits: split ? tx.splits : null,
       });
       onSaved();
     } catch (e) {
@@ -81,7 +83,25 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
       <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
         {editable ? (
           <>
-            {tx.kind !== "transfer" && (
+            {split && (
+              <div>
+                <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: t.dim, marginBottom: 6 }}>
+                  Split across {tx.splits.length} categories
+                </div>
+                {tx.splits.map((s) => {
+                  const c = categories.find((x) => x.id === s.categoryId);
+                  return (
+                    <div key={s.categoryId} style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 0", borderBottom: `0.5px solid ${t.divider}`, fontSize: 13 }}>
+                      <span>{c?.emoji}</span>
+                      <span style={{ flex: 1 }}>{c?.name ?? "—"}</span>
+                      <span style={{ fontFamily: t.mono }}>{fmtMoney(s.amountCents, { cents: true })}</span>
+                    </div>
+                  );
+                })}
+                <div style={{ fontSize: 11, color: t.faint, marginTop: 6 }}>Edit individual items from the Edit dialog.</div>
+              </div>
+            )}
+            {tx.kind !== "transfer" && !split && (
               <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
                 <span style={{ color: t.dim }}>Category</span>
                 <select value={categoryId ?? ""} onChange={(e) => setCategoryId(e.target.value || null)} style={fieldStyle}>

@@ -112,6 +112,21 @@ function seedCategories() {
 }
 seedCategories();
 
+// Mirrors Rust service::validate_splits: at least two positive lines, each in a
+// non-system category matching the transaction kind, summing to the total.
+function validateSplits(kind: string, splits: { categoryId: string; amountCents: number }[], total: number) {
+  if (splits.length < 2) fail("ValidationError", "A split needs at least two categories");
+  let sum = 0;
+  for (const s of splits) {
+    if (s.amountCents <= 0) fail("ValidationError", "Each split amount must be positive");
+    const c = categories.find((x) => x.id === s.categoryId);
+    if (c?.isSystem) fail("ValidationError", "That category can't be selected");
+    else if (!c || c.kind !== kind) fail("ValidationError", "Category doesn't match this transaction");
+    sum += s.amountCents;
+  }
+  if (sum !== total) fail("ValidationError", "Split amounts must add up to the total");
+}
+
 const accounts: Account[] = [];
 const txns: Transaction[] = [];
 const settings = new Map<string, string>();
@@ -156,14 +171,14 @@ function seedDemo() {
     const s = subtypeOf(t.defaultSubtype)!;
     const id = uid();
     accounts.push({ id, templateKey: key, name, accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: opening, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
-    txns.push({ id: uid(), kind: "opening", accountId: id, toAccountId: null, categoryId: null, amountCents: opening, description: "Opening balance", transactionDate: "2026-01-01", transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+    txns.push({ id: uid(), kind: "opening", accountId: id, toAccountId: null, categoryId: null, amountCents: opening, description: "Opening balance", transactionDate: "2026-01-01", transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
   };
   mk("maybank", "Maybank Savings", 842000);
   mk("tng-ewallet", "Touch 'n Go", 12750);
   mk("stashaway", "StashAway", 1860000);
   const cat = (n: string) => categories.find((c) => c.name === n)!.id;
   const add = (kind: Transaction["kind"], acc: number, amt: number, catName: string | null, desc: string, date: string, to?: number) =>
-    txns.push({ id: uid(), kind, accountId: accounts[acc].id, toAccountId: to != null ? accounts[to].id : null, categoryId: catName ? cat(catName) : null, amountCents: amt, description: desc, transactionDate: date, transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+    txns.push({ id: uid(), kind, accountId: accounts[acc].id, toAccountId: to != null ? accounts[to].id : null, categoryId: catName ? cat(catName) : null, amountCents: amt, description: desc, transactionDate: date, transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
   const d = (n: number) => { const x = new Date(); x.setDate(x.getDate() - n); return x.toISOString().slice(0, 10); };
   add("income", 0, 650000, "Salary", "Salary — Acme Sdn Bhd", d(2));
   add("expense", 1, 4250, "Food", "Nasi Lemak", d(1));
@@ -188,7 +203,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (a.templateKey != null && !templates.find((x) => x.key === a.templateKey)) fail("NotFound", "Account template not found");
       const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
       accounts.push(acc);
-      txns.push({ id: uid(), kind: "opening", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: a.openingBalanceCents, description: "Opening balance", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+      txns.push({ id: uid(), kind: "opening", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: a.openingBalanceCents, description: "Opening balance", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
       return hydrate(acc) as T;
     }
     case "list_accounts":
@@ -227,9 +242,9 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
           if (a.recordAsIncomeExpense) {
             const kind = diff > 0 ? "income" : "expense";
             const cat = categories.find((c) => c.isSystem && c.kind === kind && c.parentId == null);
-            txns.unshift({ id: uid(), kind, accountId: acc.id, toAccountId: null, categoryId: cat ? cat.id : null, amountCents: Math.abs(diff), description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+            txns.unshift({ id: uid(), kind, accountId: acc.id, toAccountId: null, categoryId: cat ? cat.id : null, amountCents: Math.abs(diff), description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
           } else {
-            txns.unshift({ id: uid(), kind: "adjustment", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: diff, description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false });
+            txns.unshift({ id: uid(), kind: "adjustment", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: diff, description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
           }
         }
       }
@@ -281,7 +296,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       const c = categories.find((x) => x.id === a.id) ?? fail("NotFound", "Category not found");
       if (c.isSystem) fail("Conflict", "This is a system category and can't be changed");
       if (categories.some((x) => x.parentId === c.id)) fail("Conflict", "Remove or move its subcategories first");
-      if (txns.some((t) => t.categoryId === c.id)) fail("Conflict", "In use by transactions — archive it instead");
+      if (txns.some((t) => t.categoryId === c.id || t.splits.some((s) => s.categoryId === c.id))) fail("Conflict", "In use by transactions — archive it instead");
       categories.splice(categories.indexOf(c), 1);
       return undefined as T;
     }
@@ -337,13 +352,26 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
       const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
       if (acc.isArchived) fail("Conflict", "The selected account is archived");
-      if (a.categoryId) {
+      const hasSplits = Array.isArray(a.splits) && a.splits.length > 0;
+      if (hasSplits) {
+        validateSplits(kind, a.splits, a.amountCents);
+      } else if (a.categoryId) {
         const c = categories.find((x) => x.id === a.categoryId);
         if (c && c.kind !== kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${kind}'`);
         if (c && c.isSystem) fail("ValidationError", "That category can't be selected");
+      } else {
+        fail("ValidationError", "A category is required");
       }
       const transactionTime = resolveTime(a.time, null);
-      const tx: Transaction = { id: uid(), kind, accountId: a.accountId, toAccountId: null, categoryId: a.categoryId, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: !!a.excludedFromReporting };
+      const tx: Transaction = {
+        id: uid(), kind, accountId: a.accountId, toAccountId: null,
+        categoryId: hasSplits ? a.splits[0].categoryId : a.categoryId,
+        amountCents: a.amountCents, description: a.description,
+        transactionDate: a.date, transactionTime,
+        createdAt: now(), updatedAt: now(),
+        excludedFromReporting: !!a.excludedFromReporting,
+        splits: hasSplits ? a.splits.map((s: any) => ({ categoryId: s.categoryId, amountCents: s.amountCents })) : [],
+      };
       txns.unshift(tx);
       return tx as T;
     }
@@ -351,7 +379,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
       if (a.fromAccountId === a.toAccountId) fail("ValidationError", "Cannot transfer to the same account");
       const transactionTime = resolveTime(a.time, null);
-      const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false };
+      const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] };
       txns.unshift(tx);
       return tx as T;
     }
@@ -359,6 +387,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       const f = a.filters ?? {};
       let out = txns.slice();
       if (f.accountId) out = out.filter((t) => t.accountId === f.accountId || t.toAccountId === f.accountId);
+      if (f.categoryId) out = out.filter((t) => t.categoryId === f.categoryId || t.splits.some((s) => s.categoryId === f.categoryId));
       if (f.kind) out = out.filter((t) => t.kind === f.kind);
       if (f.fromDate) out = out.filter((t) => t.transactionDate >= f.fromDate);
       if (f.toDate) out = out.filter((t) => t.transactionDate < f.toDate);
@@ -380,7 +409,11 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       }
       const excluded = (a.input.kind === "income" || a.input.kind === "expense") && !!a.input.excludedFromReporting;
       const transactionTime = resolveTime(a.input.transactionTime, txns[i].transactionTime);
-      txns[i] = { ...txns[i], ...a.input, transactionTime, excludedFromReporting: excluded, updatedAt: now() };
+      const hasSplits = Array.isArray(a.input.splits) && a.input.splits.length > 0;
+      if (hasSplits) validateSplits(a.input.kind, a.input.splits, a.input.amountCents);
+      const splits = hasSplits ? a.input.splits.map((s: any) => ({ categoryId: s.categoryId, amountCents: s.amountCents })) : [];
+      const categoryId = hasSplits ? a.input.splits[0].categoryId : a.input.categoryId;
+      txns[i] = { ...txns[i], ...a.input, categoryId, transactionTime, excludedFromReporting: excluded, splits, updatedAt: now() };
       return txns[i] as T;
     }
     case "delete_transaction": {
@@ -404,11 +437,13 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       const income = txns.filter((t) => t.kind === "income" && !t.excludedFromReporting && inRange(t)).reduce((s, t) => s + t.amountCents, 0);
       const expense = txns.filter((t) => t.kind === "expense" && !t.excludedFromReporting && inRange(t)).reduce((s, t) => s + t.amountCents, 0);
       const parentOf = (cid: string) => categories.find((x) => x.id === cid)?.parentId ?? cid;
-      const byCat = new Map<string, number>();
+      const attrib: { cat: string; amt: number }[] = [];
       txns.filter((t) => t.kind === "expense" && !t.excludedFromReporting && inRange(t)).forEach((t) => {
-        const pid = parentOf(t.categoryId!);
-        byCat.set(pid, (byCat.get(pid) ?? 0) + t.amountCents);
+        if (t.splits.length) t.splits.forEach((s) => attrib.push({ cat: s.categoryId, amt: s.amountCents }));
+        else if (t.categoryId) attrib.push({ cat: t.categoryId, amt: t.amountCents });
       });
+      const byCat = new Map<string, number>();
+      attrib.forEach(({ cat, amt }) => { const pid = parentOf(cat); byCat.set(pid, (byCat.get(pid) ?? 0) + amt); });
       const breakdown: CategoryBreakdown[] = [...byCat.entries()].map(([cid, total]) => {
         const c = categories.find((x) => x.id === cid)!;
         return { categoryId: cid, categoryName: c.name, emoji: c.emoji, color: c.color, totalCents: total };

@@ -7,7 +7,7 @@ function tx(p: Partial<Transaction>): Transaction {
     id: "x", kind: "expense", accountId: "a", toAccountId: null, categoryId: "c",
     amountCents: 100, description: null, transactionDate: "2026-05-10",
     transactionTime: null, createdAt: "2026-05-10T00:00:00Z",
-    updatedAt: "2026-05-10T00:00:00Z", excludedFromReporting: false, ...p,
+    updatedAt: "2026-05-10T00:00:00Z", excludedFromReporting: false, splits: [], ...p,
   };
 }
 

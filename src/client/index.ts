@@ -13,6 +13,7 @@ import type {
   DashboardSummary,
   Transaction,
   TransactionFilters,
+  TxnSplit,
   UpdateTransactionInput,
 } from "../types";
 import { dispatch } from "./invoke";
@@ -48,10 +49,10 @@ export const client = {
     dispatch<void>("set_categories_archived", { ids, archived }),
 
   // Transactions
-  createIncome: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string, time: string | null = null, excludedFromReporting = false) =>
-    dispatch<Transaction>("create_income_transaction", { accountId, categoryId, amountCents, description, date, time, excludedFromReporting }),
-  createExpense: (accountId: string, categoryId: string, amountCents: number, description: string | null, date: string, time: string | null = null, excludedFromReporting = false) =>
-    dispatch<Transaction>("create_expense_transaction", { accountId, categoryId, amountCents, description, date, time, excludedFromReporting }),
+  createIncome: (accountId: string, categoryId: string | null, amountCents: number, description: string | null, date: string, time: string | null = null, excludedFromReporting = false, splits: TxnSplit[] | null = null) =>
+    dispatch<Transaction>("create_income_transaction", { accountId, categoryId, amountCents, description, date, time, excludedFromReporting, splits }),
+  createExpense: (accountId: string, categoryId: string | null, amountCents: number, description: string | null, date: string, time: string | null = null, excludedFromReporting = false, splits: TxnSplit[] | null = null) =>
+    dispatch<Transaction>("create_expense_transaction", { accountId, categoryId, amountCents, description, date, time, excludedFromReporting, splits }),
   createTransfer: (fromAccountId: string, toAccountId: string, amountCents: number, description: string | null, date: string, time: string | null = null) =>
     dispatch<Transaction>("create_transfer_transaction", { fromAccountId, toAccountId, amountCents, description, date, time }),
   listTransactions: (filters?: TransactionFilters) =>

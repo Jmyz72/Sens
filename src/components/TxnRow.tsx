@@ -23,6 +23,11 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
   const meta = KIND_META[tx.kind];
   const color = kindColor(t, tx.kind);
 
+  const split = tx.splits.length >= 2;
+  const splitNames = split
+    ? tx.splits.map((s) => categories.find((c) => c.id === s.categoryId)?.name ?? "—").join(" · ")
+    : null;
+
   const rowH = density === "compact" ? 42 : 50;
   const glyph = density === "compact" ? 28 : 32;
 
@@ -34,7 +39,7 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
   let subtitle: string;
   if (tx.kind === "transfer") subtitle = `${accName(tx.accountId)} → ${accName(tx.toAccountId)}`;
   else if (tx.kind === "adjustment" || tx.kind === "opening") subtitle = accName(tx.accountId);
-  else subtitle = `${cat?.name ?? ""} · ${accName(tx.accountId)}`;
+  else subtitle = split ? `${splitNames} · ${accName(tx.accountId)}` : `${cat?.name ?? ""} · ${accName(tx.accountId)}`;
 
   const isDest = perspectiveAccountId != null && tx.toAccountId === perspectiveAccountId;
   const signedCents = signedFor(tx.kind, tx.amountCents, isDest);
@@ -58,10 +63,20 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
         {cat ? <GlyphTile tone={cat.color ?? color} size={glyph} emoji={cat.emoji} />
           : <GlyphTile tone={color} size={glyph} icon={meta.icon} />}
         <span style={{ position: "absolute", left: -3, top: -3, width: 9, height: 9, borderRadius: 99, background: cat?.color ?? color, border: `2px solid ${t.panel}` }} />
+        {split && (
+          <span style={{ position: "absolute", right: -4, top: -4, minWidth: 14, height: 14, padding: "0 3px", borderRadius: 99, background: t.transfer, color: t.onAccent, fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${t.panel}` }}>
+            {tx.splits.length}
+          </span>
+        )}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
           <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+          {split && (
+            <span style={{ display: "inline-flex", alignItems: "center", flexShrink: 0, fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, color: t.transfer, background: hexA(t.transfer, 0.16), padding: "1px 5px", borderRadius: 5 }}>
+              Split · {tx.splits.length}
+            </span>
+          )}
           {tx.excludedFromReporting && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, color: t.opening, background: hexA(t.opening, 0.14), padding: "1px 5px", borderRadius: 5 }}>
               <Icon name="flag" size={9} color={t.opening} stroke={2.4} /> Excluded
