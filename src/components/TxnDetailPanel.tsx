@@ -88,10 +88,10 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
                 <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: t.dim, marginBottom: 6 }}>
                   Split across {tx.splits.length} categories
                 </div>
-                {tx.splits.map((s, i) => {
+                {tx.splits.map((s) => {
                   const c = categories.find((x) => x.id === s.categoryId);
                   return (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 0", borderBottom: `0.5px solid ${t.divider}`, fontSize: 13 }}>
+                    <div key={s.categoryId} style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 0", borderBottom: `0.5px solid ${t.divider}`, fontSize: 13 }}>
                       <span>{c?.emoji}</span>
                       <span style={{ flex: 1 }}>{c?.name ?? "—"}</span>
                       <span style={{ fontFamily: t.mono }}>{fmtMoney(s.amountCents, { cents: true })}</span>

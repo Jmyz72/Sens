@@ -120,8 +120,8 @@ function validateSplits(kind: string, splits: { categoryId: string; amountCents:
   for (const s of splits) {
     if (s.amountCents <= 0) fail("ValidationError", "Each split amount must be positive");
     const c = categories.find((x) => x.id === s.categoryId);
-    if (!c || c.kind !== kind) fail("ValidationError", "Category doesn't match this transaction");
-    else if (c.isSystem) fail("ValidationError", "Adjustment category can't be chosen");
+    if (c?.isSystem) fail("ValidationError", "That category can't be selected");
+    else if (!c || c.kind !== kind) fail("ValidationError", "Category doesn't match this transaction");
     sum += s.amountCents;
   }
   if (sum !== total) fail("ValidationError", "Split amounts must add up to the total");

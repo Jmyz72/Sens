@@ -30,8 +30,12 @@ describe("mock splits", () => {
     const after = await mockInvoke<number>("get_account_balance", { accountId: acc.id });
     expect(before - after).toBe(15000);
     const dash = await mockInvoke<any>("get_dashboard_summary", { month: "2026-06" });
+    // After reset_app (wipes transactions) + one fresh account (opening txn is
+    // not an expense) + this single split expense, the only in-range expense is
+    // this 15000 split — so the breakdown total must equal it exactly, proving
+    // both split lines are attributed (whether or not they roll up to one parent).
     const sum = dash.spendingBreakdown.reduce((s: number, r: any) => s + r.totalCents, 0);
-    expect(sum).toBeGreaterThanOrEqual(15000);
+    expect(sum).toBe(15000);
   });
 
   it("rejects a split whose lines don't sum to the total", async () => {
