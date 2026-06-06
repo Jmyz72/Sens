@@ -204,6 +204,41 @@ mod tests {
     }
 
     #[test]
+    fn breakdown_attributes_split_lines() {
+        use crate::repo;
+        let conn = open_in_memory().unwrap();
+        let acc = service::create_account(&conn, "Cash", "cash", 0, None).unwrap();
+        let a = nth_expense_category_id(&conn, 0);
+        let b = nth_expense_category_id(&conn, 1);
+        service::create_expense(&conn, &acc.id, None, 15000, None, "2026-06-10", None, false,
+            Some(vec![
+                SplitInput { category_id: a.clone(), amount_cents: 10000 },
+                SplitInput { category_id: b.clone(), amount_cents: 5000 },
+            ])).unwrap();
+        let rows = repo::spending_breakdown(&conn, "2026-06-01", "2026-07-01").unwrap();
+        let total: i64 = rows.iter().map(|r| r.total_cents).sum();
+        assert_eq!(total, 15000); // exactly the split total, header NOT double-counted
+        assert!(rows.iter().any(|r| r.total_cents == 10000));
+        assert!(rows.iter().any(|r| r.total_cents == 5000));
+    }
+
+    #[test]
+    fn category_count_includes_split_refs() {
+        use crate::repo;
+        let conn = open_in_memory().unwrap();
+        let acc = service::create_account(&conn, "Cash", "cash", 0, None).unwrap();
+        let a = nth_expense_category_id(&conn, 0);
+        let b = nth_expense_category_id(&conn, 1);
+        service::create_expense(&conn, &acc.id, None, 15000, None, "2026-06-10", None, false,
+            Some(vec![
+                SplitInput { category_id: a.clone(), amount_cents: 10000 },
+                SplitInput { category_id: b.clone(), amount_cents: 5000 },
+            ])).unwrap();
+        assert!(repo::count_transactions_for_category(&conn, &a).unwrap() >= 1);
+        assert!(repo::count_transactions_for_category(&conn, &b).unwrap() >= 1);
+    }
+
+    #[test]
     fn seeds_templates_and_categories() {
         let c = open_in_memory().unwrap();
         assert_eq!(service::list_account_templates(&c).unwrap().len(), 51); // +Luno, +Cash

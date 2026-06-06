@@ -340,7 +340,8 @@ pub fn count_children(conn: &Connection, parent_id: &str) -> AppResult<i64> {
 
 pub fn count_transactions_for_category(conn: &Connection, category_id: &str) -> AppResult<i64> {
     Ok(conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE category_id = ?1",
+        "SELECT (SELECT COUNT(*) FROM transactions WHERE category_id = ?1)
+              + (SELECT COUNT(*) FROM transaction_splits WHERE category_id = ?1)",
         [category_id],
         |r| r.get(0),
     )?)
@@ -555,7 +556,8 @@ pub fn list_transactions(conn: &Connection, f: &TransactionFilters) -> AppResult
         args.push(Box::new(v.clone()));
     }
     if let Some(v) = &f.category_id {
-        sql.push_str(" AND category_id = ?");
+        sql.push_str(" AND (category_id = ? OR id IN (SELECT transaction_id FROM transaction_splits WHERE category_id = ?))");
+        args.push(Box::new(v.clone()));
         args.push(Box::new(v.clone()));
     }
     if let Some(v) = &f.kind {
@@ -601,11 +603,22 @@ pub fn sum_kind_in_range(conn: &Connection, kind: &str, from: &str, to: &str) ->
 
 pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<Vec<CategoryBreakdown>> {
     let mut stmt = conn.prepare(
-        "SELECT COALESCE(c.parent_id, c.id) AS group_id, pc.name, pc.emoji, pc.color, SUM(t.amount_cents) AS total
-         FROM transactions t
-         JOIN categories c  ON c.id = t.category_id
+        "WITH attrib AS (
+           SELECT t.category_id AS cat, t.amount_cents AS amt
+           FROM transactions t
+           WHERE t.kind='expense' AND t.excluded_from_reporting=0
+             AND t.transaction_date >= ?1 AND t.transaction_date < ?2
+             AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
+           UNION ALL
+           SELECT s.category_id AS cat, s.amount_cents AS amt
+           FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
+           WHERE t.kind='expense' AND t.excluded_from_reporting=0
+             AND t.transaction_date >= ?1 AND t.transaction_date < ?2
+         )
+         SELECT COALESCE(c.parent_id, c.id) AS group_id, pc.name, pc.emoji, pc.color, SUM(a.amt) AS total
+         FROM attrib a
+         JOIN categories c  ON c.id = a.cat
          JOIN categories pc ON pc.id = COALESCE(c.parent_id, c.id)
-         WHERE t.kind = 'expense' AND t.excluded_from_reporting = 0 AND t.transaction_date >= ?1 AND t.transaction_date < ?2
          GROUP BY group_id ORDER BY total DESC",
     )?;
     let rows = stmt
