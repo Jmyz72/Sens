@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-06-06
+
 ### Changed
 - Internal: the browser mock's seed data (account subtypes, provider templates,
   and the category tree) is now generated from the Rust source into
