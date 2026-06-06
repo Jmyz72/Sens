@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "release": "node scripts/release.mjs",
-    "gen:seed-catalog": "export PATH=\"$HOME/.cargo/bin:$PATH\" && cd src-tauri && UPDATE_SEED_CATALOG=1 cargo test --lib seed_catalog_json_is_fresh"
+    "gen:seed-catalog": "export PATH=\"$HOME/.cargo/bin:$PATH\" && cd src-tauri && UPDATE_SEED_CATALOG=1 cargo test --lib --locked seed_catalog_json_is_fresh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

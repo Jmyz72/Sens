@@ -77,9 +77,11 @@ output is deterministic:
   directly onto the mock's existing flat `CAT_SEED` + `SUB_SEED` builder.
 - The two protected `Adjustment` system categories appear here with
   `isSystem: true`.
-- JSON is pretty-printed with **sorted object keys**; arrays are emitted in a
-  deterministic SQL `ORDER BY` (by `sort_order`, then a tiebreak) so regeneration
-  is byte-stable.
+- JSON is pretty-printed with object keys in a **fixed struct-field order** (the
+  generator serializes `#[derive(Serialize)]` structs, so field order is
+  deterministic regardless of serde_json's `preserve_order` feature); arrays are
+  emitted in a deterministic SQL `ORDER BY` (by `sort_order`, then a tiebreak) so
+  regeneration is byte-stable.
 
 ## Generation — from the real seeded DB
 
@@ -91,7 +93,7 @@ not from the Rust source arrays. A Rust helper:
 3. `SELECT`s `account_subtypes`, `account_templates`, and `categories` with
    deterministic ordering (categories `LEFT JOIN` themselves to resolve
    `parentName`),
-4. serializes the three arrays to the pretty, key-sorted JSON string.
+4. serializes the three arrays to the pretty, fixed-field-order JSON string.
 
 This is the truest source of truth: it captures the **frozen migration-002
 subtypes**, the seeded **templates**, and the **`Adjustment` system categories**
