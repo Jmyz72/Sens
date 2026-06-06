@@ -14,7 +14,7 @@ import { hexA } from "../theme/tokens";
 import { Btn, Field, Modal, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
-import { parseAmountToCents, todayISO, nowTimeHHMM } from "../lib/format";
+import { parseAmountToCents, todayISO, nowTimeHHMM, fmtMoney } from "../lib/format";
 import { KIND_META, kindColor } from "../lib/kinds";
 import { categoryPickerItems } from "../lib/categories";
 import { addItem, removeItem, itemsTotal, isSplit, finalize, isPendingValid, type BuilderItem } from "../lib/txnBuilder";
@@ -224,14 +224,14 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
                   return (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 0", borderBottom: `0.5px solid ${t.divider}` }}>
                       <span>{c?.emoji}</span><span style={{ flex: 1 }}>{c?.name}</span>
-                      <span style={{ fontFamily: t.mono }}>RM {(it.amountCents / 100).toFixed(2)}</span>
+                      <span style={{ fontFamily: t.mono }}>{fmtMoney(it.amountCents, { cents: true })}</span>
                       <button type="button" className="sens-icon-btn" onClick={() => setItems((xs) => removeItem(xs, i))} style={{ color: t.dim }}>✕</button>
                     </div>
                   );
                 })}
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontWeight: 700 }}>
                   <span style={{ color: t.dim }}>Total</span>
-                  <span style={{ fontFamily: t.mono }}>RM {(totalCents / 100).toFixed(2)}</span>
+                  <span style={{ fontFamily: t.mono }}>{fmtMoney(totalCents, { cents: true })}</span>
                 </div>
               </div>
             )}
