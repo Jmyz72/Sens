@@ -18,6 +18,7 @@ import { useAppData } from "../store";
 import { SetBalance } from "../modals/SetBalance";
 import { EditAccount } from "../modals/EditAccount";
 import { AddAccount } from "../modals/AddAccount";
+import { AddTransaction } from "../modals/AddTransaction";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { balanceDisplay, creditReadout, toneColor, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
 import { useToast } from "../components/Toast";
@@ -54,6 +55,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
   const [correcting, setCorrecting] = useState<Account | null>(null);
   const [editing, setEditing] = useState<Account | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [payAccount, setPayAccount] = useState<Account | null>(null);
 
   useEffect(() => { client.listAccounts(true).then(setAll).catch(() => {}); }, [version]);
   useEffect(() => {
@@ -186,6 +188,11 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
                           </span>
                         )}
                       </div>
+                      {(a.subtype === "credit-card" || a.subtype === "bnpl") && !a.isArchived && (
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <Btn size="sm" variant="outline" onClick={() => setPayAccount(a)}>Pay</Btn>
+                        </span>
+                      )}
                       <Icon name="chevronDown" size={15} color={t.faint} style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                     </div>
 
@@ -270,6 +277,15 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
       {correcting && <SetBalance account={correcting} hasTransactions={(txnsByAccount.get(correcting.id)?.some((t) => t.kind !== "opening") ?? false) || correcting.balanceCents !== correcting.openingBalanceCents} onClose={() => setCorrecting(null)} onDone={() => { setCorrecting(null); afterMutation(); }} />}
       {editing && <EditAccount account={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); afterMutation(); }} />}
       {showAdd && <AddAccount onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); afterMutation(); }} />}
+      {payAccount && (
+        <AddTransaction
+          accounts={all}
+          categories={categories}
+          payAccountId={payAccount.id}
+          onClose={() => setPayAccount(null)}
+          onDone={() => { setPayAccount(null); afterMutation(); }}
+        />
+      )}
     </div>
   );
 }
