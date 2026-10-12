@@ -9,6 +9,7 @@ import { accountName } from "../store";
 import { fmtDate, fmtMoney, fmtTime, nowTimeHHMM } from "../lib/format";
 import { hexA } from "../theme/tokens";
 import { KIND_META, kindColor, signedFor, computeRunningBalances } from "../lib/kinds";
+import { isPaymentSource, movementKind } from "../lib/payments";
 import { categoryPickerItems } from "../lib/categories";
 import { useTimeSetting } from "../lib/useTimeSetting";
 
@@ -19,7 +20,8 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
   const t = useTheme();
   const color = kindColor(t, tx.kind);
   const meta = KIND_META[tx.kind];
-  const editable = tx.kind === "income" || tx.kind === "expense" || tx.kind === "transfer";
+  const movement = tx.kind === "transfer" || tx.kind === "payment";
+  const editable = tx.kind === "income" || tx.kind === "expense" || movement;
   const split = tx.splits.length >= 2;
 
   const [categoryId, setCategoryId] = useState(tx.categoryId);
@@ -42,15 +44,17 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
   async function save() {
     setBusy(true); setError(null);
     try {
-      await client.updateTransaction({
-        id: tx.id, kind: tx.kind, accountId,
-        toAccountId: tx.kind === "transfer" ? toAccountId : null,
-        categoryId: tx.kind === "transfer" ? null : (split ? null : categoryId),
-        amountCents: tx.amountCents, description: desc.trim() || null, transactionDate: date,
-        transactionTime: timeEnabled ? time : tx.transactionTime,
-        excludedFromReporting: tx.kind === "transfer" ? false : excluded,
-        splits: split ? tx.splits : null,
-      });
+        const dest = accounts.find((a) => a.id === toAccountId);
+        const kind = movement ? movementKind(dest?.subtype) : tx.kind;
+        await client.updateTransaction({
+          id: tx.id, kind, accountId,
+          toAccountId: movement ? toAccountId : null,
+          categoryId: movement ? null : (split ? null : categoryId),
+          amountCents: tx.amountCents, description: desc.trim() || null, transactionDate: date,
+          transactionTime: timeEnabled ? time : tx.transactionTime,
+          excludedFromReporting: movement ? false : excluded,
+          splits: movement ? null : (split ? tx.splits : null),
+        });
       onSaved();
     } catch (e) {
       setError((e as { message?: string })?.message ?? "Something went wrong");
@@ -70,8 +74,8 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
         </div>
         <div style={{ fontSize: 15, fontWeight: 700, marginTop: 12 }}>{tx.description || meta.label}</div>
         <div style={{ marginTop: 6 }}>
-          <Money cents={tx.kind === "transfer" ? tx.amountCents : signedCents} signed={tx.kind !== "transfer"}
-            color={tx.kind === "transfer" || tx.kind === "adjustment" || tx.kind === "opening" ? color : undefined} size={26} weight={700} />
+          <Money cents={movement ? tx.amountCents : signedCents} signed={!movement}
+            color={movement || tx.kind === "adjustment" || tx.kind === "opening" ? color : undefined} size={26} weight={700} />
         </div>
         {before != null && after != null && (
           <div style={{ fontSize: 11.5, color: t.faint, marginTop: 6 }}>
@@ -101,7 +105,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
                 <div style={{ fontSize: 11, color: t.faint, marginTop: 6 }}>Edit individual items from the Edit dialog.</div>
               </div>
             )}
-            {tx.kind !== "transfer" && !split && (
+            {!movement && !split && (
               <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
                 <span style={{ color: t.dim }}>Category</span>
                 <select value={categoryId ?? ""} onChange={(e) => setCategoryId(e.target.value || null)} style={fieldStyle}>
@@ -110,12 +114,14 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
               </label>
             )}
             <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-              <span style={{ color: t.dim }}>{tx.kind === "transfer" ? "From" : "Account"}</span>
+              <span style={{ color: t.dim }}>{movement ? "From" : "Account"}</span>
               <select value={accountId} onChange={(e) => setAccountId(e.target.value)} style={fieldStyle}>
-                {accountOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                {(movement && movementKind(accounts.find((a) => a.id === toAccountId)?.subtype) === "payment"
+                  ? accountOptions.filter((a) => isPaymentSource(a.subtype) || a.id === accountId)
+                  : accountOptions).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </label>
-            {tx.kind === "transfer" && (
+            {movement && (
               <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
                 <span style={{ color: t.dim }}>To</span>
                 <select value={toAccountId ?? ""} onChange={(e) => setToAccountId(e.target.value || null)} style={fieldStyle}>
@@ -137,7 +143,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
               <span style={{ color: t.dim }}>Note</span>
               <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="—" style={{ ...fieldStyle, flex: 1 }} />
             </label>
-            {tx.kind !== "transfer" && (
+            {!movement && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
                 <span style={{ color: t.dim }}>Exclude from reporting</span>
                 <button type="button" role="switch" aria-checked={excluded} aria-label="Exclude from reporting" onClick={() => setExcluded((v) => !v)}

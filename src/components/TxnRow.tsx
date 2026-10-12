@@ -31,24 +31,25 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
   const rowH = density === "compact" ? 42 : 50;
   const glyph = density === "compact" ? 28 : 32;
 
+  const movement = tx.kind === "transfer" || tx.kind === "payment";
   const title = tx.description
     || cat?.name
-    || (tx.kind === "transfer" ? "Transfer" : tx.kind === "adjustment" ? "Balance adjustment" : meta.label);
+    || (tx.kind === "adjustment" ? "Balance adjustment" : meta.label);
 
   const accName = (id: string | null) => (id && accounts.find((a) => a.id === id)?.name) || "—";
   let subtitle: string;
-  if (tx.kind === "transfer") subtitle = `${accName(tx.accountId)} → ${accName(tx.toAccountId)}`;
+  if (movement) subtitle = `${accName(tx.accountId)} → ${accName(tx.toAccountId)}`;
   else if (tx.kind === "adjustment" || tx.kind === "opening") subtitle = accName(tx.accountId);
   else subtitle = split ? `${splitNames} · ${accName(tx.accountId)}` : `${cat?.name ?? ""} · ${accName(tx.accountId)}`;
 
   const isDest = perspectiveAccountId != null && tx.toAccountId === perspectiveAccountId;
   const signedCents = signedFor(tx.kind, tx.amountCents, isDest);
-  // Income/expense carry an inherent sign; transfers are signed only from an
+  // Income/expense carry an inherent sign; transfers and payments are signed only from an
   // account perspective, otherwise shown neutral in transfer color.
-  const signed = tx.kind !== "transfer" || perspectiveAccountId != null;
+  const signed = !movement || perspectiveAccountId != null;
   // Structural kinds (opening/adjustment) keep their +/− sign but use their own
   // kind color — never income-green/expense-red, which would misread as cashflow.
-  const useKindColor = (tx.kind === "transfer" && !signed) || tx.kind === "adjustment" || tx.kind === "opening";
+  const useKindColor = (movement && !signed) || tx.kind === "adjustment" || tx.kind === "opening";
 
   return (
     <div className={`sens-row${onClick ? " click" : ""}`} onClick={onClick}

@@ -21,7 +21,7 @@ import { planBulk, type BulkAction } from "../lib/txnSelection";
 import { useToast } from "../components/Toast";
 import { useTimeSetting } from "../lib/useTimeSetting";
 
-const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "adjustment", "opening"];
+const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "payment", "adjustment", "opening"];
 
 export function Transactions({ initialAccountId }: { initialAccountId?: string | null }) {
   const t = useTheme();
@@ -198,6 +198,8 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
         await client.createIncome(tx.accountId, splits ? null : tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, dupTime, tx.excludedFromReporting, splits);
       else if (tx.kind === "expense" && (tx.categoryId || splits))
         await client.createExpense(tx.accountId, splits ? null : tx.categoryId, tx.amountCents, tx.description, tx.transactionDate, dupTime, tx.excludedFromReporting, splits);
+      else if (tx.kind === "payment" && tx.toAccountId)
+        await client.createPayment(tx.accountId, tx.toAccountId, tx.amountCents, tx.description, tx.transactionDate, dupTime);
       else if (tx.kind === "transfer" && tx.toAccountId)
         await client.createTransfer(tx.accountId, tx.toAccountId, tx.amountCents, tx.description, tx.transactionDate, dupTime);
       else return;
