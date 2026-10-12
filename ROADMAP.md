@@ -57,17 +57,17 @@ Listed in **priority order**. The version each phase ships under is assigned whe
 ships, not here — finishing a phase moves it into the Shipped table above with its tag.
 
 ### ⚪ Credit & debt behavior
-Credit limits + utilization (credit-card, BNPL); installment/payoff schedules and
-interest for loans (personal-loan, mortgage, car-loan, borrowed). Builds on the
-**v0.5.0** non-cashflow flag so repayments move money without polluting income/expense.
+Credit limits + utilization (credit-card, BNPL), and card/BNPL repayments plus
+reimbursement pairing. Builds on the **v0.5.0** non-cashflow flag so repayments
+move money without polluting income/expense. Loan schedules and interest are
+unscheduled — see *Later / unscheduled*.
 - [x] credit limit + utilization % + available credit — spec: `docs/superpowers/specs/2026-10-12-credit-limit-design.md`
-- [ ] installment / payoff schedules
-- [ ] interest + principal-vs-interest split
-- [ ] credit-card payments and loan/BNPL repayments recorded as money movement rather
+- [ ] credit-card payments and BNPL repayments recorded as money movement rather
       than income/expense (own→owe transfers are already excluded; the `excludedFromReporting`
       flag covers external-party cases) — carried over from v0.5.0
 - [ ] reimbursements & claims — money back that explicitly offsets an original expense
       (pairing), beyond the v0.5.0 flag that already excludes it from income
+— spec: _TBD_
 
 ### ⚪ Investment value
 Completes the deferred taxonomy work.
@@ -185,8 +185,16 @@ surfaces `AppError` cleanly — only startup is exposed.
 — spec: _TBD_
 
 ## Later / unscheduled
-_Nothing yet — every selected feature is placed above. New ideas land here (or in
-the right phase) before they're scheduled._
+
+### Loan schedules and interest
+Personal loan, mortgage, car loan, borrowed, and other debt stay ordinary owe
+accounts (a signed balance that counts in net worth). Extra loan behavior is
+not on the path to 1.0.
+- [ ] installment / payoff schedules
+- [ ] interest + principal-vs-interest split
+- [ ] loan repayments recorded as money movement rather than income/expense
+      (own→owe transfers are already excluded; the `excludedFromReporting` flag
+      covers external-party cases)
 
 ## Conventions
 - **Versioning:** one phase = one minor bump (`0.N.0`); fixes are patches (`0.N.x`);
