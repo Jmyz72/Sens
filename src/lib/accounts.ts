@@ -59,3 +59,27 @@ export function sidebarPortfolioSummary(accounts: Pick<Account, "group" | "balan
     return summary;
   }, { assetsCents: 0, liabilitiesCents: 0, netWorthCents: 0 });
 }
+
+/** Subtypes that store a required credit limit. */
+export function subtypeHasCreditLimit(subtype: string): boolean {
+  return subtype === "credit-card" || subtype === "bnpl";
+}
+
+export interface CreditReadout {
+  availableCents: number;
+  usedPercent: number;
+  overLimit: boolean;
+}
+
+/**
+ * Available credit and utilization for a card or BNPL account.
+ * Call only when `creditLimitCents` is a positive integer.
+ * In credit (balance >= 0) reports the full limit and 0% used.
+ * Past the limit, available credit stays 0 and `overLimit` is true.
+ */
+export function creditReadout(balanceCents: number, creditLimitCents: number): CreditReadout {
+  const owed = balanceCents < 0 ? -balanceCents : 0;
+  const availableCents = balanceCents < 0 ? Math.max(0, creditLimitCents - owed) : creditLimitCents;
+  const usedPercent = Math.round((owed * 100) / creditLimitCents);
+  return { availableCents, usedPercent, overLimit: usedPercent > 100 };
+}
