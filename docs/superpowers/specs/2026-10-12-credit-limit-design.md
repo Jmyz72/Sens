@@ -1,7 +1,7 @@
 # Credit limit for credit cards and BNPL
 
 **Date:** 2026-10-12
-**Status:** Pending review
+**Status:** Approved — ready for implementation plan
 
 ## Problem
 

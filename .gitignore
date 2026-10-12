@@ -27,3 +27,6 @@ src-tauri/gen/schemas
 # Claude Code local settings
 .claude/
 .preview-mock/
+
+# Local git worktrees
+.worktrees/
