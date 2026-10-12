@@ -99,6 +99,7 @@ fn map_account(r: &Row) -> rusqlite::Result<Account> {
         group: r.get("group")?,               // aliased from s.account_group
         subtype: r.get("subtype")?,
         opening_balance_cents: r.get("opening_balance_cents")?,
+        credit_limit_cents: r.get("credit_limit_cents")?,
         currency: r.get("currency")?,
         is_archived: r.get::<_, i64>("is_archived")? != 0,
         created_at: r.get("created_at")?,
@@ -113,13 +114,14 @@ pub fn insert_account(
     template_key: Option<&str>,
     name: &str,
     subtype: &str,
+    credit_limit_cents: Option<i64>,
     now: &str,
 ) -> AppResult<Account> {
     conn.execute(
         "INSERT INTO accounts
-           (id, template_key, name, subtype, currency, is_archived, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, 'MYR', 0, ?5, ?5)",
-        params![id, template_key, name, subtype, now],
+           (id, template_key, name, subtype, currency, is_archived, credit_limit_cents, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, 'MYR', 0, ?5, ?6, ?6)",
+        params![id, template_key, name, subtype, credit_limit_cents, now],
     )?;
     get_account(conn, id)
 }
@@ -192,6 +194,14 @@ pub fn update_account_fields(
             params![id, o, now],
         )?;
     }
+    Ok(())
+}
+
+pub fn set_credit_limit(conn: &Connection, id: &str, credit_limit_cents: Option<i64>, now: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE accounts SET credit_limit_cents = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, credit_limit_cents, now],
+    )?;
     Ok(())
 }
 

@@ -22,11 +22,11 @@ export const client = {
   // Accounts
   listAccountTemplates: () => dispatch<AccountTemplate[]>("list_account_templates"),
   listAccountSubtypes: () => dispatch<AccountSubtype[]>("list_account_subtypes"),
-  createAccount: (name: string, subtype: string, openingBalanceCents: number, templateKey: string | null) =>
-    dispatch<Account>("create_account", { name, subtype, openingBalanceCents, templateKey }),
+  createAccount: (name: string, subtype: string, openingBalanceCents: number, templateKey: string | null, creditLimitCents: number | null = null) =>
+    dispatch<Account>("create_account", { name, subtype, openingBalanceCents, templateKey, creditLimitCents }),
   listAccounts: (includeArchived = false) =>
     dispatch<Account[]>("list_accounts", { includeArchived }),
-  updateAccount: (input: { id: string; name?: string; subtype?: string; openingBalanceCents?: number }) =>
+  updateAccount: (input: { id: string; name?: string; subtype?: string; openingBalanceCents?: number; creditLimitCents?: number }) =>
     dispatch<Account>("update_account", { input }),
   archiveAccount: (id: string) => dispatch<Account>("archive_account", { id }),
   restoreAccount: (id: string) => dispatch<Account>("restore_account", { id }),

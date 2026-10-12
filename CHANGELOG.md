@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Credit limit on credit cards and BNPL.** Creating or editing either account requires a limit. The Accounts screen shows available credit and utilization. A charge past the limit is still saved; available credit stays at zero and the row reads "Over limit".
+
 ### Documentation
 - Synced the docs with the code: `ROADMAP.md` now lists every release through
   v0.9.1 (v0.7.0–v0.9.1 were missing from the Shipped table); `CLAUDE.md` /

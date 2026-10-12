@@ -37,8 +37,9 @@ pub fn create_account(
     subtype: String,
     opening_balance_cents: i64,
     template_key: Option<String>,
+    credit_limit_cents: Option<i64>,
 ) -> AppResult<Account> {
-    with_conn!(state, c => service::create_account(&c, &name, &subtype, opening_balance_cents, template_key.as_deref()))
+    with_conn!(state, c => service::create_account(&c, &name, &subtype, opening_balance_cents, template_key.as_deref(), credit_limit_cents))
 }
 
 #[tauri::command]

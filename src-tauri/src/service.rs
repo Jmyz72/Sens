@@ -96,12 +96,34 @@ pub fn list_account_subtypes(conn: &Connection) -> AppResult<Vec<AccountSubtype>
     repo::list_account_subtypes(conn)
 }
 
+fn is_credit_limit_subtype(subtype: &str) -> bool {
+    subtype == "credit-card" || subtype == "bnpl"
+}
+
+fn resolve_credit_limit(subtype: &str, incoming: Option<i64>, existing: Option<i64>) -> AppResult<Option<i64>> {
+    if is_credit_limit_subtype(subtype) {
+        match incoming {
+            Some(n) if n > 0 => Ok(Some(n)),
+            Some(_) => Err(AppError::Validation("Credit limit must be greater than zero.".into())),
+            None => match existing {
+                Some(n) if n > 0 => Ok(Some(n)),
+                _ => Err(AppError::Validation("Credit limit is required for this account.".into())),
+            },
+        }
+    } else if incoming.is_some() {
+        Err(AppError::Validation("Credit limit only applies to credit cards and BNPL.".into()))
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn create_account(
     conn: &Connection,
     name: &str,
     subtype: &str,
     opening_balance_cents: i64,
     template_key: Option<&str>,
+    credit_limit_cents: Option<i64>,
 ) -> AppResult<Account> {
     let name = require_nonempty("Account name", name)?;
     let subtype = require_nonempty("Subtype", subtype)?;
@@ -111,9 +133,10 @@ pub fn create_account(
     if let Some(key) = template_key {
         repo::get_template(conn, key)?; // existence (NotFound if bogus)
     }
+    let limit = resolve_credit_limit(&subtype, credit_limit_cents, None)?;
     let account_id = new_id();
     let tx = conn.unchecked_transaction()?;
-    repo::insert_account(&tx, &account_id, template_key, &name, &subtype, &now())?;
+    repo::insert_account(&tx, &account_id, template_key, &name, &subtype, limit, &now())?;
     let opening = repo::insert_transaction(
         &tx,
         &new_id(),
@@ -138,7 +161,7 @@ pub fn list_accounts(conn: &Connection, include_archived: bool) -> AppResult<Vec
 }
 
 pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult<Account> {
-    repo::get_account(conn, &input.id)?; // existence
+    let existing = repo::get_account(conn, &input.id)?; // existence
     let name = match &input.name {
         Some(n) => Some(require_nonempty("Account name", n)?),
         None => None,
@@ -148,6 +171,8 @@ pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult
             return Err(AppError::Validation(format!("Invalid subtype: {s}")));
         }
     }
+    let resulting_subtype = input.subtype.as_deref().unwrap_or(existing.subtype.as_str());
+    let limit = resolve_credit_limit(resulting_subtype, input.credit_limit_cents, existing.credit_limit_cents)?;
     let tx = conn.unchecked_transaction()?;
     repo::update_account_fields(
         &tx,
@@ -157,6 +182,7 @@ pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult
         input.opening_balance_cents,
         &now(),
     )?;
+    repo::set_credit_limit(&tx, &input.id, limit, &now())?;
     if input.opening_balance_cents.is_some() {
         let opening = repo::get_opening_transaction(&tx, &input.id)?;
         materialize_postings(&tx, &opening)?;

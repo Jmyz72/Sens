@@ -35,6 +35,7 @@ export interface Account {
   group: AccountGroup;
   subtype: string;
   openingBalanceCents: number;
+  creditLimitCents: number | null;
   currency: string;
   isArchived: boolean;
   createdAt: string;

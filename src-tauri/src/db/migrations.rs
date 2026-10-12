@@ -3,7 +3,7 @@
 //! CHECK constraints, and indexes per the design spec's Database Design.
 
 /// Ordered list of `(version, sql)`. Append-only — never edit a shipped one.
-pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008), (9, MIGRATION_009)];
+pub const MIGRATIONS: &[(i64, &str)] = &[(1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004), (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008), (9, MIGRATION_009), (10, MIGRATION_010)];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
 // `postings` ledger that is the authoritative source for account balances. Each
@@ -46,6 +46,13 @@ SELECT 'p2-' || id, id,
                  WHEN 'transfer' THEN  amount_cents
                  ELSE -amount_cents END
 FROM transactions;
+"#;
+
+// Credit limit for credit-card / BNPL accounts. Plain ADD COLUMN, NOT an accounts
+// rebuild (postings.account_id references accounts). NULL for every other subtype.
+const MIGRATION_010: &str = r#"
+ALTER TABLE accounts ADD COLUMN credit_limit_cents INTEGER
+  CHECK (credit_limit_cents IS NULL OR credit_limit_cents > 0);
 "#;
 
 // v-next — category splits. A transaction may divide its amount across multiple
