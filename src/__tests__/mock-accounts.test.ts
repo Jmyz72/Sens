@@ -64,11 +64,24 @@ describe("mock taxonomy + net worth", () => {
     const cleared = await mockInvoke<Account>("update_account", { input: { id: card.id, subtype: "savings" } });
     expect(cleared.creditLimitCents).toBeNull();
 
-    await expect(mockInvoke("update_account", { input: { id: savings.id, subtype: "credit-card" } }))
+    const reread = async (id: string) =>
+      (await mockInvoke<Account[]>("list_accounts", { includeArchived: true })).find((x) => x.id === id)!;
+
+    await expect(mockInvoke("update_account", { input: { id: savings.id, name: "Renamed", subtype: "credit-card" } }))
       .rejects.toMatchObject({ code: "ValidationError", message: "Credit limit is required for this account." });
+    const afterReject1 = await reread(savings.id);
+    expect(afterReject1.subtype).toBe("savings");
+    expect(afterReject1.name).toBe("Cash");
+    expect(afterReject1.creditLimitCents).toBeNull();
+    expect(afterReject1.updatedAt).toBe(savings.updatedAt);
     const switched = await mockInvoke<Account>("update_account", { input: { id: savings.id, subtype: "bnpl", creditLimitCents: 400_000 } });
     expect(switched.creditLimitCents).toBe(400_000);
-    await expect(mockInvoke("update_account", { input: { id: switched.id, subtype: "cash", creditLimitCents: 10 } }))
+    await expect(mockInvoke("update_account", { input: { id: switched.id, name: "Renamed", subtype: "cash", creditLimitCents: 10 } }))
       .rejects.toMatchObject({ code: "ValidationError", message: "Credit limit only applies to credit cards and BNPL." });
+    const afterReject2 = await reread(switched.id);
+    expect(afterReject2.subtype).toBe("bnpl");
+    expect(afterReject2.name).toBe("Cash");
+    expect(afterReject2.creditLimitCents).toBe(400_000);
+    expect(afterReject2.updatedAt).toBe(switched.updatedAt);
   });
 });

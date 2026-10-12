@@ -211,15 +211,19 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       return accounts.filter((x) => a.includeArchived || !x.isArchived).map(hydrate) as T;
     case "update_account": {
       const acc = accounts.find((x) => x.id === a.input.id) ?? fail("NotFound", "Account not found");
-      if (a.input.name != null) acc.name = String(a.input.name).trim();
-      if (a.input.subtype != null) {
-        const s = subtypeOf(a.input.subtype) ?? fail("ValidationError", `Invalid subtype: ${a.input.subtype}`);
-        acc.subtype = s.key;
-        acc.accountType = s.type;
-        acc.group = s.group;
-      }
+      // Validate everything before writing so a rejected update leaves the account untouched.
+      const nextSub = a.input.subtype != null
+        ? subtypeOf(a.input.subtype) ?? fail("ValidationError", `Invalid subtype: ${a.input.subtype}`)
+        : null;
       const sent = Object.prototype.hasOwnProperty.call(a.input, "creditLimitCents") ? a.input.creditLimitCents : null;
-      acc.creditLimitCents = resolveCreditLimit(acc.subtype, sent ?? null, acc.creditLimitCents);
+      const nextLimit = resolveCreditLimit(nextSub ? nextSub.key : acc.subtype, sent ?? null, acc.creditLimitCents);
+      if (a.input.name != null) acc.name = String(a.input.name).trim();
+      if (nextSub) {
+        acc.subtype = nextSub.key;
+        acc.accountType = nextSub.type;
+        acc.group = nextSub.group;
+      }
+      acc.creditLimitCents = nextLimit;
       if (a.input.openingBalanceCents != null) {
         const op = txns.find((t) => t.kind === "opening" && t.accountId === acc.id);
         if (op) op.amountCents = a.input.openingBalanceCents;
