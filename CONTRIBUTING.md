@@ -26,10 +26,11 @@ Sens is deliberately **narrow in scope**: a manual, local-first, MYR-only person
 | `npm run build` | `tsc` typecheck + `vite build` — the frontend gate, must stay clean |
 | `npm test` | Vitest suite |
 | `npm run test:watch` | Vitest in watch mode |
-| `cd src-tauri && cargo test --lib` | Rust service/repo tests |
+| `cd src-tauri && cargo test --lib` | Rust service/repo tests (CI runs it with `--locked`) |
 | `cd src-tauri && cargo build` | Compile the desktop binary (validates Tauri command registration) |
+| `npm run gen:seed-catalog` | Regenerate `src/generated/seed-catalog.json` from the Rust seed (needed after editing `db/seed.rs` or a subtype-changing migration; CI fails if it's stale) |
 
-Run a single frontend test file: `npx vitest run src/__tests__/format.test.ts`
+Run a single frontend test file: `npx vitest run src/lib/__tests__/format.test.ts`
 Filter by name: `npx vitest run -t "signedFor"`
 Run one Rust test: `cargo test --lib settings_roundtrip`
 
@@ -42,12 +43,12 @@ React UI → typed client → dispatch seam → Tauri commands → services → 
 ```
 
 - **All money is integer MYR cents** end-to-end. Only format at the edge via `src/lib/format.ts`.
-- **Balances are never stored** — they're computed from opening balance + signed history.
+- **Balances are never stored** — an account's balance is computed on read as the sum of its double-entry postings (every transaction, including the account's structural `opening` row, writes balanced postings).
 - The backend is the source of truth for **UUIDs and timestamps** — never send them from the frontend.
 
 ### The Tauri/mock seam (most important rule)
 
-`src/client/invoke.ts` routes to the **real Rust backend** inside Tauri, or to an **in-memory mock** (`src/client/mock.ts`) in a plain browser. **Any change to a command's behavior, signature, or args must be made in BOTH the Rust chain and the mock**, or browser-dev and the packaged app will diverge. The mock is dev-only and never ships.
+`src/client/invoke.ts` routes to the **real Rust backend** inside Tauri, or to an **in-memory mock** (`src/client/mock.ts`) in a plain browser. **Any change to a command's behavior, signature, or args must be made in BOTH the Rust chain and the mock**, or browser-dev and the packaged app will diverge. The mock is dev-only and never ships. The one exception is **seed data** (account subtypes, provider templates, default categories): it's generated from the Rust source into `src/generated/seed-catalog.json`, so run `npm run gen:seed-catalog` after changing the seed rather than editing the mock by hand.
 
 See [`CLAUDE.md`](./CLAUDE.md) for the full architecture and conventions, and [`docs/superpowers/specs/`](./docs/superpowers/specs/) for design specs. **Read the relevant spec before changing data-model or business-rule behavior.**
 
@@ -64,7 +65,7 @@ Sens follows **[GitHub Flow](https://docs.github.com/en/get-started/quickstart/g
 1. **Fork** the repo and create a topic branch off `main` (e.g. `feat/credit-utilization`, `fix/dashboard-totals`).
 2. **Write tests first** where practical, and keep both the frontend (`npm test`) and backend (`cargo test --lib`) suites green.
 3. **Keep the build clean** — `npm run build` must pass.
-4. **Update documentation** — keep `CLAUDE.md`, the relevant spec, and `CHANGELOG.md` (`[Unreleased]` section) in sync with your change.
+4. **Update documentation** — keep `CLAUDE.md` (and its identical mirror `AGENTS.md` — edit one, then copy it over the other), the relevant spec, `ROADMAP.md` when a phase ships, and `CHANGELOG.md` (`[Unreleased]` section) in sync with your change.
 5. **Open a Pull Request** against `main` using the PR template. Link any related issue.
 
 ### Commit & PR conventions

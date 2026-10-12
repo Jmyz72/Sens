@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- Synced the docs with the code: `ROADMAP.md` now lists every release through
+  v0.9.1 (v0.7.0–v0.9.1 were missing from the Shipped table); `CLAUDE.md` /
+  `AGENTS.md` document the in-app auto-updater, the app-settings keys, the
+  window `dragDropEnabled: false` gotcha, the `gen:seed-catalog` command, the
+  migration 001→009 range, and the correct frontend test path; `README.md`,
+  `CONTRIBUTING.md`, `RELEASING.md`, and `SECURITY.md` were brought in line with
+  the current feature set, double-entry balances, updater, and `0.x` versioning.
+- Restored the changelog's version link references (they had stopped at v0.3.1).
+
 ## [0.9.1] — 2026-06-06
 
 ### Changed
@@ -395,7 +405,26 @@ Design: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.m
   TypeScript + Vite, integer-MYR-cents money, dark/light theming, and the
   Tauri/in-memory-mock dispatch seam for browser-only dev.
 
-[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.9.1
+[0.9.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.9.0
+[0.8.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.8.0
+[0.7.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.7.1
+[0.7.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.7.0
+[0.6.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.6.0
+[0.5.4]: https://github.com/Jmyz72/Sens/releases/tag/v0.5.4
+[0.5.3]: https://github.com/Jmyz72/Sens/releases/tag/v0.5.3
+[0.5.2]: https://github.com/Jmyz72/Sens/releases/tag/v0.5.2
+[0.5.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.5.1
+[0.5.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.5.0
+[0.4.7]: https://github.com/Jmyz72/Sens/releases/tag/v0.4.7
+[0.4.6]: https://github.com/Jmyz72/Sens/releases/tag/v0.4.6
+[0.4.5]: https://github.com/Jmyz72/Sens/releases/tag/v0.4.5
+[0.4.4]: https://github.com/Jmyz72/Sens/releases/tag/v0.4.4
+[0.4.3]: https://github.com/Jmyz72/Sens/releases/tag/v0.4.3
+[0.4.2]: https://github.com/Jmyz72/Sens/releases/tag/v0.4.2
+[0.4.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.4.1
+[0.4.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.3.0
 [0.2.4]: https://github.com/Jmyz72/Sens/releases/tag/v0.2.4
