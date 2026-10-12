@@ -19,7 +19,7 @@ import { SetBalance } from "../modals/SetBalance";
 import { EditAccount } from "../modals/EditAccount";
 import { AddAccount } from "../modals/AddAccount";
 import { ProviderLogo } from "../components/ProviderLogo";
-import { balanceDisplay, toneColor, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
+import { balanceDisplay, creditReadout, toneColor, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
 import { useToast } from "../components/Toast";
 import { computeRunningBalances, txnSortKey } from "../lib/kinds";
 import { fmtDate, fmtMoney, todayISO } from "../lib/format";
@@ -146,6 +146,9 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
                 const st = stats.get(a.id);
                 const txns = txnsByAccount.get(a.id) ?? [];
                 const v = balanceDisplay(a.group, a.balanceCents);
+                const readout = a.creditLimitCents != null && a.creditLimitCents > 0
+                  ? creditReadout(a.balanceCents, a.creditLimitCents)
+                  : null;
                 const sparkPoints = st?.sparkline ?? [];
                 const trendUp = sparkPoints.length < 2 || sparkPoints[sparkPoints.length - 1] >= sparkPoints[0];
                 const trendColor = trendUp ? t.income : t.negative;
@@ -175,6 +178,13 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
                         {v.label && <span style={{ fontSize: 10, color: t.faint }}>{v.label}</span>}
                         <Money cents={v.magnitude} size={15} color={toneColor(v.tone, t)} />
                         {st && <Delta cents={st.monthChangeCents} t={t} />}
+                        {readout && (
+                          <span style={{ fontSize: 10.5, fontFamily: t.mono, color: readout.overLimit ? t.expense : t.dim }}>
+                            {readout.overLimit
+                              ? `Over limit · ${readout.usedPercent}%`
+                              : `${fmtMoney(readout.availableCents, { cents: true })} available · ${readout.usedPercent}%`}
+                          </span>
+                        )}
                       </div>
                       <Icon name="chevronDown" size={15} color={t.faint} style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                     </div>
@@ -200,6 +210,17 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
                           <div style={{ marginBottom: 12 }}>
                             <Sparkline points={chart} color={t.accent} fill width={820} height={72} />
                           </div>
+                          {readout && (
+                            <div style={{ marginBottom: 12 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 6, color: readout.overLimit ? t.expense : t.dim }}>
+                                <span>{fmtMoney(readout.availableCents, { cents: true })} available</span>
+                                <span>{readout.overLimit ? `Over limit · ${readout.usedPercent}%` : `${readout.usedPercent}%`}</span>
+                              </div>
+                              <div style={{ height: 6, borderRadius: 99, background: t.panel3, overflow: "hidden" }}>
+                                <div style={{ width: `${Math.min(readout.usedPercent, 100)}%`, height: "100%", borderRadius: 99, background: readout.overLimit ? t.expense : t.accent }} />
+                              </div>
+                            </div>
+                          )}
                           {/* stat tiles */}
                           {st && (
                             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>

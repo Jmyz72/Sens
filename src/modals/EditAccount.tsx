@@ -8,7 +8,8 @@ import { hexA } from "../theme/tokens";
 import { Btn, Field, Modal, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
-import { TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
+import { parseAmountToCents } from "../lib/format";
+import { TYPE_LABEL, TYPE_ORDER, subtypeHasCreditLimit } from "../lib/accounts";
 
 export function EditAccount({ account, onClose, onDone }: { account: Account; onClose: () => void; onDone: () => void }) {
   const t = useTheme();
@@ -16,6 +17,9 @@ export function EditAccount({ account, onClose, onDone }: { account: Account; on
   const [name, setName] = useState(account.name);
   const [type, setType] = useState<string>(account.accountType);
   const [subtype, setSubtype] = useState(account.subtype);
+  const [limit, setLimit] = useState(
+    account.creditLimitCents != null ? (account.creditLimitCents / 100).toFixed(2) : "",
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +39,17 @@ export function EditAccount({ account, onClose, onDone }: { account: Account; on
     if (!name.trim()) return;
     setBusy(true); setError(null);
     try {
-      await client.updateAccount({ id: account.id, name: name.trim(), subtype });
+      const needsLimit = subtypeHasCreditLimit(subtype);
+      if (needsLimit) {
+        const limitCents = parseAmountToCents(limit);
+        if (limitCents == null) {
+          setError("Credit limit is required for this account.");
+          return;
+        }
+        await client.updateAccount({ id: account.id, name: name.trim(), subtype, creditLimitCents: limitCents });
+      } else {
+        await client.updateAccount({ id: account.id, name: name.trim(), subtype });
+      }
       onDone();
     } catch (e) {
       setError((e as { message?: string })?.message ?? "Could not save");
@@ -62,6 +76,13 @@ export function EditAccount({ account, onClose, onDone }: { account: Account; on
             </select>
           </Field>
         </div>
+        {subtypeHasCreditLimit(subtype) && (
+          <Field label="Credit limit (RM)">
+            <input className="sens-input" value={limit} inputMode="decimal" placeholder="0.00"
+              onChange={(e) => setLimit(e.target.value.replace(/[^0-9.]/g, ""))}
+              style={{ ...inputStyle(t), fontFamily: t.mono }} />
+          </Field>
+        )}
         {error && <div style={{ fontSize: 12.5, color: t.expense, background: hexA(t.expense, 0.1), padding: "8px 12px", borderRadius: 8 }}>{error}</div>}
         <div style={{ display: "flex", gap: 10 }}>
           <Btn variant="outline" onClick={onClose} style={{ flex: 1, justifyContent: "center", height: 38 }}>Cancel</Btn>

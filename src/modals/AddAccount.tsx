@@ -12,7 +12,7 @@ import { ProviderLogo } from "../components/ProviderLogo";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { parseAmountToCents } from "../lib/format";
-import { TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
+import { TYPE_LABEL, TYPE_ORDER, subtypeHasCreditLimit } from "../lib/accounts";
 
 const TYPE_EMOJI: Record<AccountTypeName, string> = {
   fund: "💵", financial: "📈", receivable: "🤝", payable: "📄", credit: "💳",
@@ -29,6 +29,7 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
   const [type, setType] = useState<string>("fund");
   const [subtype, setSubtype] = useState<string>("savings");
   const [opening, setOpening] = useState("");
+  const [limit, setLimit] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,7 +84,13 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
     if (!canCreate) return;
     setBusy(true); setError(null);
     try {
-      await client.createAccount(name.trim(), subtype, signedOpening, provider?.key ?? null);
+      const needsLimit = subtypeHasCreditLimit(subtype);
+      const limitCents = needsLimit ? parseAmountToCents(limit) : null;
+      if (needsLimit && limitCents == null) {
+        setError("Credit limit is required for this account.");
+        return;
+      }
+      await client.createAccount(name.trim(), subtype, signedOpening, provider?.key ?? null, limitCents);
       onDone();
     } catch (e) {
       setError((e as { message?: string })?.message ?? "Could not create account");
@@ -182,6 +189,14 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
             <input className="sens-input" value={opening} inputMode="decimal" placeholder="0.00"
               onChange={(e) => setOpening(e.target.value.replace(/[^0-9.]/g, ""))} style={{ ...inputStyle(t), fontFamily: t.mono }} />
           </Field>
+
+          {subtypeHasCreditLimit(subtype) && (
+            <Field label="Credit limit (RM)">
+              <input className="sens-input" value={limit} inputMode="decimal" placeholder="0.00"
+                onChange={(e) => setLimit(e.target.value.replace(/[^0-9.]/g, ""))}
+                style={{ ...inputStyle(t), fontFamily: t.mono }} />
+            </Field>
+          )}
 
           {error && <div style={{ fontSize: 12.5, color: t.expense, background: hexA(t.expense, 0.1), padding: "8px 12px", borderRadius: 8 }}>{error}</div>}
 
