@@ -59,6 +59,7 @@ pub fn run() {
             commands::create_income_transaction,
             commands::create_expense_transaction,
             commands::create_transfer_transaction,
+            commands::create_payment_transaction,
             commands::list_transactions,
             commands::update_transaction,
             commands::delete_transaction,
