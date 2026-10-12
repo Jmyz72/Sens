@@ -164,6 +164,13 @@ const hydrate = (a: Account): Account => {
 };
 const hasActivity = (id: string) => txns.some((t) => t.kind !== "opening" && (t.accountId === id || t.toAccountId === id));
 
+function isPaymentDestination(subtype: string): boolean {
+  return subtype === "credit-card" || subtype === "bnpl";
+}
+function isPaymentSource(subtype: string): boolean {
+  return subtype === "cash" || subtype === "ewallet" || subtype === "savings" || subtype === "current";
+}
+
 function seedDemo() {
   if (accounts.length) return;
   const mk = (key: string, name: string, opening: number) => {
@@ -385,8 +392,27 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "create_transfer_transaction": {
       if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
       if (a.fromAccountId === a.toAccountId) fail("ValidationError", "Cannot transfer to the same account");
+      const src = accounts.find((x) => x.id === a.fromAccountId) ?? fail("NotFound", "Account not found");
+      const dest = accounts.find((x) => x.id === a.toAccountId) ?? fail("NotFound", "Account not found");
+      if (src.isArchived) fail("Conflict", "The source account is archived");
+      if (dest.isArchived) fail("Conflict", "The destination account is archived");
+      if (isPaymentDestination(dest.subtype)) fail("ValidationError", "Pay a credit card or BNPL as a payment.");
       const transactionTime = resolveTime(a.time, null);
       const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] };
+      txns.unshift(tx);
+      return tx as T;
+    }
+    case "create_payment_transaction": {
+      if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
+      if (a.fromAccountId === a.toAccountId) fail("ValidationError", "Cannot pay the same account.");
+      const src = accounts.find((x) => x.id === a.fromAccountId) ?? fail("NotFound", "Account not found");
+      const dest = accounts.find((x) => x.id === a.toAccountId) ?? fail("NotFound", "Account not found");
+      if (src.isArchived) fail("Conflict", "The source account is archived");
+      if (dest.isArchived) fail("Conflict", "The destination account is archived");
+      if (!isPaymentDestination(dest.subtype)) fail("ValidationError", "Payments can only pay a credit card or BNPL.");
+      if (!isPaymentSource(src.subtype)) fail("ValidationError", "Payments can only come from cash, an e-wallet, savings, or a current account.");
+      const transactionTime = resolveTime(a.time, null);
+      const tx: Transaction = { id: uid(), kind: "payment", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] };
       txns.unshift(tx);
       return tx as T;
     }
@@ -414,12 +440,26 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         if (c && c.kind !== a.input.kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${a.input.kind}'`);
         if (c && c.isSystem) fail("ValidationError", "That category can't be selected");
       }
+      if (a.input.kind === "payment") {
+        if (Array.isArray(a.input.splits) && a.input.splits.length > 0) fail("ValidationError", "Payments can't be split.");
+        if (a.input.accountId === a.input.toAccountId) fail("ValidationError", "Cannot pay the same account.");
+        const src = accounts.find((x) => x.id === a.input.accountId) ?? fail("NotFound", "Account not found");
+        const dest = accounts.find((x) => x.id === a.input.toAccountId) ?? fail("NotFound", "Account not found");
+        if (src.isArchived) fail("Conflict", "The source account is archived");
+        if (dest.isArchived) fail("Conflict", "The destination account is archived");
+        if (!isPaymentDestination(dest.subtype)) fail("ValidationError", "Payments can only pay a credit card or BNPL.");
+        if (!isPaymentSource(src.subtype)) fail("ValidationError", "Payments can only come from cash, an e-wallet, savings, or a current account.");
+      }
+      if (a.input.kind === "transfer" && a.input.toAccountId) {
+        const dest = accounts.find((x) => x.id === a.input.toAccountId) ?? fail("NotFound", "Account not found");
+        if (isPaymentDestination(dest.subtype)) fail("ValidationError", "Pay a credit card or BNPL as a payment.");
+      }
       const excluded = (a.input.kind === "income" || a.input.kind === "expense") && !!a.input.excludedFromReporting;
       const transactionTime = resolveTime(a.input.transactionTime, txns[i].transactionTime);
       const hasSplits = Array.isArray(a.input.splits) && a.input.splits.length > 0;
       if (hasSplits) validateSplits(a.input.kind, a.input.splits, a.input.amountCents);
-      const splits = hasSplits ? a.input.splits.map((s: any) => ({ categoryId: s.categoryId, amountCents: s.amountCents })) : [];
-      const categoryId = hasSplits ? a.input.splits[0].categoryId : a.input.categoryId;
+      const splits = a.input.kind === "payment" ? [] : hasSplits ? a.input.splits.map((s: any) => ({ categoryId: s.categoryId, amountCents: s.amountCents })) : [];
+      const categoryId = a.input.kind === "payment" ? null : hasSplits ? a.input.splits[0].categoryId : a.input.categoryId;
       txns[i] = { ...txns[i], ...a.input, categoryId, transactionTime, excludedFromReporting: excluded, splits, updatedAt: now() };
       return txns[i] as T;
     }
