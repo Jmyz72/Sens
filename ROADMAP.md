@@ -60,7 +60,7 @@ ships, not here — finishing a phase moves it into the Shipped table above with
 Credit limits + utilization (credit-card, BNPL); installment/payoff schedules and
 interest for loans (personal-loan, mortgage, car-loan, borrowed). Builds on the
 **v0.5.0** non-cashflow flag so repayments move money without polluting income/expense.
-- [ ] credit limit + utilization % + available credit
+- [x] credit limit + utilization % + available credit — spec: `docs/superpowers/specs/2026-10-12-credit-limit-design.md`
 - [ ] installment / payoff schedules
 - [ ] interest + principal-vs-interest split
 - [ ] credit-card payments and loan/BNPL repayments recorded as money movement rather
@@ -68,7 +68,6 @@ interest for loans (personal-loan, mortgage, car-loan, borrowed). Builds on the
       flag covers external-party cases) — carried over from v0.5.0
 - [ ] reimbursements & claims — money back that explicitly offsets an original expense
       (pairing), beyond the v0.5.0 flag that already excludes it from income
-— spec: _TBD_
 
 ### ⚪ Investment value
 Completes the deferred taxonomy work.
