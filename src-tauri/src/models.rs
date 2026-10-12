@@ -48,6 +48,7 @@ pub struct Account {
     pub group: String,        // derived: own|owe
     pub subtype: String,
     pub opening_balance_cents: i64,
+    pub credit_limit_cents: Option<i64>,
     pub currency: String,
     pub is_archived: bool,
     pub created_at: String,
@@ -114,6 +115,8 @@ pub struct UpdateAccountInput {
     pub name: Option<String>,
     pub subtype: Option<String>,
     pub opening_balance_cents: Option<i64>,
+    #[serde(default)]
+    pub credit_limit_cents: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
