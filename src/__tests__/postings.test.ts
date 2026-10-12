@@ -8,6 +8,7 @@ describe("postingsFor", () => {
     { kind: "transfer" as const, amt: 1000, acc: "a", to: "b" },
     { kind: "adjustment" as const, amt: -500, acc: "a", to: null },
     { kind: "opening" as const, amt: 7000, acc: "a", to: null },
+    { kind: "payment" as const, amt: 1000, acc: "a", to: "b" },
   ];
 
   it("always produces legs that sum to zero", () => {
@@ -27,5 +28,9 @@ describe("postingsFor", () => {
     expect(xferSrc.reduce((s, l) => s + l.amountCents, 0)).toBe(-1000);
     const xferDst = postingsFor("transfer", 1000, "a", "b").filter((l) => l.accountId === "b");
     expect(xferDst.reduce((s, l) => s + l.amountCents, 0)).toBe(1000);
+    const paySrc = postingsFor("payment", 1000, "a", "b").filter((l) => l.accountId === "a");
+    expect(paySrc.reduce((s, l) => s + l.amountCents, 0)).toBe(-1000);
+    const payDst = postingsFor("payment", 1000, "a", "b").filter((l) => l.accountId === "b");
+    expect(payDst.reduce((s, l) => s + l.amountCents, 0)).toBe(1000);
   });
 });
