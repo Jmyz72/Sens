@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Pay a credit card or BNPL from cash, an e-wallet, savings, or a current account.** The Pay button opens Add Transaction as a payment, prefilled with the amount owed. A payment reduces what you owe and stays out of income and spending. Sending a transfer to a card or BNPL saves it as a payment.
 - **Credit limit on credit cards and BNPL.** Creating or editing either account requires a limit. The Accounts screen shows available credit and utilization. A charge past the limit is still saved; available credit stays at zero and the row reads "Over limit".
 
 ### Documentation
