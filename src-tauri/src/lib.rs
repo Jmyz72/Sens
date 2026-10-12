@@ -1458,4 +1458,113 @@ mod seed_catalog {
             "seed catalog is stale — run `npm run gen:seed-catalog` and commit src/generated/seed-catalog.json"
         );
     }
+
+}
+
+#[cfg(test)]
+mod payment_tests {
+    use crate::db::open_in_memory;
+    use crate::error::AppError;
+    use crate::models::Account;
+    use crate::repo;
+    use crate::service;
+
+    fn validation_message(err: AppError) -> String {
+        match err {
+            AppError::Validation(m) => m,
+            other => panic!("expected Validation, got {other:?}"),
+        }
+    }
+
+    fn pay_pair(conn: &rusqlite::Connection) -> (Account, Account) {
+        let savings = service::create_account(conn, "Maybank", "savings", 500_000, None, None).unwrap();
+        let card = service::create_account(conn, "Visa", "credit-card", -80_000, None, Some(1_000_000)).unwrap();
+        (savings, card)
+    }
+
+    #[test]
+    fn payment_moves_savings_down_and_card_debt_down() {
+        let c = open_in_memory().unwrap();
+        let (savings, card) = pay_pair(&c);
+        let pay = service::create_payment(&c, &savings.id, &card.id, 30_000, Some("Card payment"), "2026-06-01", None).unwrap();
+        assert_eq!(pay.kind, "payment");
+        assert_eq!(pay.category_id, None);
+        assert!(!pay.excluded_from_reporting);
+        let savings = repo::get_account(&c, &savings.id).unwrap();
+        let card = repo::get_account(&c, &card.id).unwrap();
+        assert_eq!(savings.balance_cents, 470_000);
+        assert_eq!(card.balance_cents, -50_000);
+    }
+
+    #[test]
+    fn payment_allows_partial_and_overpay() {
+        let c = open_in_memory().unwrap();
+        let (savings, card) = pay_pair(&c);
+        service::create_payment(&c, &savings.id, &card.id, 100_000, None, "2026-06-02", None).unwrap();
+        let card = repo::get_account(&c, &card.id).unwrap();
+        assert_eq!(card.balance_cents, 20_000);
+    }
+
+    #[test]
+    fn payment_accepts_each_allowed_source() {
+        let c = open_in_memory().unwrap();
+        let card = service::create_account(&c, "Visa", "credit-card", -10_000, None, Some(100_000)).unwrap();
+        for subtype in ["cash", "ewallet", "savings", "current"] {
+            let src = service::create_account(&c, subtype, subtype, 50_000, None, None).unwrap();
+            service::create_payment(&c, &src.id, &card.id, 1_000, None, "2026-06-03", None).unwrap();
+        }
+        let bnpl = service::create_account(&c, "Atome", "bnpl", -5_000, None, Some(30_000)).unwrap();
+        let cash = service::create_account(&c, "Wallet", "cash", 20_000, None, None).unwrap();
+        let pay = service::create_payment(&c, &cash.id, &bnpl.id, 5_000, None, "2026-06-03", None).unwrap();
+        assert_eq!(pay.kind, "payment");
+    }
+
+    #[test]
+    fn payment_rejects_bad_shape() {
+        let c = open_in_memory().unwrap();
+        let (savings, card) = pay_pair(&c);
+        let invest = service::create_account(&c, "Stash", "investment", 0, None, None).unwrap();
+        let loan = service::create_account(&c, "Loan", "personal-loan", 0, None, None).unwrap();
+        assert_eq!(
+            validation_message(service::create_payment(&c, &savings.id, &card.id, 0, None, "2026-06-01", None).unwrap_err()),
+            "Amount must be greater than zero"
+        );
+        assert_eq!(
+            validation_message(service::create_payment(&c, &card.id, &card.id, 100, None, "2026-06-01", None).unwrap_err()),
+            "Cannot pay the same account."
+        );
+        assert_eq!(
+            validation_message(service::create_payment(&c, &invest.id, &card.id, 100, None, "2026-06-01", None).unwrap_err()),
+            "Payments can only come from cash, an e-wallet, savings, or a current account."
+        );
+        assert_eq!(
+            validation_message(service::create_payment(&c, &card.id, &savings.id, 100, None, "2026-06-01", None).unwrap_err()),
+            "Payments can only pay a credit card or BNPL."
+        );
+        assert_eq!(
+            validation_message(service::create_payment(&c, &savings.id, &loan.id, 100, None, "2026-06-01", None).unwrap_err()),
+            "Payments can only pay a credit card or BNPL."
+        );
+    }
+
+    #[test]
+    fn transfer_onto_a_card_is_rejected() {
+        let c = open_in_memory().unwrap();
+        let (savings, card) = pay_pair(&c);
+        let err = service::create_transfer(&c, &savings.id, &card.id, 1_000, None, "2026-06-01", None).unwrap_err();
+        assert_eq!(validation_message(err), "Pay a credit card or BNPL as a payment.");
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM transactions WHERE kind='transfer' AND to_account_id=?1", [&card.id], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn payment_does_not_change_dashboard_income_or_expense() {
+        let c = open_in_memory().unwrap();
+        let (savings, card) = pay_pair(&c);
+        let before = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        service::create_payment(&c, &savings.id, &card.id, 10_000, None, "2026-06-15", None).unwrap();
+        let after = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(after.income_cents, before.income_cents);
+        assert_eq!(after.expense_cents, before.expense_cents);
+    }
 }

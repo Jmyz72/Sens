@@ -5,13 +5,14 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Transaction kind. `transfer` and `adjustment` are excluded from income /
-/// expense / cashflow aggregates (see the dashboard rules in the spec).
+/// Transaction kind. `transfer`, `payment`, and `adjustment` are excluded from
+/// income / expense / cashflow aggregates (see the dashboard rules in the spec).
 pub const KIND_INCOME: &str = "income";
 pub const KIND_EXPENSE: &str = "expense";
 pub const KIND_TRANSFER: &str = "transfer";
 pub const KIND_ADJUSTMENT: &str = "adjustment";
 pub const KIND_OPENING: &str = "opening";
+pub const KIND_PAYMENT: &str = "payment";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -28,7 +28,7 @@ fn postings_for(kind: &str, account_id: &str, to_account_id: Option<&str>, amoun
     match kind {
         KIND_INCOME => vec![real(amount_cents), bucket("income", -amount_cents)],
         KIND_EXPENSE => vec![real(-amount_cents), bucket("expense", amount_cents)],
-        KIND_TRANSFER => vec![
+        KIND_TRANSFER | KIND_PAYMENT => vec![
             real(-amount_cents),
             Leg { account_id: to_account_id.map(|s| s.to_string()), system_bucket: None, amount_cents },
         ],
@@ -576,9 +576,57 @@ pub fn create_transfer(conn: &Connection, from_account_id: &str, to_account_id: 
     }
     ensure_active_account(conn, from_account_id, "source")?;
     ensure_active_account(conn, to_account_id, "destination")?;
+    let dest = repo::get_account(conn, to_account_id)?;
+    if is_payment_destination(&dest.subtype) {
+        return Err(AppError::Validation("Pay a credit card or BNPL as a payment.".into()));
+    }
     let time = resolve_time(conn, time, None)?;
     let tx = conn.unchecked_transaction()?;
     let t = repo::insert_transaction(&tx, &new_id(), KIND_TRANSFER, from_account_id, Some(to_account_id), None, amount_cents, description, date, time.as_deref(), false, &now())?;
+    materialize_postings(&tx, &t)?;
+    tx.commit()?;
+    Ok(t)
+}
+
+fn is_payment_destination(subtype: &str) -> bool {
+    subtype == "credit-card" || subtype == "bnpl"
+}
+
+fn is_payment_source(subtype: &str) -> bool {
+    matches!(subtype, "cash" | "ewallet" | "savings" | "current")
+}
+
+pub fn create_payment(
+    conn: &Connection,
+    from_account_id: &str,
+    to_account_id: &str,
+    amount_cents: i64,
+    description: Option<&str>,
+    date: &str,
+    time: Option<&str>,
+) -> AppResult<Transaction> {
+    validate_positive(amount_cents)?;
+    if from_account_id == to_account_id {
+        return Err(AppError::Validation("Cannot pay the same account.".into()));
+    }
+    ensure_active_account(conn, from_account_id, "source")?;
+    ensure_active_account(conn, to_account_id, "destination")?;
+    let source = repo::get_account(conn, from_account_id)?;
+    let dest = repo::get_account(conn, to_account_id)?;
+    if !is_payment_destination(&dest.subtype) {
+        return Err(AppError::Validation("Payments can only pay a credit card or BNPL.".into()));
+    }
+    if !is_payment_source(&source.subtype) {
+        return Err(AppError::Validation(
+            "Payments can only come from cash, an e-wallet, savings, or a current account.".into(),
+        ));
+    }
+    let time = resolve_time(conn, time, None)?;
+    let tx = conn.unchecked_transaction()?;
+    let t = repo::insert_transaction(
+        &tx, &new_id(), KIND_PAYMENT, from_account_id, Some(to_account_id), None,
+        amount_cents, description, date, time.as_deref(), false, &now(),
+    )?;
     materialize_postings(&tx, &t)?;
     tx.commit()?;
     Ok(t)
