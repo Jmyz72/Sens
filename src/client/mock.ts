@@ -36,6 +36,23 @@ const SUBTYPES: AccountSubtype[] = catalog.subtypes.map((s) => ({
 }));
 const subtypeOf = (key: string) => SUBTYPES.find((s) => s.key === key);
 
+function limitSubtype(subtype: string): boolean {
+  return subtype === "credit-card" || subtype === "bnpl";
+}
+
+function resolveCreditLimit(subtype: string, incoming: number | null | undefined, existing: number | null): number | null {
+  if (limitSubtype(subtype)) {
+    if (incoming == null) {
+      if (existing != null && existing > 0) return existing;
+      return fail("ValidationError", "Credit limit is required for this account.");
+    }
+    if (incoming <= 0) return fail("ValidationError", "Credit limit must be greater than zero.");
+    return incoming;
+  }
+  if (incoming != null) return fail("ValidationError", "Credit limit only applies to credit cards and BNPL.");
+  return null;
+}
+
 // ── seed templates (from src/generated/seed-catalog.json → Rust seed) ──
 const templates: AccountTemplate[] = catalog.templates.map((t) => ({
   key: t.key,
@@ -153,7 +170,7 @@ function seedDemo() {
     const t = templates.find((x) => x.key === key)!;
     const s = subtypeOf(t.defaultSubtype)!;
     const id = uid();
-    accounts.push({ id, templateKey: key, name, accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: opening, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
+    accounts.push({ id, templateKey: key, name, accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: opening, creditLimitCents: null, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
     txns.push({ id: uid(), kind: "opening", accountId: id, toAccountId: null, categoryId: null, amountCents: opening, description: "Opening balance", transactionDate: "2026-01-01", transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
   };
   mk("maybank", "Maybank Savings", 842000);
@@ -184,7 +201,8 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (!String(a.name).trim()) fail("ValidationError", "Account name cannot be empty");
       const s = subtypeOf(a.subtype) ?? fail("ValidationError", `Invalid subtype: ${a.subtype}`);
       if (a.templateKey != null && !templates.find((x) => x.key === a.templateKey)) fail("NotFound", "Account template not found");
-      const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
+      const creditLimitCents = resolveCreditLimit(s.key, a.creditLimitCents ?? null, null);
+      const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, creditLimitCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
       accounts.push(acc);
       txns.push({ id: uid(), kind: "opening", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: a.openingBalanceCents, description: "Opening balance", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
       return hydrate(acc) as T;
@@ -200,6 +218,8 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         acc.accountType = s.type;
         acc.group = s.group;
       }
+      const sent = Object.prototype.hasOwnProperty.call(a.input, "creditLimitCents") ? a.input.creditLimitCents : null;
+      acc.creditLimitCents = resolveCreditLimit(acc.subtype, sent ?? null, acc.creditLimitCents);
       if (a.input.openingBalanceCents != null) {
         const op = txns.find((t) => t.kind === "opening" && t.accountId === acc.id);
         if (op) op.amountCents = a.input.openingBalanceCents;

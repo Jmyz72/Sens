@@ -9,7 +9,8 @@ function acct(p: Partial<Account> & { id: string }): Account {
   return {
     id: p.id, templateKey: null, name: p.name ?? p.id, accountType: p.accountType ?? "fund",
     group: p.group ?? "own", subtype: p.subtype ?? "cash", openingBalanceCents: p.openingBalanceCents ?? 0,
-    currency: "MYR", isArchived: p.isArchived ?? false, createdAt: "2026-01-01T00:00:00",
+    currency: "MYR", isArchived: p.isArchived ?? false, creditLimitCents: p.creditLimitCents ?? null,
+    createdAt: "2026-01-01T00:00:00",
     updatedAt: "2026-01-01T00:00:00", balanceCents: p.balanceCents ?? 0,
   };
 }
