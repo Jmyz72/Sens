@@ -8,7 +8,7 @@ function tx(kind: TransactionKind, amountCents: number, over: Partial<Transactio
     id: over.id ?? Math.random().toString(36).slice(2),
     kind,
     accountId: "a1",
-    toAccountId: kind === "transfer" ? "a2" : null,
+    toAccountId: kind === "transfer" || kind === "payment" ? "a2" : null,
     categoryId: kind === "income" || kind === "expense" ? "c1" : null,
     amountCents,
     description: null,
@@ -35,7 +35,7 @@ describe("summarizeSelection", () => {
     expect(s.inCents).toBe(320000);
     expect(s.outCents).toBe(14280);
     expect(s.netCents).toBe(320000 - 14280);
-    expect(s.otherCounts).toEqual({ transfer: 1, adjustment: 1, opening: 1 });
+    expect(s.otherCounts).toEqual({ transfer: 1, adjustment: 1, opening: 1, payment: 0 });
   });
   it("counts already-excluded income/expense", () => {
     const s = summarizeSelection([
@@ -132,5 +132,19 @@ describe("planBulk", () => {
     const p = planBulk("move", [splitTx], { accountId: "acc2" });
     expect(p.changeable.map((t) => t.id)).toEqual(["split"]);
     expect(p.lockedSkipped).toEqual([]);
+  });
+
+  it("counts a payment beside transfers and will not recategorize or exclude it", () => {
+    const payment = tx("payment", 5000);
+    const s = summarizeSelection([payment, tx("transfer", 1000)]);
+    expect(s.otherCounts).toEqual({ transfer: 1, payment: 1, adjustment: 0, opening: 0 });
+    expect(s.inCents).toBe(0);
+    const recat = planBulk("recategorize", [payment]);
+    expect(recat.changeable).toHaveLength(0);
+    expect(recat.lockedSkipped[0].reason).toBe("Payments have no category");
+    const excl = planBulk("exclude", [payment]);
+    expect(excl.changeable).toHaveLength(0);
+    const del = planBulk("delete", [payment]);
+    expect(del.changeable.map((t) => t.id)).toEqual([payment.id]);
   });
 });

@@ -16,13 +16,13 @@ export interface SelectionSummary {
   inCents: number;
   outCents: number; // positive magnitude
   netCents: number; // in - out
-  otherCounts: { transfer: number; adjustment: number; opening: number };
+  otherCounts: { transfer: number; payment: number; adjustment: number; opening: number };
   excludedCount: number; // income/expense already excluded
 }
 
 export function summarizeSelection(txns: Transaction[]): SelectionSummary {
   let inCents = 0, outCents = 0, excludedCount = 0;
-  const otherCounts = { transfer: 0, adjustment: 0, opening: 0 };
+  const otherCounts = { transfer: 0, payment: 0, adjustment: 0, opening: 0 };
   for (const t of txns) {
     if (t.kind === "income") inCents += t.amountCents;
     else if (t.kind === "expense") outCents += t.amountCents;
@@ -41,6 +41,9 @@ const isCashflow = (t: Transaction) => t.kind === "income" || t.kind === "expens
 function editLockReason(t: Transaction, action: BulkAction): string {
   if (t.kind === "transfer") {
     return action === "recategorize" ? "Transfers have no category" : "Transfers move between two accounts";
+  }
+  if (t.kind === "payment") {
+    return action === "recategorize" ? "Payments have no category" : "Payments move between two accounts";
   }
   if (t.kind === "adjustment") return "Adjustments can't be edited";
   return "Opening balances can't be edited"; // opening
