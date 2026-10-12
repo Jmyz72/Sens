@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sens is a **local-first desktop personal-finance tracker** for Malaysian Ringgit (MYR). Stack: **Tauri v2 (Rust) + React 19 + TypeScript + Vite + SQLite (rusqlite, bundled)**. Manual entry only — no sync, no bank connections, no multi-currency. The authoritative design/spec lives at `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.md`; **v0.2.0** then added the account taxonomy (asset/liability classification + net worth) — see `docs/superpowers/specs/2026-05-30-account-type-subtype-system-design.md`. Read the relevant spec before changing data-model or business-rule behavior.
 
+**No existing users.** Sens has no released user base and no production databases. Do not add backfill, upgrade prompts, or conversion of old rows for a prior user base. Append-only migrations still apply so a local dev database and a fresh install reach the same schema.
+
 ## Commands
 
 Rust is not on the default PATH — prefix Rust/Tauri commands with `export PATH="$HOME/.cargo/bin:$PATH"`.

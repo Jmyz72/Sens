@@ -62,12 +62,12 @@ reimbursement pairing. Builds on the **v0.5.0** non-cashflow flag so repayments
 move money without polluting income/expense. Loan schedules and interest are
 unscheduled — see *Later / unscheduled*.
 - [x] credit limit + utilization % + available credit — spec: `docs/superpowers/specs/2026-10-12-credit-limit-design.md`
-- [ ] credit-card payments and BNPL repayments recorded as money movement rather
-      than income/expense (own→owe transfers are already excluded; the `excludedFromReporting`
-      flag covers external-party cases) — carried over from v0.5.0
+- [ ] credit-card payments and BNPL repayments recorded as their own `payment`
+      kind (cash, e-wallet, savings, or current → credit card or BNPL) — spec:
+      `docs/superpowers/specs/2026-10-13-card-bnpl-payments-design.md`
 - [ ] reimbursements & claims — money back that explicitly offsets an original expense
       (pairing), beyond the v0.5.0 flag that already excludes it from income
-— spec: _TBD_
+      — spec: _TBD_
 
 ### ⚪ Investment value
 Completes the deferred taxonomy work.
