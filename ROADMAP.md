@@ -14,7 +14,7 @@ The next minor is decided **at release time** (`npm run release -- minor`), so
 re-ordering, inserting, or dropping a phase never renumbers the rest. Versions live
 in the Shipped table below *after* a phase ships, never before.
 
-**Last shipped:** `v0.9.0` — Category splits ·
+**Last shipped:** `v0.9.1` — Rust↔mock seed drift guard (latest feature: `v0.9.0` category splits) ·
 **Next up:** Credit & debt behavior ·
 **Later:** the climb to `v1.0.0`
 
@@ -45,7 +45,11 @@ Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
 | 🟢 `v0.5.3` | Dashboard redesign — unified net-worth + month-KPI hero, responsive account tile grid — spec: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.md` |
 | 🟢 `v0.5.4` | Kind-aware wording for the income/expense reporting-exclusion toggle |
 | 🟢 `v0.6.0` | **Transactions screen redesign ("Evolved List")** — toolbar (search / date-range / sort / density), date-grouped list with sticky day-net subtotals + hover quick-actions, three-state sidebar (inline-edit detail / adaptive multi-select), bulk-action preview sheet with per-kind re-categorize, keyboard nav; frontend-only — spec: `docs/superpowers/specs/2026-06-02-transactions-screen-redesign-design.md` |
-| 🟡 `Unreleased` | **Category splits** — divide an income/expense across ≥2 categories (`transaction_splits`, migration 009) via the itemized Add Transaction builder; single list row with a Split·N badge, per-category detail breakdown, attributed in the dashboard spending breakdown; balances untouched — spec: `docs/superpowers/specs/2026-06-06-category-splits-and-add-transaction-redesign-design.md` |
+| 🟢 `v0.7.0` | **Optional transaction time** — nullable `transaction_time` (migration 007, plain `ALTER TABLE`), gated by the "Record transaction times" Settings toggle; same-day transactions sort chronologically — spec: `docs/superpowers/specs/2026-06-02-transaction-time-support-design.md` |
+| 🟢 `v0.7.1` | Excluded-from-reporting rows dimmed in the list; neutral colors for opening/adjustment amounts |
+| 🟢 `v0.8.0` | **Balance correction as income/expense** — a correction can be booked as real income/expense (protected, hidden "Adjustment" system categories, migration 008) instead of a neutral adjustment — spec: `docs/superpowers/specs/2026-06-03-balance-correction-as-income-expense-design.md` |
+| 🟢 `v0.9.0` | **Category splits** — divide an income/expense across ≥2 categories (`transaction_splits`, migration 009) via the itemized Add Transaction builder; single list row with a Split·N badge, per-category detail breakdown, attributed in the dashboard spending breakdown; balances untouched — spec: `docs/superpowers/specs/2026-06-06-category-splits-and-add-transaction-redesign-design.md` |
+| 🟢 `v0.9.1` | Rust↔mock drift guard — the browser mock's seed data is generated from the Rust source into `src/generated/seed-catalog.json` and checked in CI — spec: `docs/superpowers/specs/2026-06-06-rust-mock-seed-drift-guard-design.md` |
 
 ## Planned — the climb to 1.0
 
@@ -133,7 +137,7 @@ Accounts screen and the dashboard (`list_accounts` / `get_account` /
       (no pagination UI); once histories grow past that, add range-aware paging
 — spec: _TBD_
 
-### 🟡 Rust↔mock drift guard
+### 🟢 Rust↔mock drift guard (shipped `v0.9.1`)
 The mock's seed data (account subtypes, provider templates, category tree) is now
 **generated** from the Rust source into `src/generated/seed-catalog.json`.
 `mock.ts` and `providers.ts` consume that JSON directly — the hand-maintained
@@ -173,7 +177,7 @@ surfaces `AppError` cleanly — only startup is exposed.
 — spec: _TBD_
 
 ### ⚪ Frontend cleanups (low priority)
-- [ ] split `Categories.tsx` (572 lines) — extract the inline `CategoryForm` and
+- [ ] split `Categories.tsx` (609 lines) — extract the inline `CategoryForm` and
       `MoveCategoryModal`
 - [ ] extract one `getErrorMessage(e, fallback)` helper (the
       `(e as { message?: string })?.message ?? "…"` cast is copy-pasted across screens)

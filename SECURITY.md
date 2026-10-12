@@ -1,6 +1,6 @@
 # Security Policy
 
-Sens is a **local-first** application: your financial data is stored only in a local SQLite file on your own machine. There is no server, no account, no cloud sync, and no network transmission of your data. This significantly limits the attack surface — but we still take security seriously, especially since Sens handles personal financial information.
+Sens is a **local-first** application: your financial data is stored only in a local SQLite file on your own machine. There is no server, no account, no cloud sync, and no network transmission of your data. The only network activity is the desktop app's update check against GitHub Releases (see below). This significantly limits the attack surface — but we still take security seriously, especially since Sens handles personal financial information.
 
 ## Supported versions
 
@@ -8,7 +8,7 @@ Security fixes are applied to the **latest released version**. Please make sure 
 
 | Version | Supported |
 | ------- | --------- |
-| Latest release (`1.x`) | ✅ |
+| Latest release (currently `0.x`; `1.0.0` is reserved for feature-complete) | ✅ |
 | Older releases | ❌ |
 
 ## Reporting a vulnerability
@@ -33,7 +33,7 @@ We follow **coordinated disclosure**. Please give us a reasonable window to inve
 
 ## Scope notes
 
-Because Sens has no backend or network features, the most relevant classes of issue are:
+Because Sens has no backend and its only network feature is the signed auto-updater (it checks `https://github.com/Jmyz72/Sens/releases/latest/download/latest.json`, verifies updates against the public key in `src-tauri/tauri.conf.json`, and never installs without the user clicking *Download & Install*), the most relevant classes of issue are:
 
 - Local data integrity or corruption bugs (e.g. money/balance miscalculation)
 - Vulnerabilities in the auto-updater or release/signing pipeline

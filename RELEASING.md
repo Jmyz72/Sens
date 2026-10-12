@@ -83,8 +83,18 @@ and confirm the GitHub Release has the macOS, Windows, and `latest.json` artifac
 
 ## Notes
 
-- **Unsigned macOS builds:** recipients must right-click the app and choose **Open** on
-  first launch (Gatekeeper). Your own machine runs it normally.
+- **Un-notarized macOS builds:** the macOS bundle is ad-hoc signed but not notarized, so
+  recipients hit a Gatekeeper block on first launch. On recent macOS they must use
+  **System Settings → Privacy & Security → Open Anyway**; on older versions right-click →
+  **Open** works; clearing the quarantine flag (`xattr -dr com.apple.quarantine
+  /Applications/Sens.app`) works everywhere. See the README's *Download & install*.
+  (The GitHub release body in `release.yml` still only mentions right-click → Open.)
+- **Platforms:** releases ship **macOS Apple Silicon (aarch64)** and **Windows x64** only —
+  there is no Intel-Mac build.
+- **Changelog links:** `npm run release` inserts the new `## [x.y.z]` heading but does not
+  touch the link references at the bottom of `CHANGELOG.md`. After releasing, add the new
+  `[x.y.z]: …/releases/tag/vx.y.z` line and bump the `[Unreleased]` compare link to
+  `compare/vx.y.z...HEAD`.
 - **Updater bootstrap:** users must install one updater-enabled release manually; later
   releases can be installed from Settings → Updates.
 - **Hotfix:** branch from `main`, fix via PR, then cut a **patch** release the same way.
