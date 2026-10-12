@@ -462,4 +462,51 @@ mod migration_tests {
         super::backfill_templates(&conn).unwrap();
         assert_eq!(cash_count(&conn), 1, "template backfill must not duplicate on re-run");
     }
+
+    #[test]
+    fn migration_011_copies_rows_and_accepts_payment() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        let apply = |sql: &str| {
+            conn.execute_batch("BEGIN").unwrap();
+            conn.execute_batch(sql).unwrap();
+            conn.execute_batch("COMMIT").unwrap();
+        };
+        for i in 0..10 {
+            apply(MIGRATIONS[i].1);
+        }
+        apply(
+            "INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at)
+               VALUES ('src', NULL, 'Savings', 'savings', 'MYR', 0, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'),
+                      ('card', NULL, 'Visa', 'credit-card', 'MYR', 0, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+             INSERT INTO categories (id, name, kind, emoji, sort_order, is_system, is_archived, created_at, updated_at)
+               VALUES ('c1', 'Food', 'expense', '🍜', 0, 0, 0, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+             INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, transaction_time, created_at, updated_at)
+               VALUES ('xfer', 'transfer', 'src', 'card', NULL, 4000, 'Old pay', '2026-02-01', 0, NULL, '2026-02-01T00:00:00+00:00', '2026-02-01T00:00:00+00:00'),
+                      ('exp', 'expense', 'src', NULL, 'c1', 1500, 'Lunch', '2026-02-02', 0, NULL, '2026-02-02T00:00:00+00:00', '2026-02-02T00:00:00+00:00');
+             INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents)
+               VALUES ('p1', 'xfer', 'src', NULL, -4000), ('p2', 'xfer', 'card', NULL, 4000);
+             INSERT INTO transaction_splits (id, transaction_id, category_id, amount_cents, sort_order, created_at)
+               VALUES ('s1', 'exp', 'c1', 1500, 0, '2026-02-02T00:00:00+00:00');",
+        );
+        apply(MIGRATIONS[10].1);
+
+        let kind: String = conn.query_row("SELECT kind FROM transactions WHERE id='xfer'", [], |r| r.get(0)).unwrap();
+        assert_eq!(kind, "transfer");
+        let postings: i64 = conn.query_row("SELECT COUNT(*) FROM postings WHERE transaction_id='xfer'", [], |r| r.get(0)).unwrap();
+        assert_eq!(postings, 2);
+        let splits: i64 = conn.query_row("SELECT COUNT(*) FROM transaction_splits WHERE transaction_id='exp'", [], |r| r.get(0)).unwrap();
+        assert_eq!(splits, 1);
+        conn.execute(
+            "INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, transaction_time, created_at, updated_at)
+             VALUES ('pay', 'payment', 'src', 'card', NULL, 1000, NULL, '2026-03-01', 0, NULL, '2026-03-01T00:00:00+00:00', '2026-03-01T00:00:00+00:00')",
+            [],
+        ).unwrap();
+        let rejected = conn.execute(
+            "INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, transaction_time, created_at, updated_at)
+             VALUES ('bad', 'payment', 'src', 'card', 'c1', 1000, NULL, '2026-03-01', 0, NULL, '2026-03-01T00:00:00+00:00', '2026-03-01T00:00:00+00:00')",
+            [],
+        );
+        assert!(rejected.is_err(), "a payment cannot carry a category");
+    }
 }
