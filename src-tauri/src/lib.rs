@@ -1567,4 +1567,92 @@ mod payment_tests {
         assert_eq!(after.income_cents, before.income_cents);
         assert_eq!(after.expense_cents, before.expense_cents);
     }
+
+    fn payment_update(id: &str, kind: &str, from: &str, to: &str, amount: i64) -> crate::models::UpdateTransactionInput {
+        crate::models::UpdateTransactionInput {
+            id: id.into(),
+            kind: kind.into(),
+            account_id: from.into(),
+            to_account_id: Some(to.into()),
+            category_id: None,
+            amount_cents: amount,
+            description: None,
+            transaction_date: "2026-06-04".into(),
+            transaction_time: None,
+            excluded_from_reporting: false,
+            splits: None,
+        }
+    }
+
+    #[test]
+    fn editing_a_payment_updates_both_balances() {
+        let c = open_in_memory().unwrap();
+        let (savings, card) = pay_pair(&c);
+        let cash = service::create_account(&c, "Cash", "cash", 40_000, None, None).unwrap();
+        let pay = service::create_payment(&c, &savings.id, &card.id, 10_000, None, "2026-06-01", None).unwrap();
+        service::update_transaction(&c, payment_update(&pay.id, "payment", &cash.id, &card.id, 4_000)).unwrap();
+        assert_eq!(repo::get_account(&c, &savings.id).unwrap().balance_cents, 500_000);
+        assert_eq!(repo::get_account(&c, &cash.id).unwrap().balance_cents, 36_000);
+        assert_eq!(repo::get_account(&c, &card.id).unwrap().balance_cents, -76_000);
+    }
+
+    #[test]
+    fn editing_the_destination_flips_kind() {
+        let c = open_in_memory().unwrap();
+        let (savings, card) = pay_pair(&c);
+        let wallet = service::create_account(&c, "TNG", "ewallet", 0, None, None).unwrap();
+        let pay = service::create_payment(&c, &savings.id, &card.id, 5_000, None, "2026-06-01", None).unwrap();
+        let flipped = service::update_transaction(&c, payment_update(&pay.id, "transfer", &savings.id, &wallet.id, 5_000)).unwrap();
+        assert_eq!(flipped.kind, "transfer");
+        let back = service::update_transaction(&c, payment_update(&pay.id, "payment", &savings.id, &card.id, 5_000)).unwrap();
+        assert_eq!(back.kind, "payment");
+    }
+
+    #[test]
+    fn editing_a_payment_rejects_an_investment_source_without_writing() {
+        let c = open_in_memory().unwrap();
+        let (savings, card) = pay_pair(&c);
+        let invest = service::create_account(&c, "Stash", "investment", 0, None, None).unwrap();
+        let pay = service::create_payment(&c, &savings.id, &card.id, 5_000, None, "2026-06-01", None).unwrap();
+        let err = service::update_transaction(&c, payment_update(&pay.id, "payment", &invest.id, &card.id, 5_000)).unwrap_err();
+        assert_eq!(
+            validation_message(err),
+            "Payments can only come from cash, an e-wallet, savings, or a current account."
+        );
+        let stored = repo::get_transaction(&c, &pay.id).unwrap();
+        assert_eq!(stored.account_id, savings.id);
+        assert_eq!(stored.kind, "payment");
+    }
+
+    #[test]
+    fn updating_a_transfer_onto_a_card_is_rejected() {
+        let c = open_in_memory().unwrap();
+        let (savings, card) = pay_pair(&c);
+        let wallet = service::create_account(&c, "TNG", "ewallet", 0, None, None).unwrap();
+        let xfer = service::create_transfer(&c, &savings.id, &wallet.id, 2_000, None, "2026-06-01", None).unwrap();
+        let err = service::update_transaction(&c, payment_update(&xfer.id, "transfer", &savings.id, &card.id, 2_000)).unwrap_err();
+        assert_eq!(validation_message(err), "Pay a credit card or BNPL as a payment.");
+        assert_eq!(repo::get_transaction(&c, &xfer.id).unwrap().kind, "transfer");
+    }
+
+    #[test]
+    fn payment_rejects_splits_and_can_be_deleted() {
+        let c = open_in_memory().unwrap();
+        let (savings, card) = pay_pair(&c);
+        let pay = service::create_payment(&c, &savings.id, &card.id, 5_000, None, "2026-06-01", None).unwrap();
+        let mut input = payment_update(&pay.id, "payment", &savings.id, &card.id, 5_000);
+        let cat: String = c.query_row(
+            "SELECT id FROM categories WHERE kind='expense' AND is_system=0 LIMIT 1",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        input.splits = Some(vec![crate::models::SplitInput { category_id: cat, amount_cents: 5_000 }]);
+        assert_eq!(
+            validation_message(service::update_transaction(&c, input).unwrap_err()),
+            "Payments can't be split."
+        );
+        service::delete_transaction(&c, &pay.id).unwrap();
+        assert_eq!(repo::get_account(&c, &savings.id).unwrap().balance_cents, 500_000);
+        assert_eq!(repo::get_account(&c, &card.id).unwrap().balance_cents, -80_000);
+    }
 }
