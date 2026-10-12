@@ -1,6 +1,6 @@
 # Card and BNPL Payments Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Record a payment from cash, an e-wallet, savings, or a current account onto a credit card or BNPL as its own `payment` kind, posted like a transfer and left out of income and spending.
 
@@ -67,7 +67,7 @@
 - Consumes: nothing
 - Produces: `TransactionKind` includes `"payment"`. `KIND_META.payment` is `{ label: "Payment", icon: "card", colorKey: "transfer", sign: 0 }`. `signedFor("payment", amount, isDestination)` matches transfer. `postingsFor("payment", amount, accountId, toAccountId)` returns the transfer legs.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to the `signedFor` describe in `src/__tests__/kinds.test.ts`:
 
@@ -97,13 +97,13 @@ In `src/__tests__/postings.test.ts`, add a payment case to the `cases` array and
     expect(payDst.reduce((s, l) => s + l.amountCents, 0)).toBe(1000);
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run src/__tests__/kinds.test.ts src/__tests__/postings.test.ts`
 
 Expected: FAIL. `signedFor` does not accept `"payment"` (`TransactionKind` has no such member).
 
-- [ ] **Step 3: Add the kind, the icon, and the sign rule**
+- [x] **Step 3: Add the kind, the icon, and the sign rule**
 
 In `src/types.ts` change the union to:
 
@@ -139,13 +139,13 @@ In `postingsFor`, use the transfer legs for payment:
       return [real(-amountCents), { accountId: toAccountId, bucket: null, amountCents }];
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run src/__tests__/kinds.test.ts src/__tests__/postings.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/types.ts src/lib/kinds.ts src/components/Icon.tsx src/__tests__/kinds.test.ts src/__tests__/postings.test.ts
@@ -165,7 +165,7 @@ git commit -m "feat: present payment with the transfer sign rule"
 - Consumes: migrations 001–010 stay unchanged.
 - Produces: `MIGRATIONS` includes `(11, MIGRATION_011)`. After it runs, `kind = 'payment'` is legal with the payment CHECK, and rows copied from the previous schema keep their kind.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add this test inside `mod migration_tests` in `src-tauri/src/db/mod.rs` (that module already imports `super::migrations::MIGRATIONS`). It applies 001–010, inserts a transfer with two postings and an expense with one split, then applies 011.
 
@@ -219,13 +219,13 @@ Add this test inside `mod migration_tests` in `src-tauri/src/db/mod.rs` (that mo
     }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `export PATH="$HOME/.cargo/bin:$PATH" && cd src-tauri && cargo test --lib migration_011_copies_rows_and_accepts_payment -- --nocapture`
 
 Expected: FAIL. `MIGRATIONS[10]` is missing, or the `payment` insert is rejected by the old CHECK.
 
-- [ ] **Step 3: Append migration 011**
+- [x] **Step 3: Append migration 011**
 
 In `src-tauri/src/db/migrations.rs`, extend the list:
 
@@ -317,13 +317,13 @@ CREATE INDEX idx_splits_cat ON transaction_splits(category_id);
 
 Index names are global in SQLite. Create `idx_postings_*` and `idx_splits_*` only after `DROP TABLE` removes the old indexes. Creating them on `postings_new` while the old tables still exist fails with a duplicate index name.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `export PATH="$HOME/.cargo/bin:$PATH" && cd src-tauri && cargo test --lib migration_011_copies_rows_and_accepts_payment -- --nocapture`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/db/migrations.rs src-tauri/src/db/mod.rs
@@ -343,7 +343,7 @@ git commit -m "feat: add the payment kind in migration 011"
 - Consumes: `KIND_TRANSFER`, `ensure_active_account`, `validate_positive`, `resolve_time`, `repo::insert_transaction`, `materialize_postings`.
 - Produces: `pub const KIND_PAYMENT: &str = "payment"`. `pub fn create_payment(conn, from_account_id: &str, to_account_id: &str, amount_cents: i64, description: Option<&str>, date: &str, time: Option<&str>) -> AppResult<Transaction>`. `postings_for` handles `KIND_PAYMENT` with the transfer legs. `create_transfer` returns `Pay a credit card or BNPL as a payment.` when the destination subtype is `credit-card` or `bnpl`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add these tests in `src-tauri/src/lib.rs` inside `mod tests`, using the existing `open_in_memory` helper and `validation_message`:
 
@@ -447,13 +447,13 @@ The same-account case uses the card as both sides. `ensure_active_account` runs 
 
 `create_payment(&c, &card.id, &savings.id, ...)` fails the destination check (`savings` is not a card) before the source check. That matches the assertion `Payments can only pay a credit card or BNPL.`
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `export PATH="$HOME/.cargo/bin:$PATH" && cd src-tauri && cargo test --lib payment_ -- --nocapture`
 
 Expected: FAIL. `service::create_payment` is not found.
 
-- [ ] **Step 3: Implement the service**
+- [x] **Step 3: Implement the service**
 
 In `src-tauri/src/models.rs`:
 
@@ -529,13 +529,13 @@ At the end of the existing checks in `create_transfer`, after both `ensure_activ
     }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `export PATH="$HOME/.cargo/bin:$PATH" && cd src-tauri && cargo test --lib payment_ -- --nocapture && cargo test --lib transfer_onto_a_card_is_rejected -- --nocapture`
 
 Expected: PASS. Then run `cargo test --lib --locked` and confirm the existing suite still passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/models.rs src-tauri/src/service.rs src-tauri/src/lib.rs
@@ -554,7 +554,7 @@ git commit -m "feat: create a payment and reject card transfers"
 - Consumes: `create_payment`, `is_payment_destination`, `is_payment_source`, `KIND_PAYMENT`, `UpdateTransactionInput`.
 - Produces: `update_transaction` accepts `kind = "payment"` with the create checks, rejects splits, stores `excluded_from_reporting` false and category NULL. A transfer update whose destination is a card or BNPL returns `Pay a credit card or BNPL as a payment.` `delete_transaction` already deletes any non-opening row. Leave that guard as it is.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add `use crate::repo;` inside `mod tests` if it is not already imported. The new tests call `repo::get_account`.
 
@@ -646,13 +646,13 @@ Add `use crate::repo;` inside `mod tests` if it is not already imported. The new
 
 Import `repo` in the test module if it is not already in scope (`use crate::repo`). `SplitInput` is `crate::models::SplitInput`. Opening balances mean the savings balance after create is `500_000` and the card is `-80_000` before the payment. After a 5_000 payment those are `495_000` and `-75_000`. Delete restores `500_000` and `-80_000`. The investment-source test's untouched savings balance is `495_000` only if you assert it; the test above asserts the stored account id, which is enough.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `export PATH="$HOME/.cargo/bin:$PATH" && cd src-tauri && cargo test --lib editing_a_payment -- --nocapture`
 
 Expected: FAIL. `update_transaction` returns `Invalid transaction kind: payment`.
 
-- [ ] **Step 3: Accept payment on update**
+- [x] **Step 3: Accept payment on update**
 
 In the `match input.kind.as_str()` inside `update_transaction`, handle payment before the `other` arm. Reject splits first:
 
@@ -693,13 +693,13 @@ In the existing `KIND_TRANSFER` arm, after `ensure_active_account(conn, to, "des
 
 `excluded` is already false unless the kind is income or expense. Category for the payment arm is `None`. `materialize_postings` already rewrites legs from the header, so `KIND_PAYMENT` in `postings_for` covers the edit.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `export PATH="$HOME/.cargo/bin:$PATH" && cd src-tauri && cargo test --lib --locked`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/service.rs src-tauri/src/lib.rs
@@ -719,7 +719,7 @@ git commit -m "feat: edit and delete card payments"
 - Consumes: `service::create_payment`.
 - Produces: Tauri command `create_payment_transaction(fromAccountId, toAccountId, amountCents, description, date, time) -> Transaction`. Client `createPayment(fromAccountId, toAccountId, amountCents, description, date, time = null)`.
 
-- [ ] **Step 1: Add the command and the client wrapper**
+- [x] **Step 1: Add the command and the client wrapper**
 
 In `commands.rs`, next to `create_transfer_transaction`:
 
@@ -749,7 +749,7 @@ In `src/client/index.ts`, next to `createTransfer`:
     dispatch<Transaction>("create_payment_transaction", { fromAccountId, toAccountId, amountCents, description, date, time }),
 ```
 
-- [ ] **Step 2: Compile both sides**
+- [x] **Step 2: Compile both sides**
 
 Run: `export PATH="$HOME/.cargo/bin:$PATH" && cd src-tauri && cargo build --locked`
 
@@ -759,7 +759,7 @@ Run: `npx tsc --noEmit -p tsconfig.json`
 
 `npm run build` runs `tsc` as well. `tsc --noEmit` is enough here if `npm run build` is slow. Expected: exit 0. If `tsc` is not scripted alone, run `npm run build`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src-tauri/src/commands.rs src-tauri/src/lib.rs src/client/index.ts
@@ -778,7 +778,7 @@ git commit -m "feat: expose create_payment to the client"
 - Consumes: `createPayment` command name `create_payment_transaction`. `postingsFor` from Task 1. `balanceOf` already sums `postingsFor`, so a stored payment moves both balances once the mock inserts `kind: "payment"`.
 - Produces: the mock accepts `create_payment_transaction` with the same messages as Rust, and `create_transfer_transaction` rejects a card or BNPL destination. `update_transaction` applies the same payment and transfer checks.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `src/__tests__/mock-payments.test.ts`:
 
@@ -864,13 +864,13 @@ describe("mock payments", () => {
 
 `mockInvoke` is the export used by `src/__tests__/mock.test.ts`. It throws objects with `message`. The mock keeps one in-memory store per test file. Each test in this file creates its own accounts, so the assertions stay on those ids.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run src/__tests__/mock-payments.test.ts`
 
 Expected: FAIL. The mock has no `create_payment_transaction` case.
 
-- [ ] **Step 3: Mirror the service in the mock**
+- [x] **Step 3: Mirror the service in the mock**
 
 Near the top of the command switch in `src/client/mock.ts`:
 
@@ -916,13 +916,13 @@ In `update_transaction`, insert this block before `const hasSplits`, so a paymen
 
 When kind is payment, force `categoryId: null`, `excludedFromReporting: false`, and `splits: []` on the stored row.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run src/__tests__/mock-payments.test.ts src/__tests__/mock.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/client/mock.ts src/__tests__/mock-payments.test.ts
@@ -942,7 +942,7 @@ git commit -m "feat: mirror card payments in the mock backend"
 - Consumes: `TransactionKind` includes `"payment"`.
 - Produces: `SelectionSummary.otherCounts` is `{ transfer: number; payment: number; adjustment: number; opening: number }`. `planBulk` locks a payment for recategorize, move, exclude, and include, with the transfer reasons worded for payments. Delete includes a payment in `changeable`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `src/__tests__/txnSelection.test.ts`, extend the fixture so a payment has a destination:
 
@@ -970,13 +970,13 @@ Add:
 
 The existing summarize test expects `otherCounts` without `payment`. Update that expectation to `{ transfer: 1, adjustment: 1, opening: 1, payment: 0 }` in the same step as the implementation, or the old test fails for a missing key. Change it in this step so the new shape is what both tests demand.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run src/__tests__/txnSelection.test.ts`
 
 Expected: FAIL. `otherCounts` has no `payment` field, and indexing it with a payment kind is a type error.
 
-- [ ] **Step 3: Count and lock payments**
+- [x] **Step 3: Count and lock payments**
 
 ```ts
   otherCounts: { transfer: number; payment: number; adjustment: number; opening: number };
@@ -1001,13 +1001,13 @@ In `src/components/TxnSelectionPanel.tsx`, add the payment count next to the tra
     s.otherCounts.payment && `${s.otherCounts.payment} payment`,
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run src/__tests__/txnSelection.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/txnSelection.ts src/components/TxnSelectionPanel.tsx src/__tests__/txnSelection.test.ts
@@ -1029,7 +1029,7 @@ git commit -m "feat: treat payments like transfers in bulk selection"
   - `isPaymentSource(subtype: string): boolean`
   - `payAmountField(balanceCents: number): string` — `(-balanceCents / 100).toFixed(2)` when `balanceCents < 0`, otherwise `""`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -1064,13 +1064,13 @@ describe("payAmountField", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run src/lib/__tests__/payments.test.ts`
 
 Expected: FAIL. `src/lib/payments.ts` does not exist.
 
-- [ ] **Step 3: Implement the helpers**
+- [x] **Step 3: Implement the helpers**
 
 ```ts
 const PAYMENT_DESTINATIONS = new Set(["credit-card", "bnpl"]);
@@ -1090,13 +1090,13 @@ export function payAmountField(balanceCents: number): string {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run src/lib/__tests__/payments.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/payments.ts src/lib/__tests__/payments.test.ts
@@ -1114,7 +1114,7 @@ git commit -m "feat: decide payment vs transfer from the destination"
 - Consumes: `movementKind`, `isPaymentSource`, `payAmountField`, `client.createPayment`, `KIND_META.payment`.
 - Produces: `AddTransaction` accepts optional `payAccountId?: string`. `FORM_KINDS` stays `["expense", "income", "transfer"]`. While the selected destination subtype is `credit-card` or `bnpl`, that segment's label is Payment, its icon is `card`, the source list is payment sources, and save calls `createPayment` or `updateTransaction` with `kind: "payment"`. Otherwise it stays a transfer.
 
-- [ ] **Step 1: Thread the Pay target and the derived kind**
+- [x] **Step 1: Thread the Pay target and the derived kind**
 
 Change the props:
 
@@ -1193,13 +1193,13 @@ Keep the existing transfer branch for `kind === "transfer"`. The note placeholde
 
 `accentForKind` for a payment uses `kindColor(t, "payment")`.
 
-- [ ] **Step 2: Typecheck**
+- [x] **Step 2: Typecheck**
 
 Run: `npm run build`
 
 Expected: exit 0. `payAccountId` is unused by callers until Task 11. That is allowed. An unused prop on the component type is used inside the component, so `noUnusedLocals` stays clean.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/modals/AddTransaction.tsx
@@ -1219,7 +1219,7 @@ git commit -m "feat: save a card destination as a payment"
 - Consumes: `movementKind`, `isPaymentSource`, `client.createPayment`, `KIND_META.payment`.
 - Produces: a payment row title falls through to `KIND_META` (`Payment`) when there is no description. Its subtitle is `From → To`, same as a transfer. The detail panel edits a payment the way it edits a transfer, and on save sends `movementKind` of the selected destination. Duplicate of a payment calls `createPayment`. `KIND_FILTERS` includes `"payment"` after `"transfer"`.
 
-- [ ] **Step 1: Show and edit the payment row**
+- [x] **Step 1: Show and edit the payment row**
 
 In `TxnRow.tsx`, treat payment like transfer for the from → to subtitle and the neutral amount color. Do not force the title to the word Transfer. A payment with no description uses `meta.label` (`Payment`).
 
@@ -1272,13 +1272,13 @@ In the duplicate handler, before the transfer branch:
         await client.createPayment(tx.accountId, tx.toAccountId, tx.amountCents, tx.description, tx.transactionDate, dupTime);
 ```
 
-- [ ] **Step 2: Typecheck**
+- [x] **Step 2: Typecheck**
 
 Run: `npm run build`
 
 Expected: exit 0.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/components/TxnRow.tsx src/components/TxnDetailPanel.tsx src/screens/Transactions.tsx
@@ -1296,7 +1296,7 @@ git commit -m "feat: show and edit payments in the transaction list"
 - Consumes: `AddTransaction`'s `payAccountId` prop from Task 9. `Account.subtype` and `Account.balanceCents`.
 - Produces: each non-archived `credit-card` and `bnpl` row shows a Pay button. It opens Add Transaction with `payAccountId` set to that account and does not toggle the row open.
 
-- [ ] **Step 1: Add the button and the modal**
+- [x] **Step 1: Add the button and the modal**
 
 Import `AddTransaction`. Hold `const [payAccount, setPayAccount] = useState<Account | null>(null)`.
 
@@ -1326,7 +1326,7 @@ Next to the other modals at the bottom of the screen:
 
 `all` is the accounts array already in this screen. Use that variable's real name (`accounts` or whatever the component already loads). `categories` must already be loaded here because the expanded activity renders `TxnRow` with categories. Pass that same list.
 
-- [ ] **Step 2: Typecheck and verify in the browser**
+- [x] **Step 2: Typecheck and verify in the browser**
 
 Run: `npm run build`
 
@@ -1343,7 +1343,7 @@ In the browser:
 5. Add an expense of RM 25 on the card. Pay again, change the amount to `10.00`, and save. The card still owes RM 15.00.
 6. Open Add Transaction, choose Transfer, and pick the card as the destination. The segment label changes to Payment. Saving creates a payment, which you can see in the transaction list with the Payment label and `Savings → Card`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/screens/Accounts.tsx
@@ -1364,7 +1364,7 @@ git commit -m "feat: add Pay on credit card and BNPL accounts"
 - Consumes: the shipped behavior from Tasks 1–11.
 - Produces: both agent docs name `payment` in the kind list and describe the source and destination limits. `CHANGELOG.md` `[Unreleased]` records the feature. `ROADMAP.md` checks off the payments item and keeps the reimbursements item open.
 
-- [ ] **Step 1: Update the four docs**
+- [x] **Step 1: Update the four docs**
 
 In the money-and-kinds bullet of `CLAUDE.md` and the same bullet of `AGENTS.md`, add `payment` to the kind list. State that a payment posts like a transfer (`-amount` on the source, `+amount` on the card or BNPL), the source subtype is `cash`, `ewallet`, `savings`, or `current`, the destination subtype is `credit-card` or `bnpl`, and dashboard income, expense, and spending skip it. `create_transfer` rejects a card or BNPL destination. Mention migration 011 copies `transactions`, `postings`, and `transaction_splits` and does not relabel old rows.
 
@@ -1376,7 +1376,7 @@ Under `CHANGELOG.md` `## [Unreleased]`, add an Added bullet:
 
 In `ROADMAP.md`, check the payments item (`- [x]`) and leave the reimbursements item unchecked with `spec: _TBD_`.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add CLAUDE.md AGENTS.md CHANGELOG.md ROADMAP.md
