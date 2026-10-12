@@ -16,40 +16,59 @@ import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { parseAmountToCents, todayISO, nowTimeHHMM, fmtMoney } from "../lib/format";
 import { KIND_META, kindColor } from "../lib/kinds";
+import { isPaymentSource, movementKind, payAmountField } from "../lib/payments";
 import { categoryPickerItems } from "../lib/categories";
 import { addItem, removeItem, itemsTotal, isSplit, finalize, isPendingValid, type BuilderItem } from "../lib/txnBuilder";
 import { useTimeSetting } from "../lib/useTimeSetting";
 
 const FORM_KINDS: TransactionKind[] = ["expense", "income", "transfer"];
 
-export function AddTransaction({ accounts, categories, editing, onClose, onDone }: {
-  accounts: Account[]; categories: Category[]; editing?: Transaction; onClose: () => void; onDone: () => void;
+export function AddTransaction({ accounts, categories, editing, payAccountId, onClose, onDone }: {
+  accounts: Account[]; categories: Category[]; editing?: Transaction; payAccountId?: string;
+  onClose: () => void; onDone: () => void;
 }) {
   const t = useTheme();
   const active = accounts.filter((a) => !a.isArchived);
-  const [kind, setKind] = useState<TransactionKind>(editing?.kind ?? "expense");
+  const payTarget = accounts.find((a) => a.id === payAccountId);
+  const initialTo = editing?.toAccountId
+    ?? payTarget?.id
+    ?? active.find((a) => a.id !== (editing?.accountId ?? active[0]?.id))?.id
+    ?? "";
+  const initialKind: TransactionKind = editing?.kind === "payment" || (!editing && payTarget && movementKind(payTarget.subtype) === "payment")
+    ? "payment"
+    : (editing?.kind ?? "expense");
+  const [kind, setKind] = useState<TransactionKind>(initialKind);
   // The amount field is the PENDING item amount for income/expense, and the
-  // whole amount for transfer. Prefill it only when editing a transfer (a
-  // single-item income/expense and splits are rebuilt as items below).
-  const [amount, setAmount] = useState(editing?.kind === "transfer" ? (editing.amountCents / 100).toFixed(2) : "");
+  // whole amount for transfer or payment.
+  const [amount, setAmount] = useState(
+    editing && (editing.kind === "transfer" || editing.kind === "payment")
+      ? (editing.amountCents / 100).toFixed(2)
+      : payTarget ? payAmountField(payTarget.balanceCents) : "",
+  );
   const [desc, setDesc] = useState(editing?.description ?? "");
   const [excluded, setExcluded] = useState(editing?.excludedFromReporting ?? false);
   const [date, setDate] = useState(editing?.transactionDate ?? todayISO());
   const [timeEnabled] = useTimeSetting();
   const [time, setTime] = useState(editing?.transactionTime ?? nowTimeHHMM());
-  const [accountId, setAccountId] = useState(editing?.accountId ?? active[0]?.id ?? "");
-  const [toAccountId, setToAccountId] = useState(editing?.toAccountId ?? active.find((a) => a.id !== accountId)?.id ?? "");
+  const [accountId, setAccountId] = useState(() => {
+    if (editing) return editing.accountId;
+    if (initialKind === "payment") {
+      return active.find((a) => isPaymentSource(a.subtype) && a.id !== initialTo)?.id ?? "";
+    }
+    return active[0]?.id ?? "";
+  });
+  const [toAccountId, setToAccountId] = useState(initialTo);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const catKind: Category["kind"] = kind === "income" ? "income" : kind === "transfer" ? "transfer" : "expense";
+  const catKind: Category["kind"] = kind === "income" ? "income" : kind === "expense" ? "expense" : "transfer";
   const pickerItems = useMemo(() => categoryPickerItems(categories, catKind), [categories, catKind]);
 
   // Itemized builder state (income/expense only).
   const [items, setItems] = useState<BuilderItem[]>(
     editing && editing.splits.length
       ? editing.splits.map((s) => ({ categoryId: s.categoryId, amountCents: s.amountCents }))
-      : editing && editing.categoryId && editing.kind !== "transfer"
+      : editing && editing.categoryId && editing.kind !== "transfer" && editing.kind !== "payment"
         ? [{ categoryId: editing.categoryId, amountCents: editing.amountCents }]
         : [],
   );
@@ -62,7 +81,10 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
   const totalCents = itemsTotal(items) + (isPendingValid(pendingItem) ? pendingItem.amountCents : 0);
   const finalItems = finalize(items, pendingItem);
 
-  const valid = kind === "transfer"
+  const movement = kind === "transfer" || kind === "payment";
+  const destAccount = accounts.find((a) => a.id === toAccountId);
+  const destKind = movementKind(destAccount?.subtype);
+  const valid = movement
     ? !!(cents != null && accountId && toAccountId && toAccountId !== accountId && (!timeEnabled || !!time))
     : !!(accountId && finalItems.length >= 1 && (!timeEnabled || !!time));
 
@@ -75,12 +97,25 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
     setCatFilter("");
   }
 
+  function chooseDestination(id: string) {
+    setToAccountId(id);
+    if (kind !== "transfer" && kind !== "payment") return;
+    const next = movementKind(accounts.find((a) => a.id === id)?.subtype);
+    setKind(next);
+    if (next === "payment") {
+      const src = accounts.find((a) => a.id === accountId);
+      if (!src || !isPaymentSource(src.subtype) || src.id === id) {
+        setAccountId(active.find((a) => isPaymentSource(a.subtype) && a.id !== id)?.id ?? "");
+      }
+    }
+  }
+
   async function submit() {
     if (!valid) return;
     setBusy(true); setError(null);
     const txTime = timeEnabled ? time : null;
     try {
-      if (kind === "transfer") {
+      if (kind === "transfer" || kind === "payment") {
         if (cents == null) return;
         if (editing) {
           await client.updateTransaction({
@@ -88,6 +123,8 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
             categoryId: null, amountCents: cents, description: desc.trim() || null,
             transactionDate: date, transactionTime: txTime, excludedFromReporting: false, splits: null,
           });
+        } else if (kind === "payment") {
+          await client.createPayment(accountId, toAccountId, cents, desc.trim() || null, date, txTime);
         } else {
           await client.createTransfer(accountId, toAccountId, cents, desc.trim() || null, date, txTime);
         }
@@ -137,14 +174,22 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
         {/* kind segmented */}
         <div style={{ display: "flex", gap: 4, background: t.panel2, borderRadius: 9, padding: 3 }}>
           {FORM_KINDS.map((k) => {
-            const on = k === kind;
-            const col = kindColor(t, k);
+            const segmentKind: TransactionKind = k === "transfer" && destKind === "payment" ? "payment" : k;
+            const on = k === "transfer" ? (kind === "transfer" || kind === "payment") : k === kind;
+            const col = kindColor(t, on && segmentKind === "payment" ? "payment" : k);
             return (
-              <button key={k} className="sens-btn" onClick={() => changeKind(k)}
+              <button key={k} className="sens-btn" onClick={() => {
+                if (k === "transfer") {
+                  if (kind === "transfer" || kind === "payment") return;
+                  changeKind(destKind);
+                  return;
+                }
+                changeKind(k);
+              }}
                 style={{ flex: 1, height: 32, justifyContent: "center", borderRadius: 7, fontSize: 12.5, fontWeight: 600,
                   color: on ? "#fff" : t.dim, background: on ? col : "transparent" }}>
-                <Icon name={KIND_META[k].icon} size={14} color={on ? "#fff" : t.dim} stroke={2} />
-                {KIND_META[k].label}
+                <Icon name={KIND_META[segmentKind].icon} size={14} color={on ? "#fff" : t.dim} stroke={2} />
+                {KIND_META[segmentKind].label}
               </button>
             );
           })}
@@ -159,18 +204,18 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
         </div>
 
         <input className="sens-input" value={desc} onChange={(e) => setDesc(e.target.value)}
-          placeholder={kind === "transfer" ? "Note (optional)" : "Merchant or description"} style={inputStyle(t)} />
+          placeholder={movement ? "Note (optional)" : "Merchant or description"} style={inputStyle(t)} />
 
-        {kind === "transfer" ? (
+        {movement ? (
           <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "end" }}>
             <Field label="From">
               <select className="sens-input" value={accountId} onChange={(e) => setAccountId(e.target.value)} style={sel}>
-                {active.map((a) => <option key={a.id} value={a.id} style={{ background: t.panel2 }}>{a.name}</option>)}
+                {(kind === "payment" ? active.filter((a) => isPaymentSource(a.subtype) && a.id !== toAccountId) : active).map((a) => <option key={a.id} value={a.id} style={{ background: t.panel2 }}>{a.name}</option>)}
               </select>
             </Field>
             <div style={{ paddingBottom: 9, color: t.faint }}><Icon name="chevronRight" size={16} color={t.faint} /></div>
             <Field label="To">
-              <select className="sens-input" value={toAccountId} onChange={(e) => setToAccountId(e.target.value)} style={sel}>
+              <select className="sens-input" value={toAccountId} onChange={(e) => chooseDestination(e.target.value)} style={sel}>
                 {active.filter((a) => a.id !== accountId).map((a) => <option key={a.id} value={a.id} style={{ background: t.panel2 }}>{a.name}</option>)}
               </select>
             </Field>
@@ -253,7 +298,7 @@ export function AddTransaction({ accounts, categories, editing, onClose, onDone 
           </Field>
         )}
 
-        {kind !== "transfer" && (
+        {!movement && (
           <button type="button" onClick={() => setExcluded((v) => !v)}
             style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 9, border: `0.5px solid ${t.border}`, background: excluded ? hexA(t.opening, 0.12) : t.panel2, cursor: "pointer", textAlign: "left" }}>
             <span style={{ width: 18, height: 18, borderRadius: 5, display: "grid", placeItems: "center", background: excluded ? t.opening : "transparent", border: `1.5px solid ${excluded ? t.opening : t.faint}`, flexShrink: 0 }}>
