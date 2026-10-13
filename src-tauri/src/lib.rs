@@ -2376,4 +2376,33 @@ mod plan_tests {
         assert_eq!(service::get_plan(&conn, month).unwrap().budgets.iter().find(|b| b.category_id == dining).unwrap().spent_cents, 33_000);
         assert_eq!(service::get_plan(&conn, month).unwrap().budgets.iter().find(|b| b.category_id == food).unwrap().spent_cents, 43_000);
     }
+
+    #[test]
+    fn moving_a_slice_is_rejected_when_the_new_parent_cannot_hold_it() {
+        let conn = open_in_memory().unwrap();
+        let (food, dining) = parent_and_child(&conn);
+        // Seed already has a top-level expense category named Transport.
+        let transport = service::create_category(&conn, "Plan Transport", "expense", "🚌", None, None).unwrap();
+        service::set_budgets(&conn, &[
+            BudgetWrite { category_id: food.clone(), amount_cents: Some(80_000) },
+            BudgetWrite { category_id: dining.clone(), amount_cents: Some(25_000) },
+            BudgetWrite { category_id: transport.id.clone(), amount_cents: Some(10_000) },
+        ]).unwrap();
+        let err = service::set_category_parent(&conn, &dining, Some(&transport.id)).unwrap_err();
+        assert_eq!(msg(err), "This move would leave subcategory budgets that don't fit. Clear or lower them first.");
+        assert_eq!(crate::repo::get_category(&conn, &dining).unwrap().parent_id.as_deref(), Some(food.as_str()));
+
+        service::set_category_parent(&conn, &dining, None).unwrap();
+        assert!(crate::repo::get_category(&conn, &dining).unwrap().parent_id.is_none());
+    }
+
+    #[test]
+    fn deleting_a_category_deletes_its_budget_versions() {
+        let conn = open_in_memory().unwrap();
+        let lone = service::create_category(&conn, "Hobbies", "expense", "🎨", None, None).unwrap();
+        service::set_budgets(&conn, &[BudgetWrite { category_id: lone.id.clone(), amount_cents: Some(1_000) }]).unwrap();
+        service::delete_category(&conn, &lone.id).unwrap();
+        let left = crate::repo::list_budget_versions(&conn).unwrap();
+        assert!(left.iter().all(|v| v.0 != lone.id));
+    }
 }

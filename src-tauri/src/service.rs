@@ -374,7 +374,8 @@ pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
 /// Reparent a category: move a leaf to another top-level parent, promote a
 /// subcategory to top-level (parent_id = None), or demote a childless top-level
 /// into a subcategory. Kind never changes; the new parent must be top-level and
-/// share the moved category's kind.
+/// share the moved category's kind. The parent write and the current-month
+/// envelope check commit together; a tree that no longer fits is left unchanged.
 pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
     ensure_not_system(conn, id)?;
@@ -397,7 +398,18 @@ pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>)
             return Err(AppError::Validation("Empty this category's subcategories before making it a subcategory".into()));
         }
     }
-    repo::set_category_parent(conn, id, parent_id, &now())
+    let tx = conn.unchecked_transaction()?;
+    repo::set_category_parent(&tx, id, parent_id, &now())?;
+    let today = crate::today();
+    // Any envelope failure becomes the one move Conflict. The original text
+    // (including "Set a budget on the parent category first.") must not leak.
+    if ensure_envelopes(&tx, &today[..7]).is_err() {
+        return Err(AppError::Conflict(
+            "This move would leave subcategory budgets that don't fit. Clear or lower them first.".into(),
+        ));
+    }
+    tx.commit()?;
+    repo::get_category(conn, id)
 }
 
 /// Bulk archive or restore. Reuses the per-id archive/restore so the top-level
