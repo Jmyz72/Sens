@@ -1816,6 +1816,55 @@ mod reimbursement_tests {
     }
 
     #[test]
+    fn update_reimbursement_rolls_back_when_a_write_fails_midway() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let cash = service::create_account(&c, "Wallet", "cash", 0, None, None).unwrap();
+        let e1 = spend(&c, &savings.id, 20_000, "2026-06-01");
+        let e2 = spend(&c, &savings.id, 5_000, "2026-06-02");
+        let r = reimburse(&c, &savings.id, 10_000, "2026-06-05", vec![alloc(&e1, 10_000)]);
+
+        let before_r = repo::get_transaction(&c, &r.id).unwrap();
+        let before_e1 = repo::get_transaction(&c, &e1.id).unwrap();
+        let before_e2 = repo::get_transaction(&c, &e2.id).unwrap();
+        let before_savings = balance(&c, &savings.id);
+        let before_cash = balance(&c, &cash.id);
+
+        // Fails on the first allocation insert, after validation, header update, and delete.
+        // Without service::update_reimbursement's unchecked_transaction, those earlier writes
+        // would persist on `c` and leave header/postings/allocations inconsistent.
+        c.execute_batch(
+            "CREATE TRIGGER fail_alloc BEFORE INSERT ON reimbursement_allocations
+             BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+        )
+        .unwrap();
+
+        assert!(
+            service::update_reimbursement(
+                &c,
+                &r.id,
+                &cash.id,
+                6_000,
+                Some("Fixed"),
+                "2026-06-09",
+                None,
+                vec![alloc(&e1, 1_000), alloc(&e2, 5_000)],
+            )
+            .is_err()
+        );
+
+        let stored = repo::get_transaction(&c, &r.id).unwrap();
+        assert_eq!(stored.amount_cents, before_r.amount_cents);
+        assert_eq!(stored.account_id, before_r.account_id);
+        assert_eq!(stored.transaction_date, before_r.transaction_date);
+        assert_eq!(stored.allocations, before_r.allocations);
+        assert_eq!(repo::get_transaction(&c, &e1.id).unwrap().reimbursed_cents, before_e1.reimbursed_cents);
+        assert_eq!(repo::get_transaction(&c, &e2.id).unwrap().reimbursed_cents, before_e2.reimbursed_cents);
+        assert_eq!(balance(&c, &savings.id), before_savings);
+        assert_eq!(balance(&c, &cash.id), before_cash);
+    }
+
+    #[test]
     fn update_reimbursement_only_accepts_reimbursements() {
         let c = open_in_memory().unwrap();
         let (savings, _card) = pair(&c);
