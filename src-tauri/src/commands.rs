@@ -239,3 +239,30 @@ pub fn get_account_balances(state: State<'_, DbState>) -> AppResult<Vec<AccountB
 pub fn get_awaiting_reimbursement(state: State<'_, DbState>) -> AppResult<AwaitingReimbursement> {
     with_conn!(state, c => service::get_awaiting_reimbursement(&c))
 }
+
+// ── Plan (budgets & goals) ───────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_plan(state: State<'_, DbState>, month: String) -> AppResult<Plan> {
+    with_conn!(state, c => service::get_plan(&c, &month))
+}
+
+#[tauri::command]
+pub fn set_budgets(state: State<'_, DbState>, items: Vec<BudgetWrite>) -> AppResult<()> {
+    with_conn!(state, c => service::set_budgets(&c, &items))
+}
+
+#[tauri::command]
+pub fn create_goal(state: State<'_, DbState>, input: GoalWrite) -> AppResult<PlanGoal> {
+    with_conn!(state, c => service::create_goal(&c, input))
+}
+
+#[tauri::command]
+pub fn update_goal(state: State<'_, DbState>, input: GoalWrite) -> AppResult<PlanGoal> {
+    with_conn!(state, c => service::update_goal(&c, input))
+}
+
+#[tauri::command]
+pub fn delete_goal(state: State<'_, DbState>, id: String) -> AppResult<()> {
+    with_conn!(state, c => service::delete_goal(&c, &id))
+}

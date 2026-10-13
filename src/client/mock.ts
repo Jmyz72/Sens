@@ -10,14 +10,20 @@ import type {
   AccountSubtype,
   AccountTemplate,
   AccountTypeName,
+  BudgetWrite,
   Category,
   CategoryBreakdown,
   DashboardSummary,
+  GoalWrite,
+  Plan,
+  PlanBudget,
+  PlanGoal,
   Transaction,
   TxnAllocation,
 } from "../types";
 import catalog from "../generated/seed-catalog.json";
 import { postingsFor } from "../lib/kinds";
+import { localToday, monthlyRequired, resolveAmount } from "../lib/plan";
 import { apportion } from "../lib/reimbursements";
 
 const fail = (code: string, message: string): never => {
@@ -132,6 +138,22 @@ function validateSplits(kind: string, splits: { categoryId: string; amountCents:
 const accounts: Account[] = [];
 const txns: Transaction[] = [];
 
+interface BudgetVersion {
+  categoryId: string;
+  effectiveMonth: string;
+  amountCents: number | null;
+}
+const budgetVersions: BudgetVersion[] = [];
+
+interface GoalRecord {
+  id: string;
+  name: string;
+  accountId: string;
+  targetCents: number;
+  targetDate: string | null;
+}
+const goals: GoalRecord[] = [];
+
 // Reimbursement links, mirroring the `reimbursement_allocations` table. Each
 // Transaction's `reimbursedCents` / `allocations` are derived from these.
 interface AllocRow { id: string; reimbursementId: string; expenseId: string; amountCents: number }
@@ -220,6 +242,9 @@ function isPaymentDestination(subtype: string): boolean {
 function isPaymentSource(subtype: string): boolean {
   return subtype === "cash" || subtype === "ewallet" || subtype === "savings" || subtype === "current";
 }
+function goalSubtype(subtype: string): boolean {
+  return subtype === "cash" || subtype === "ewallet" || subtype === "savings" || subtype === "current";
+}
 
 function seedDemo() {
   if (accounts.length) return;
@@ -245,6 +270,191 @@ function seedDemo() {
   add("expense", 0, 12000, "Bills", "TNB electricity", d(4));
 }
 seedDemo();
+
+function versionsOf(categoryId: string, source: BudgetVersion[] = budgetVersions) {
+  return source
+    .filter((v) => v.categoryId === categoryId)
+    .map((v) => ({ effectiveMonth: v.effectiveMonth, amountCents: v.amountCents }));
+}
+
+function ensureEnvelopes(month: string, source: BudgetVersion[] = budgetVersions) {
+  const resolved = new Map<string, number | null>();
+  for (const cat of categories) {
+    resolved.set(cat.id, resolveAmount(versionsOf(cat.id, source), month));
+  }
+  for (const cat of categories) {
+    if (cat.parentId == null) continue;
+    const childAmount = resolved.get(cat.id) ?? null;
+    const parentAmount = resolved.get(cat.parentId) ?? null;
+    if (childAmount != null && parentAmount == null) {
+      fail("Conflict", "Set a budget on the parent category first.");
+    }
+  }
+  for (const parent of categories) {
+    const parentAmount = resolved.get(parent.id) ?? null;
+    if (parentAmount == null) continue;
+    let childSum = 0;
+    for (const child of categories) {
+      if (child.parentId !== parent.id) continue;
+      const amt = resolved.get(child.id);
+      if (amt != null) childSum += amt;
+    }
+    if (childSum > parentAmount) {
+      fail("Conflict", "Subcategory budgets add up to more than the parent.");
+    }
+  }
+}
+
+function setBudgets(items: BudgetWrite[]) {
+  if (items.length === 0) return;
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (seen.has(item.categoryId)) fail("ValidationError", "A category can only be listed once.");
+    seen.add(item.categoryId);
+    if (item.amountCents != null && item.amountCents < 0) {
+      fail("ValidationError", "A budget can't be negative.");
+    }
+    const cat = categories.find((c) => c.id === item.categoryId) ?? fail("NotFound", "Category not found");
+    if (item.amountCents != null) {
+      if (cat.isSystem) fail("ValidationError", "The Adjustment category can't have a budget.");
+      if (cat.kind !== "expense") fail("ValidationError", "Income categories can't have a budget.");
+      if (cat.isArchived && resolveAmount(versionsOf(cat.id), localToday().slice(0, 7)) == null) {
+        fail("Conflict", "Archived categories can't be given a new budget.");
+      }
+    }
+  }
+  const month = localToday().slice(0, 7);
+  const next = budgetVersions.map((v) => ({ ...v }));
+  for (const item of items) {
+    const existing = next.find((v) => v.categoryId === item.categoryId && v.effectiveMonth === month);
+    if (existing) existing.amountCents = item.amountCents;
+    else next.push({ categoryId: item.categoryId, effectiveMonth: month, amountCents: item.amountCents });
+  }
+  ensureEnvelopes(month, next);
+  budgetVersions.length = 0;
+  budgetVersions.push(...next);
+}
+
+/** Per-category expense nets in [from, to), after reimbursement apportion and before parent rollup. */
+function spendNets(from: string, to: string): Map<string, number> {
+  const inRange = (t: Transaction) => t.transactionDate >= from && t.transactionDate < to;
+  const nets = new Map<string, number>();
+  const attrib: { cat: string; amt: number }[] = [];
+  txns.filter((t) => t.kind === "expense" && !t.excludedFromReporting && inRange(t)).forEach((t) => {
+    const lines = t.splits.length
+      ? t.splits.map((s) => ({ cat: s.categoryId, amt: s.amountCents }))
+      : t.categoryId ? [{ cat: t.categoryId, amt: t.amountCents }] : [];
+    const shares = apportion(allocatedOn(t.id), lines.map((l) => l.amt));
+    lines.forEach((l, k) => attrib.push({ cat: l.cat, amt: l.amt - shares[k] }));
+  });
+  attrib.forEach(({ cat, amt }) => nets.set(cat, (nets.get(cat) ?? 0) + amt));
+  return nets;
+}
+
+function planMonthRange(month: string): { from: string; to: string } {
+  const parts = month.split("-");
+  if (parts.length !== 2) fail("ValidationError", "Month must be in YYYY-MM format");
+  const year = parseI32(parts[0]) ?? fail("ValidationError", "Invalid year");
+  const mon = parseU32(parts[1]) ?? fail("ValidationError", "Invalid month");
+  if (mon < 1 || mon > 12) fail("ValidationError", "Month must be 01-12");
+  const from = `${String(year).padStart(4, "0")}-${String(mon).padStart(2, "0")}-01`;
+  const to = mon === 12
+    ? `${String(year + 1).padStart(4, "0")}-01-01`
+    : `${String(year).padStart(4, "0")}-${String(mon + 1).padStart(2, "0")}-01`;
+  return { from, to };
+}
+
+function parseI32(s: string): number | null {
+  if (!/^[+-]?\d+$/.test(s)) return null;
+  const n = Number(s);
+  if (!Number.isInteger(n) || n < -2147483648 || n > 2147483647) return null;
+  return n;
+}
+
+function parseU32(s: string): number | null {
+  if (!/^\+?\d+$/.test(s)) return null;
+  const n = Number(s);
+  if (!Number.isInteger(n) || n < 0 || n > 4294967295) return null;
+  return n;
+}
+
+function isRealDate(s: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return false;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+
+function prepareGoal(input: GoalWrite, currentId: string | null): string {
+  const name = String(input.name ?? "").trim();
+  if (!name) fail("ValidationError", "Goal name cannot be empty");
+  if (!(typeof input.targetCents === "number" && input.targetCents > 0)) {
+    fail("ValidationError", "Target must be greater than zero.");
+  }
+  if (input.targetDate != null && !isRealDate(input.targetDate)) {
+    fail("ValidationError", "Date must be a real YYYY-MM-DD.");
+  }
+  const acc = accounts.find((x) => x.id === input.accountId) ?? fail("NotFound", "Account not found");
+  if (acc.isArchived) fail("Conflict", "The selected account is archived");
+  if (!goalSubtype(acc.subtype)) {
+    fail("Conflict", "Goals can only sit on cash, an e-wallet, savings, or a current account.");
+  }
+  const existing = goals.find((g) => g.accountId === input.accountId);
+  if (existing && existing.id !== currentId) fail("Conflict", "This account already has a goal.");
+  return name;
+}
+
+function toPlanGoal(row: GoalRecord): PlanGoal {
+  const acc = accounts.find((x) => x.id === row.accountId) ?? fail("NotFound", "Account not found");
+  const balanceCents = balanceOf(acc);
+  return {
+    id: row.id,
+    name: row.name,
+    accountId: row.accountId,
+    accountName: acc.name,
+    balanceCents,
+    targetCents: row.targetCents,
+    targetDate: row.targetDate,
+    monthlyCents: monthlyRequired(localToday(), row.targetDate, balanceCents, row.targetCents),
+  };
+}
+
+function getPlan(month: string): Plan {
+  const { from, to } = planMonthRange(month);
+  const own = spendNets(from, to);
+  const budgets: PlanBudget[] = [];
+  for (const cat of categories) {
+    const amountCents = resolveAmount(versionsOf(cat.id), month);
+    if (amountCents == null) continue;
+    let spentCents = own.get(cat.id) ?? 0;
+    if (cat.parentId == null) {
+      for (const child of categories) {
+        if (child.parentId === cat.id) spentCents += own.get(child.id) ?? 0;
+      }
+    }
+    budgets.push({
+      categoryId: cat.id,
+      parentId: cat.parentId,
+      name: cat.name,
+      emoji: cat.emoji,
+      sortOrder: cat.sortOrder,
+      isArchived: cat.isArchived,
+      amountCents,
+      spentCents,
+    });
+  }
+  budgets.sort((x, y) => x.sortOrder - y.sortOrder || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+  const planGoals: PlanGoal[] = [];
+  for (const acc of accounts) {
+    if (acc.isArchived) continue;
+    const row = goals.find((g) => g.accountId === acc.id);
+    if (row) planGoals.push(toPlanGoal(row));
+  }
+  return { month, budgets, goals: planGoals };
+}
 
 export async function mockInvoke<T>(command: string, args: Record<string, unknown>): Promise<T> {
   const result = await mockInvokeInner<T>(command, args);
@@ -278,8 +488,12 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       const nextSub = a.input.subtype != null
         ? subtypeOf(a.input.subtype) ?? fail("ValidationError", `Invalid subtype: ${a.input.subtype}`)
         : null;
+      const resultingSubtype = nextSub ? nextSub.key : acc.subtype;
+      if (!goalSubtype(resultingSubtype) && goals.some((g) => g.accountId === acc.id)) {
+        fail("Conflict", "Delete this account's goal before changing its type.");
+      }
       const sent = Object.prototype.hasOwnProperty.call(a.input, "creditLimitCents") ? a.input.creditLimitCents : null;
-      const nextLimit = resolveCreditLimit(nextSub ? nextSub.key : acc.subtype, sent ?? null, acc.creditLimitCents);
+      const nextLimit = resolveCreditLimit(resultingSubtype, sent ?? null, acc.creditLimitCents);
       if (a.input.name != null) acc.name = String(a.input.name).trim();
       if (nextSub) {
         acc.subtype = nextSub.key;
@@ -368,6 +582,9 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       if (categories.some((x) => x.parentId === c.id)) fail("Conflict", "Remove or move its subcategories first");
       if (txns.some((t) => t.categoryId === c.id || t.splits.some((s) => s.categoryId === c.id))) fail("Conflict", "In use by transactions — archive it instead");
       categories.splice(categories.indexOf(c), 1);
+      for (let k = budgetVersions.length - 1; k >= 0; k--) {
+        if (budgetVersions[k].categoryId === c.id) budgetVersions.splice(k, 1);
+      }
       return undefined as T;
     }
     case "reorder_categories": {
@@ -412,7 +629,14 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       } else if (categories.some((x) => x.id !== cat.id && x.parentId == null && x.kind === cat.kind && x.name === cat.name)) {
         fail("Conflict", "A category with this name already exists at this level");
       }
+      const previousParent = cat.parentId;
       cat.parentId = pid;
+      try {
+        ensureEnvelopes(localToday().slice(0, 7));
+      } catch {
+        cat.parentId = previousParent;
+        fail("Conflict", "This move would leave subcategory budgets that don't fit. Clear or lower them first.");
+      }
       cat.updatedAt = now();
       return cat as T;
     }
@@ -601,16 +825,11 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       const inRangeExpenses = txns.filter((t) => t.kind === "expense" && !t.excludedFromReporting && inRange(t));
       const expense = inRangeExpenses.reduce((s, t) => s + t.amountCents - allocatedOn(t.id), 0);
       const parentOf = (cid: string) => categories.find((x) => x.id === cid)?.parentId ?? cid;
-      const attrib: { cat: string; amt: number }[] = [];
-      inRangeExpenses.forEach((t) => {
-        const lines = t.splits.length
-          ? t.splits.map((s) => ({ cat: s.categoryId, amt: s.amountCents }))
-          : t.categoryId ? [{ cat: t.categoryId, amt: t.amountCents }] : [];
-        const shares = apportion(allocatedOn(t.id), lines.map((l) => l.amt));
-        lines.forEach((l, k) => attrib.push({ cat: l.cat, amt: l.amt - shares[k] }));
-      });
       const byCat = new Map<string, number>();
-      attrib.forEach(({ cat, amt }) => { const pid = parentOf(cat); byCat.set(pid, (byCat.get(pid) ?? 0) + amt); });
+      spendNets(from, to).forEach((amt, cat) => {
+        const pid = parentOf(cat);
+        byCat.set(pid, (byCat.get(pid) ?? 0) + amt);
+      });
       const breakdown: CategoryBreakdown[] = [...byCat.entries()]
         .filter(([, total]) => total > 0)
         .map(([cid, total]) => {
@@ -640,11 +859,48 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       settings.set(String(a.key), String(a.value));
       return undefined as T;
     }
+    case "get_plan":
+      return getPlan(String(a.month)) as T;
+    case "set_budgets":
+      setBudgets((a.items as BudgetWrite[] | undefined) ?? []);
+      return undefined as T;
+    case "create_goal": {
+      const input = a.input as GoalWrite;
+      const name = prepareGoal(input, null);
+      const row: GoalRecord = {
+        id: uid(),
+        name,
+        accountId: input.accountId,
+        targetCents: input.targetCents,
+        targetDate: input.targetDate ?? null,
+      };
+      goals.push(row);
+      return toPlanGoal(row) as T;
+    }
+    case "update_goal": {
+      const input = a.input as GoalWrite;
+      const id = input.id ?? "";
+      const row = goals.find((g) => g.id === id) ?? fail("NotFound", "Goal not found");
+      const name = prepareGoal(input, id);
+      row.name = name;
+      row.accountId = input.accountId;
+      row.targetCents = input.targetCents;
+      row.targetDate = input.targetDate ?? null;
+      return toPlanGoal(row) as T;
+    }
+    case "delete_goal": {
+      const i = goals.findIndex((g) => g.id === a.id);
+      if (i < 0) fail("NotFound", "Goal not found");
+      goals.splice(i, 1);
+      return undefined as T;
+    }
     case "reset_app": {
       accounts.length = 0;
       txns.length = 0;
       allocs.length = 0;
       settings.clear();
+      budgetVersions.length = 0;
+      goals.length = 0;
       seedCategories();
       return undefined as T;
     }
