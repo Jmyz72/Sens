@@ -72,6 +72,8 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
   // a retry updates it (never duplicates it) and persists exactly what is shown.
   const [saved, setSaved] = useState<Transaction | null>(null);
   const target = saved ?? editing;
+  // True once any write succeeded, so closing must still refresh the lists.
+  const [persisted, setPersisted] = useState(false);
 
   const catKind: Category["kind"] = kind === "income" ? "income" : kind === "expense" ? "expense" : "transfer";
   const pickerItems = useMemo(() => categoryPickerItems(categories, catKind), [categories, catKind]);
@@ -171,6 +173,7 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
         savedId = created.id;
         createdTxn = created;
       }
+      setPersisted(true);
       if (kind === "expense" && savedId && (expecting || target?.expectedReimbursementCents != null)) {
         try {
           await client.setExpectedReimbursement(savedId, expecting ? expectedCents : null);
@@ -189,8 +192,8 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
     }
   }
 
-  // After the expense exists, closing must still refresh the lists.
-  const close = saved ? onDone : onClose;
+  // After a write has landed (even if a follow-up step failed), closing must still refresh the lists.
+  const close = persisted ? onDone : onClose;
   const accentForKind = kindColor(t, kind);
   const sel = { ...inputStyle(t), appearance: "none" as const, cursor: "pointer" };
 
@@ -398,7 +401,7 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
         {error && <div style={{ fontSize: 12.5, color: t.expense, background: hexA(t.expense, 0.1), padding: "8px 12px", borderRadius: 8 }}>{error}</div>}
 
         <div style={{ display: "flex", gap: 10, marginTop: 2 }}>
-          <Btn variant="outline" onClick={close} style={{ flex: 1, justifyContent: "center", height: 38 }}>{saved ? "Close" : "Cancel"}</Btn>
+          <Btn variant="outline" onClick={close} style={{ flex: 1, justifyContent: "center", height: 38 }}>{persisted ? "Close" : "Cancel"}</Btn>
           <Btn variant="primary" onClick={submit} disabled={!valid || busy} style={{ flex: 1, justifyContent: "center", height: 38, background: accentForKind, boxShadow: `0 1px 8px ${hexA(accentForKind, 0.35)}` }}>
             {target ? "Save changes" : "Add transaction"}
           </Btn>
