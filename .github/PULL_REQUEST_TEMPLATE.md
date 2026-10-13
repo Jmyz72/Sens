@@ -18,7 +18,7 @@
 - [ ] If I changed a command's behavior/signature/args, I updated **both** the Rust chain **and** `src/client/mock.ts`
 - [ ] No hardcoded colors — I used `useTheme()` semantic tokens
 - [ ] Money stays as integer MYR cents end-to-end (formatted only at the edge)
-- [ ] I updated the relevant docs (`CLAUDE.md` + its identical mirror `AGENTS.md`, design spec, `ROADMAP.md` if a phase shipped) and the `CHANGELOG.md` `[Unreleased]` section
+- [ ] I updated the relevant docs (`docs/architecture/*.md` topic, `AGENTS.md` if a hard rule changed, design spec, `ROADMAP.md` if a phase shipped) and the `CHANGELOG.md` `[Unreleased]` section
 - [ ] If I changed the Rust seed data, I ran `npm run gen:seed-catalog` and committed `src/generated/seed-catalog.json`
 - [ ] I did **not** hand-edit version files (releases are cut via `npm run release`)
 

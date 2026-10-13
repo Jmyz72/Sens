@@ -141,7 +141,7 @@ If you change the Rust seed data (default categories, account subtypes, provider
 
 ## Documentation
 
-- **Architecture & conventions** — [`CLAUDE.md`](./CLAUDE.md) (mirrored in [`AGENTS.md`](./AGENTS.md))
+- **Architecture & conventions** — [`AGENTS.md`](./AGENTS.md) (overview and hard rules; `CLAUDE.md` is a symlink to it), with per-topic detail in [`docs/architecture/`](./docs/architecture/)
 - **Roadmap** — [`ROADMAP.md`](./ROADMAP.md) (shipped releases and the climb to 1.0)
 - **Design specs & implementation plans** — [`docs/superpowers/`](./docs/superpowers/)
 - **Release process** — [`RELEASING.md`](./RELEASING.md)

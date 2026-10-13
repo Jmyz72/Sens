@@ -50,7 +50,7 @@ React UI → typed client → dispatch seam → Tauri commands → services → 
 
 `src/client/invoke.ts` routes to the **real Rust backend** inside Tauri, or to an **in-memory mock** (`src/client/mock.ts`) in a plain browser. **Any change to a command's behavior, signature, or args must be made in BOTH the Rust chain and the mock**, or browser-dev and the packaged app will diverge. The mock is dev-only and never ships. The one exception is **seed data** (account subtypes, provider templates, default categories): it's generated from the Rust source into `src/generated/seed-catalog.json`, so run `npm run gen:seed-catalog` after changing the seed rather than editing the mock by hand.
 
-See [`CLAUDE.md`](./CLAUDE.md) for the full architecture and conventions, and [`docs/superpowers/specs/`](./docs/superpowers/specs/) for design specs. **Read the relevant spec before changing data-model or business-rule behavior.**
+See [`AGENTS.md`](./AGENTS.md) for the architecture overview and hard rules, [`docs/architecture/`](./docs/architecture/) for per-topic detail, and [`docs/superpowers/specs/`](./docs/superpowers/specs/) for design specs. **Read the relevant spec before changing data-model or business-rule behavior.**
 
 ### Frontend conventions
 
@@ -65,7 +65,7 @@ Sens follows **[GitHub Flow](https://docs.github.com/en/get-started/quickstart/g
 1. **Fork** the repo and create a topic branch off `main` (e.g. `feat/credit-utilization`, `fix/dashboard-totals`).
 2. **Write tests first** where practical, and keep both the frontend (`npm test`) and backend (`cargo test --lib`) suites green.
 3. **Keep the build clean** — `npm run build` must pass.
-4. **Update documentation** — keep `CLAUDE.md` (and its identical mirror `AGENTS.md` — edit one, then copy it over the other), the relevant spec, `ROADMAP.md` when a phase ships, and `CHANGELOG.md` (`[Unreleased]` section) in sync with your change.
+4. **Update documentation** — keep the relevant `docs/architecture/*.md` topic (and `AGENTS.md` if a hard rule changed — `CLAUDE.md` is a symlink to it), the relevant spec, `ROADMAP.md` when a phase ships, and `CHANGELOG.md` (`[Unreleased]` section) in sync with your change.
 5. **Open a Pull Request** against `main` using the PR template. Link any related issue.
 
 ### Commit & PR conventions

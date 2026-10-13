@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Credit limit on credit cards and BNPL.** Creating or editing either account requires a limit. The Accounts screen shows available credit and utilization. A charge past the limit is still saved; available credit stays at zero and the row reads "Over limit".
 
 ### Documentation
+- Restructured the agent docs for readability. `AGENTS.md` is now a short overview (commands,
+  architecture, hard rules, a "read this before changing X" table) and `CLAUDE.md` is a symlink to
+  it, replacing the two identical 30 KB copies. The detailed rules moved into
+  `docs/architecture/` (`transactions`, `accounts`, `categories`, `backend`, `frontend`). `AGENTS.md`
+  now says to always update `CHANGELOG.md` and `ROADMAP.md`. `ROADMAP.md` gained a status block, a
+  planned-phase table and era-grouped Shipped tables. `README.md`, `CONTRIBUTING.md` and the PR
+  template point to the new layout.
 - Synced the docs with the code: `ROADMAP.md` now lists every release through
   v0.9.1 (v0.7.0–v0.9.1 were missing from the Shipped table); `CLAUDE.md` /
   `AGENTS.md` document the in-app auto-updater, the app-settings keys, the
