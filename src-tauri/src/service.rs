@@ -666,10 +666,14 @@ fn validate_allocations(
             return Err(AppError::Validation("Only expenses can be reimbursed.".into()));
         }
         let used = repo::allocated_total_for_expense(conn, &a.expense_id, except_reimbursement_id)?;
-        if used + a.amount_cents > expense.amount_cents {
+        // `a.amount_cents` is client-supplied, so compare without adding (no overflow).
+        if a.amount_cents > expense.amount_cents.saturating_sub(used) {
             return Err(AppError::Validation("Allocation exceeds what's left on that expense.".into()));
         }
-        sum += a.amount_cents;
+        sum = match sum.checked_add(a.amount_cents) {
+            Some(v) => v,
+            None => return Err(AppError::Validation("Allocations must add up to the reimbursement amount.".into())),
+        };
     }
     if sum != amount_cents {
         return Err(AppError::Validation("Allocations must add up to the reimbursement amount.".into()));

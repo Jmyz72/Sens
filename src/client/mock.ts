@@ -172,7 +172,7 @@ function validateAllocations(amountCents: number, list: TxnAllocation[], exceptR
     seen.add(l.expenseId);
     const e = txns.find((t) => t.id === l.expenseId);
     if (!e || !isPlainExpense(e)) return fail("ValidationError", "Only expenses can be reimbursed.");
-    if (allocatedOn(l.expenseId, exceptReimbursementId) + l.amountCents > e.amountCents) {
+    if (l.amountCents > e.amountCents - allocatedOn(l.expenseId, exceptReimbursementId)) {
       return fail("ValidationError", "Allocation exceeds what's left on that expense.");
     }
     sum += l.amountCents;
