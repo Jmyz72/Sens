@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Category, Transaction } from "../../types";
 import {
   apportion,
+  canReimburse,
   candidateExpenses,
   defaultAllocationCents,
   effectiveCents,
@@ -33,6 +34,8 @@ describe("apportion", () => {
     expect(apportion(2, [1, 1, 1])).toEqual([1, 1, 0]);
     expect(apportion(1, [2, 2])).toEqual([1, 0]);
     expect(apportion(7, [5, 3, 2])).toEqual([4, 2, 1]);
+    expect(apportion(1, [1, 2])).toEqual([0, 1]); // the larger remainder wins over the earlier line
+    expect(apportion(2, [3, 3, 4])).toEqual([1, 0, 1]); // remainders 6,6,8: biggest first, then the tied earliest
   });
 
   it("handles empty, zero, and overshoot", () => {
@@ -124,5 +127,21 @@ describe("candidateExpenses", () => {
   it("keeps an expense an editing reimbursement already fully repays", () => {
     const list = [exp({ id: "done", reimbursedCents: 10_000 })];
     expect(candidateExpenses(list, cats, [{ expenseId: "done", amountCents: 10_000 }]).map((t) => t.id)).toEqual(["done"]);
+  });
+});
+
+describe("canReimburse", () => {
+  const cats = [cat({ id: "c1" }), cat({ id: "sys", isSystem: true })];
+  it("allows a plain expense with something left", () => {
+    expect(canReimburse(exp(), cats)).toBe(true);
+    expect(canReimburse(exp({ reimbursedCents: 4_000 }), cats)).toBe(true);
+  });
+  it("rejects fully reimbursed, system-category, and non-expense rows", () => {
+    expect(canReimburse(exp({ reimbursedCents: 10_000 }), cats)).toBe(false);
+    expect(canReimburse(exp({ categoryId: "sys" }), cats)).toBe(false);
+    expect(canReimburse(exp({ kind: "income" }), cats)).toBe(false);
+  });
+  it("allows a split expense with no single category", () => {
+    expect(canReimburse(exp({ categoryId: null }), cats)).toBe(true);
   });
 });

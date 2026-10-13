@@ -8,6 +8,8 @@ import { txnSortKey } from "./kinds";
  * Split `total` across `weights` in proportion, in whole cents (largest-remainder
  * method; ties go to the earliest line). `total` is clamped into 0..sum(weights),
  * the result sums to it, and no share exceeds its weight.
+ * Precision ceiling: `total * weight` must stay under 2^53 (about RM 949k per
+ * line); the Rust version uses i128 and has no such limit.
  */
 export function apportion(total: number, weights: number[]): number[] {
   const sum = weights.reduce((s, w) => s + w, 0);
@@ -47,6 +49,12 @@ export function outstandingCents(t: Pick<Transaction, "expectedReimbursementCent
  */
 export function remainingCents(t: Pick<Transaction, "amountCents" | "reimbursedCents">, ownAllocatedCents = 0): number {
   return t.amountCents - t.reimbursedCents + ownAllocatedCents;
+}
+
+/** Whether "Record reimbursement" applies: a plain expense (not a balance correction) with something left. */
+export function canReimburse(t: Transaction, categories: Category[]): boolean {
+  const system = !!t.categoryId && categories.some((c) => c.id === t.categoryId && c.isSystem);
+  return t.kind === "expense" && !system && remainingCents(t) > 0;
 }
 
 /** Default allocation when an expense is picked: what is still expected, capped at what is left. */

@@ -12,7 +12,7 @@ import { KIND_META, kindColor, signedFor, computeRunningBalances } from "../lib/
 import { isPaymentSource, movementKind } from "../lib/payments";
 import { categoryPickerItems } from "../lib/categories";
 import { useTimeSetting } from "../lib/useTimeSetting";
-import { outstandingCents, remainingCents } from "../lib/reimbursements";
+import { canReimburse as canReimburseExpense, outstandingCents } from "../lib/reimbursements";
 
 export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onDuplicate, onDelete, onSaved, onEdit, onReimburse }: {
   tx: Transaction; accounts: Account[]; categories: Category[]; allTxns: Transaction[];
@@ -25,8 +25,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
   const movement = tx.kind === "transfer" || tx.kind === "payment";
   const editable = tx.kind === "income" || tx.kind === "expense" || movement;
   const split = tx.splits.length >= 2;
-  const system = !!categories.find((c) => c.id === tx.categoryId)?.isSystem;
-  const canReimburse = tx.kind === "expense" && !system && remainingCents(tx) > 0 && !!onReimburse;
+  const canReimburse = canReimburseExpense(tx, categories) && !!onReimburse;
   const expenseOf = (id: string) => allTxns.find((x) => x.id === id);
 
   const [categoryId, setCategoryId] = useState(tx.categoryId);

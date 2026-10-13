@@ -15,7 +15,7 @@ import { client } from "../client";
 import { useAppData, accountName } from "../store";
 import { dateGroupLabel, nowTimeHHMM, todayISO } from "../lib/format";
 import { KIND_META, kindColor, txnSortKey } from "../lib/kinds";
-import { effectiveCents, outstandingCents } from "../lib/reimbursements";
+import { canReimburse, effectiveCents, outstandingCents } from "../lib/reimbursements";
 import { AddTransaction } from "../modals/AddTransaction";
 import { rangeForPreset, type DateRangePreset, type CustomRange } from "../lib/txnFilters";
 import { planBulk, type BulkAction } from "../lib/txnSelection";
@@ -345,7 +345,7 @@ export function Transactions({ initialAccountId, initialAwaiting = false }: { in
                     onClick={() => setSelId(tx.id)}
                     quickActions={<>
                       {tx.kind !== "adjustment" && tx.kind !== "opening" && <IconBtn name="pencil" icon={13} onClick={() => setEditing(tx)} title="Edit" />}
-                      {tx.kind === "expense" && <IconBtn name="reimburse" icon={13} onClick={() => setReimburseFor(tx.id)} title="Record reimbursement" />}
+                      {canReimburse(tx, categories) && <IconBtn name="reimburse" icon={13} onClick={() => setReimburseFor(tx.id)} title="Record reimbursement" />}
                       {tx.kind !== "adjustment" && tx.kind !== "opening" && tx.kind !== "reimbursement" && <IconBtn name="copy" icon={13} onClick={() => onDuplicate(tx)} title="Duplicate" />}
                       {tx.kind !== "opening" && <IconBtn name="trash" icon={13} onClick={() => onDelete(tx.id)} title="Delete" />}
                     </>} />
