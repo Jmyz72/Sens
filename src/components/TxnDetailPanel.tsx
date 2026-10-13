@@ -12,10 +12,12 @@ import { KIND_META, kindColor, signedFor, computeRunningBalances } from "../lib/
 import { isPaymentSource, movementKind } from "../lib/payments";
 import { categoryPickerItems } from "../lib/categories";
 import { useTimeSetting } from "../lib/useTimeSetting";
+import { outstandingCents, remainingCents } from "../lib/reimbursements";
 
-export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onDuplicate, onDelete, onSaved }: {
+export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onDuplicate, onDelete, onSaved, onEdit, onReimburse }: {
   tx: Transaction; accounts: Account[]; categories: Category[]; allTxns: Transaction[];
   onClose: () => void; onDuplicate: () => void; onDelete: () => void; onSaved: () => void;
+  onEdit?: () => void; onReimburse?: () => void;
 }) {
   const t = useTheme();
   const color = kindColor(t, tx.kind);
@@ -23,6 +25,9 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
   const movement = tx.kind === "transfer" || tx.kind === "payment";
   const editable = tx.kind === "income" || tx.kind === "expense" || movement;
   const split = tx.splits.length >= 2;
+  const system = !!categories.find((c) => c.id === tx.categoryId)?.isSystem;
+  const canReimburse = tx.kind === "expense" && !system && remainingCents(tx) > 0 && !!onReimburse;
+  const expenseOf = (id: string) => allTxns.find((x) => x.id === id);
 
   const [categoryId, setCategoryId] = useState(tx.categoryId);
   const [accountId, setAccountId] = useState(tx.accountId);
@@ -75,7 +80,7 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
         <div style={{ fontSize: 15, fontWeight: 700, marginTop: 12 }}>{tx.description || meta.label}</div>
         <div style={{ marginTop: 6 }}>
           <Money cents={movement ? tx.amountCents : signedCents} signed={!movement}
-            color={movement || tx.kind === "adjustment" || tx.kind === "opening" ? color : undefined} size={26} weight={700} />
+            color={movement || tx.kind === "adjustment" || tx.kind === "opening" || tx.kind === "reimbursement" ? color : undefined} size={26} weight={700} />
         </div>
         {before != null && after != null && (
           <div style={{ fontSize: 11.5, color: t.faint, marginTop: 6 }}>
@@ -152,6 +157,25 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
                 </button>
               </div>
             )}
+            {tx.kind === "expense" && (tx.reimbursedCents > 0 || tx.expectedReimbursementCents != null) && (
+              <div style={{ fontSize: 12.5, background: t.panel2, borderRadius: 8, padding: "9px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: t.dim }}>Reimbursed</span>
+                  <span style={{ fontFamily: t.mono }}>{fmtMoney(tx.reimbursedCents, { cents: true })} of {fmtMoney(tx.amountCents, { cents: true })}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: t.dim }}>Net cost</span>
+                  <b style={{ fontFamily: t.mono }}>{fmtMoney(tx.amountCents - tx.reimbursedCents, { cents: true })}</b>
+                </div>
+                {outstandingCents(tx) > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: t.dim }}>Still expected</span>
+                    <span style={{ fontFamily: t.mono, color: t.transfer }}>{fmtMoney(outstandingCents(tx), { cents: true })}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            {canReimburse && <Btn variant="outline" icon="reimburse" size="sm" onClick={onReimburse} style={{ justifyContent: "center" }}>Record reimbursement</Btn>}
             {error && <div style={{ fontSize: 12, color: t.expense, background: hexA(t.expense, 0.12), padding: "7px 10px", borderRadius: 7 }}>{error}</div>}
             <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
               <Btn size="sm" onClick={save} disabled={busy || (timeEnabled && !time)} style={{ flex: 1, justifyContent: "center" }}>Save</Btn>
@@ -167,9 +191,28 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
               <span style={{ color: t.dim }}>Account</span><span style={{ fontWeight: 600 }}>{accountName(accounts, tx.accountId)}</span>
             </div>
+            {tx.kind === "reimbursement" && (
+              <div>
+                <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: t.dim, marginBottom: 6 }}>
+                  Repays {tx.allocations.length} expense{tx.allocations.length === 1 ? "" : "s"}
+                </div>
+                {tx.allocations.map((a) => {
+                  const e = expenseOf(a.expenseId);
+                  return (
+                    <div key={a.expenseId} style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 0", borderBottom: `0.5px solid ${t.divider}`, fontSize: 13 }}>
+                      <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e?.description || "Expense"}</span>
+                      <span style={{ fontFamily: t.mono }}>{fmtMoney(a.amountCents, { cents: true })}</span>
+                    </div>
+                  );
+                })}
+                {onEdit && <Btn variant="outline" icon="pencil" size="sm" onClick={onEdit} style={{ justifyContent: "center", marginTop: 10, width: "100%" }}>Edit reimbursement</Btn>}
+              </div>
+            )}
             <div style={{ fontSize: 12, color: t.dim, background: t.panel2, padding: "8px 12px", borderRadius: 8, display: "flex", gap: 7, alignItems: "center" }}>
               <Icon name={meta.icon} size={14} color={color} />
-              {tx.kind === "opening" ? "The opening balance is set from the account." : "Adjustments can be deleted but not edited."}
+              {tx.kind === "opening" ? "The opening balance is set from the account."
+                : tx.kind === "reimbursement" ? "Money back for expenses you already booked. It never counts as income."
+                : "Adjustments can be deleted but not edited."}
             </div>
             {tx.kind !== "opening" && <Btn variant="danger" icon="trash" size="sm" onClick={onDelete} style={{ justifyContent: "center" }}>Delete</Btn>}
           </>

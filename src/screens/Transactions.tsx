@@ -15,13 +15,14 @@ import { client } from "../client";
 import { useAppData, accountName } from "../store";
 import { dateGroupLabel, nowTimeHHMM, todayISO } from "../lib/format";
 import { KIND_META, kindColor, txnSortKey } from "../lib/kinds";
+import { effectiveCents, outstandingCents } from "../lib/reimbursements";
 import { AddTransaction } from "../modals/AddTransaction";
 import { rangeForPreset, type DateRangePreset, type CustomRange } from "../lib/txnFilters";
 import { planBulk, type BulkAction } from "../lib/txnSelection";
 import { useToast } from "../components/Toast";
 import { useTimeSetting } from "../lib/useTimeSetting";
 
-const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "payment", "adjustment", "opening"];
+const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "payment", "reimbursement", "adjustment", "opening"];
 
 export function Transactions({ initialAccountId }: { initialAccountId?: string | null }) {
   const t = useTheme();
@@ -31,6 +32,8 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [query, setQuery] = useState("");
   const [kinds, setKinds] = useState<Set<TransactionKind>>(new Set());
+  const [awaitingOnly, setAwaitingOnly] = useState(false);
+  const [reimburseFor, setReimburseFor] = useState<string | null>(null);
   const [acctFilter, setAcctFilter] = useState<string | null>(initialAccountId ?? null);
   const [selId, setSelId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
@@ -56,14 +59,15 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
     return txns.filter((tx) => {
       if (acctFilter && tx.accountId !== acctFilter && tx.toAccountId !== acctFilter) return false;
       if (kinds.size && !kinds.has(tx.kind)) return false;
+      if (awaitingOnly && !(tx.kind === "expense" && outstandingCents(tx) > 0)) return false;
       if (!q) return true;
       const cat = categories.find((c) => c.id === tx.categoryId)?.name ?? "";
       return (tx.description ?? "").toLowerCase().includes(q) || cat.toLowerCase().includes(q) || accountName(accounts, tx.accountId).toLowerCase().includes(q);
     });
-  }, [txns, kinds, query, categories, accounts, acctFilter]);
+  }, [txns, kinds, awaitingOnly, query, categories, accounts, acctFilter]);
 
   const totalIn = filtered.filter((x) => x.kind === "income" && !x.excludedFromReporting).reduce((s, x) => s + x.amountCents, 0);
-  const totalOut = filtered.filter((x) => x.kind === "expense" && !x.excludedFromReporting).reduce((s, x) => s + x.amountCents, 0);
+  const totalOut = filtered.filter((x) => x.kind === "expense" && !x.excludedFromReporting).reduce((s, x) => s + effectiveCents(x), 0);
 
   const groups = useMemo(() => {
     const byDate = new Map<string, Transaction[]>();
@@ -108,7 +112,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   function dayNet(items: Transaction[]): number {
     return items.reduce((s, x) =>
       s + (x.kind === "income" && !x.excludedFromReporting ? x.amountCents
-         : x.kind === "expense" && !x.excludedFromReporting ? -x.amountCents
+         : x.kind === "expense" && !x.excludedFromReporting ? -effectiveCents(x)
          : 0), 0);
   }
 
@@ -116,10 +120,15 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
 
   const onDelete = useCallback(async (id: string) => {
     if (!window.confirm("Delete this transaction? This can't be undone.")) return;
-    await client.deleteTransaction(id);
+    try {
+      await client.deleteTransaction(id);
+    } catch (e) {
+      notify((e as { message?: string })?.message ?? "Couldn't delete transaction", "error");
+      return;
+    }
     setSelId(null);
     await reload();
-  }, [reload]);
+  }, [reload, notify]);
 
   // Read the preview preference fresh at action time so a Settings change takes
   // effect without remounting this screen.
@@ -296,7 +305,8 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {acctFilter && <Pill on onClick={() => setAcctFilter(null)}>Account: {accountName(accounts, acctFilter)} ✕</Pill>}
           {KIND_FILTERS.map((k) => <Pill key={k} on={kinds.has(k)} dot={kindColor(t, k)} onClick={() => toggleKind(k)}>{KIND_META[k].label}</Pill>)}
-          {kinds.size > 0 && <Pill onClick={() => setKinds(new Set())}>Clear</Pill>}
+          <Pill on={awaitingOnly} dot={kindColor(t, "reimbursement")} onClick={() => setAwaitingOnly((v) => !v)}>Awaiting reimbursement</Pill>
+          {(kinds.size > 0 || awaitingOnly) && <Pill onClick={() => { setKinds(new Set()); setAwaitingOnly(false); }}>Clear</Pill>}
           <div style={{ marginLeft: "auto", display: "flex", gap: 14, fontSize: 12.5, flexShrink: 0 }}>
             <span style={{ color: t.dim }}>In <b style={{ color: t.income, fontFamily: t.mono }}>{(totalIn / 100).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</b></span>
             <span style={{ color: t.dim }}>Out <b style={{ color: t.expense, fontFamily: t.mono }}>{(totalOut / 100).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</b></span>
@@ -320,7 +330,8 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
                     onClick={() => setSelId(tx.id)}
                     quickActions={<>
                       {tx.kind !== "adjustment" && tx.kind !== "opening" && <IconBtn name="pencil" icon={13} onClick={() => setEditing(tx)} title="Edit" />}
-                      {tx.kind !== "adjustment" && tx.kind !== "opening" && <IconBtn name="copy" icon={13} onClick={() => onDuplicate(tx)} title="Duplicate" />}
+                      {tx.kind === "expense" && <IconBtn name="reimburse" icon={13} onClick={() => setReimburseFor(tx.id)} title="Record reimbursement" />}
+                      {tx.kind !== "adjustment" && tx.kind !== "opening" && tx.kind !== "reimbursement" && <IconBtn name="copy" icon={13} onClick={() => onDuplicate(tx)} title="Duplicate" />}
                       {tx.kind !== "opening" && <IconBtn name="trash" icon={13} onClick={() => onDelete(tx.id)} title="Delete" />}
                     </>} />
                 ))}
@@ -333,6 +344,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
       {sel && selectedIds.size === 0 && (
         <TxnDetailPanel key={sel.id} tx={sel} accounts={accounts} categories={categories} allTxns={txns}
           onClose={() => setSelId(null)} onDuplicate={() => onDuplicate(sel)} onDelete={() => onDelete(sel.id)}
+          onEdit={() => setEditing(sel)} onReimburse={() => setReimburseFor(sel.id)}
           onSaved={() => { reload(); }} />
       )}
 
@@ -371,6 +383,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
       )}
 
       {editing && <AddTransaction accounts={accounts} categories={categories} editing={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); reload(); }} />}
+      {reimburseFor && <AddTransaction accounts={accounts} categories={categories} reimburseExpenseId={reimburseFor} onClose={() => setReimburseFor(null)} onDone={() => { setReimburseFor(null); reload(); }} />}
     </div>
   );
 }
