@@ -132,6 +132,21 @@ pub fn create_transfer_transaction(state: State<'_, DbState>, from_account_id: S
 }
 
 #[tauri::command]
+pub fn create_payment_transaction(
+    state: State<'_, DbState>,
+    from_account_id: String,
+    to_account_id: String,
+    amount_cents: i64,
+    description: Option<String>,
+    date: String,
+    time: Option<String>,
+) -> AppResult<Transaction> {
+    with_conn!(state, c => service::create_payment(
+        &c, &from_account_id, &to_account_id, amount_cents, description.as_deref(), &date, time.as_deref()
+    ))
+}
+
+#[tauri::command]
 pub fn list_transactions(state: State<'_, DbState>, filters: Option<TransactionFilters>) -> AppResult<Vec<Transaction>> {
     with_conn!(state, c => service::list_transactions(&c, filters.unwrap_or_default()))
 }

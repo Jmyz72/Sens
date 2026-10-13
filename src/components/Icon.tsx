@@ -6,7 +6,7 @@ import type { CSSProperties, ReactNode } from "react";
 export type IconName =
   | "home" | "wallet" | "list" | "sparkle" | "search" | "bell" | "plus" | "minus"
   | "dots" | "arrowUp" | "arrowDown" | "chevronLeft" | "chevronRight" | "chevronDown"
-  | "in" | "out" | "swap" | "sliders" | "sun" | "moon" | "pencil" | "archive"
+  | "in" | "out" | "swap" | "card" | "sliders" | "sun" | "moon" | "pencil" | "archive"
   | "restore" | "trash" | "check" | "close" | "scale" | "filter"
   | "alertCircle" | "info" | "flag" | "copy";
 
@@ -33,6 +33,7 @@ export function Icon({
     in: <>{<circle {...P} cx="12" cy="12" r="8" />}<path {...P} d="M12 8v8M8.5 12.5 12 16l3.5-3.5" /></>,
     out: <>{<circle {...P} cx="12" cy="12" r="8" />}<path {...P} d="M12 16V8M8.5 11.5 12 8l3.5 3.5" /></>,
     swap: <path {...P} d="M6 8h12l-3-3M18 16H6l3 3" />,
+    card: <>{<rect {...P} x="3" y="6" width="18" height="12" rx="2" />}<path {...P} d="M3 10h18" /></>,
     sliders: <>{<path {...P} d="M5 8h9M18 8h1M5 16h1M10 16h9" />}{<circle {...P} cx="16" cy="8" r="2" />}{<circle {...P} cx="8" cy="16" r="2" />}</>,
     sun: <>{<circle {...P} cx="12" cy="12" r="4" />}<path {...P} d="M12 3v2M12 19v2M3 12h2M19 12h2M5.5 5.5l1.4 1.4M17.1 17.1l1.4 1.4M18.5 5.5l-1.4 1.4M6.9 17.1l-1.4 1.4" /></>,
     moon: <path {...P} d="M20 13.5A8 8 0 1 1 10.5 4a6.5 6.5 0 0 0 9.5 9.5z" />,

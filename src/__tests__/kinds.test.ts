@@ -37,6 +37,17 @@ describe("signedFor", () => {
   it("transfer destination (isDestination=true): returns amount as-is", () => {
     expect(signedFor("transfer", 10000, true)).toBe(10000);
   });
+
+  it("signs a payment like a transfer", () => {
+    expect(signedFor("payment", 10000, false)).toBe(-10000);
+    expect(signedFor("payment", 10000, true)).toBe(10000);
+  });
+
+  it("labels a payment and reuses the transfer color token", () => {
+    expect(KIND_META.payment.label).toBe("Payment");
+    expect(KIND_META.payment.icon).toBe("card");
+    expect(KIND_META.payment.colorKey).toBe("transfer");
+  });
 });
 
 // ── kindColor ─────────────────────────────────────────────────────────────────

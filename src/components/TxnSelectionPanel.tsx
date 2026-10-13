@@ -28,6 +28,7 @@ export function TxnSelectionPanel({
   const s = summarizeSelection(selected);
   const others = [
     s.otherCounts.transfer && `${s.otherCounts.transfer} transfer`,
+    s.otherCounts.payment && `${s.otherCounts.payment} payment`,
     s.otherCounts.adjustment && `${s.otherCounts.adjustment} adjustment`,
     s.otherCounts.opening && `${s.otherCounts.opening} opening`,
   ]

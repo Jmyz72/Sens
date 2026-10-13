@@ -55,6 +55,8 @@ export const client = {
     dispatch<Transaction>("create_expense_transaction", { accountId, categoryId, amountCents, description, date, time, excludedFromReporting, splits }),
   createTransfer: (fromAccountId: string, toAccountId: string, amountCents: number, description: string | null, date: string, time: string | null = null) =>
     dispatch<Transaction>("create_transfer_transaction", { fromAccountId, toAccountId, amountCents, description, date, time }),
+  createPayment: (fromAccountId: string, toAccountId: string, amountCents: number, description: string | null, date: string, time: string | null = null) =>
+    dispatch<Transaction>("create_payment_transaction", { fromAccountId, toAccountId, amountCents, description, date, time }),
   listTransactions: (filters?: TransactionFilters) =>
     dispatch<Transaction[]>("list_transactions", { filters: filters ?? null }),
   updateTransaction: (input: UpdateTransactionInput) => dispatch<Transaction>("update_transaction", { input }),
