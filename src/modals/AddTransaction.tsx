@@ -67,6 +67,9 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
   const [toAccountId, setToAccountId] = useState(initialTo);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Set once a NEW expense has been created, so a retry (after the expected
+  // reimbursement step failed) never creates a second expense.
+  const [createdExpenseId, setCreatedExpenseId] = useState<string | null>(null);
 
   const catKind: Category["kind"] = kind === "income" ? "income" : kind === "expense" ? "expense" : "transfer";
   const pickerItems = useMemo(() => categoryPickerItems(categories, catKind), [categories, catKind]);
@@ -150,7 +153,10 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
       const singleCat = !split ? list[0].categoryId : null;
 
       let savedId: string | null = null;
-      if (editing) {
+      if (createdExpenseId) {
+        // Already created on an earlier attempt: only retry the expectation step.
+        savedId = createdExpenseId;
+      } else if (editing) {
         await client.updateTransaction({
           id: editing.id, kind, accountId, toAccountId: null,
           categoryId: split ? null : singleCat,
@@ -163,9 +169,16 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
       } else {
         const created = await client.createExpense(accountId, singleCat, total, desc.trim() || null, date, txTime, excluded, splits);
         savedId = created.id;
+        setCreatedExpenseId(created.id);
       }
       if (kind === "expense" && savedId && (expecting || editing?.expectedReimbursementCents != null)) {
-        await client.setExpectedReimbursement(savedId, expecting ? expectedCents : null);
+        try {
+          await client.setExpectedReimbursement(savedId, expecting ? expectedCents : null);
+        } catch (e) {
+          const why = (e as { message?: string })?.message ?? "Something went wrong";
+          setError(`The expense was saved, but the expected reimbursement could not be set: ${why}`);
+          return;
+        }
       }
       onDone();
     } catch (e) {
@@ -175,14 +188,16 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
     }
   }
 
+  // After the expense exists, closing must still refresh the lists.
+  const close = createdExpenseId ? onDone : onClose;
   const accentForKind = kindColor(t, kind);
   const sel = { ...inputStyle(t), appearance: "none" as const, cursor: "pointer" };
 
   return (
-    <Modal onClose={onClose} width={430}>
+    <Modal onClose={close} width={430}>
       <div style={{ padding: "16px 20px", borderBottom: `0.5px solid ${t.divider}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 15, fontWeight: 700 }}>{editing ? "Edit transaction" : "Add transaction"}</span>
-        <button className="sens-icon-btn" onClick={onClose} style={{ width: 28, height: 28, color: t.dim }}><Icon name="close" size={16} /></button>
+        <button className="sens-icon-btn" onClick={close} style={{ width: 28, height: 28, color: t.dim }}><Icon name="close" size={16} /></button>
       </div>
 
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -192,8 +207,18 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
             const segmentKind: TransactionKind = k === "transfer" && destKind === "payment" ? "payment" : k;
             const on = k === "transfer" ? (kind === "transfer" || kind === "payment") : k === kind;
             const col = kindColor(t, on && segmentKind === "payment" ? "payment" : k);
+            // Kind can't change while editing (a reimbursement is its own record
+            // type) nor after the expense has been saved.
+            const disabledReason = editing
+              ? (editing.kind === "reimbursement"
+                ? (k !== "reimbursement" ? "A reimbursement can't be changed to another type" : null)
+                : (k === "reimbursement" ? "Reimbursements are created separately" : null))
+              : createdExpenseId && k !== kind ? "This expense is already saved" : null;
+            const segDisabled = disabledReason != null;
             return (
-              <button key={k} className="sens-btn" onClick={() => {
+              <button key={k} type="button" className="sens-btn" disabled={segDisabled} aria-disabled={segDisabled}
+                title={disabledReason ?? undefined} onClick={() => {
+                if (segDisabled) return;
                 if (k === "transfer") {
                   if (kind === "transfer" || kind === "payment") return;
                   changeKind(destKind);
@@ -202,7 +227,8 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
                 changeKind(k);
               }}
                 style={{ flex: 1, height: 32, justifyContent: "center", borderRadius: 7, fontSize: 12.5, fontWeight: 600,
-                  color: on ? "#fff" : t.dim, background: on ? col : "transparent" }}>
+                  color: on ? "#fff" : t.dim, background: on ? col : "transparent",
+                  opacity: segDisabled ? 0.45 : 1, cursor: segDisabled ? "not-allowed" : undefined }}>
                 <Icon name={KIND_META[segmentKind].icon} size={14} color={on ? "#fff" : t.dim} stroke={2} />
                 {KIND_META[segmentKind].label}
               </button>
@@ -213,7 +239,7 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
         {kind === "reimbursement" ? (
           <ReimbursementForm accounts={accounts} categories={categories}
             editing={editing?.kind === "reimbursement" ? editing : undefined}
-            presetExpenseId={reimburseExpenseId} onClose={onClose} onDone={onDone} />
+            presetExpenseId={reimburseExpenseId} onClose={close} onDone={onDone} />
         ) : (
         <>
         {/* amount */}
@@ -364,9 +390,9 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, re
         {error && <div style={{ fontSize: 12.5, color: t.expense, background: hexA(t.expense, 0.1), padding: "8px 12px", borderRadius: 8 }}>{error}</div>}
 
         <div style={{ display: "flex", gap: 10, marginTop: 2 }}>
-          <Btn variant="outline" onClick={onClose} style={{ flex: 1, justifyContent: "center", height: 38 }}>Cancel</Btn>
+          <Btn variant="outline" onClick={close} style={{ flex: 1, justifyContent: "center", height: 38 }}>{createdExpenseId ? "Close" : "Cancel"}</Btn>
           <Btn variant="primary" onClick={submit} disabled={!valid || busy} style={{ flex: 1, justifyContent: "center", height: 38, background: accentForKind, boxShadow: `0 1px 8px ${hexA(accentForKind, 0.35)}` }}>
-            {editing ? "Save changes" : "Add transaction"}
+            {createdExpenseId ? "Retry expected reimbursement" : editing ? "Save changes" : "Add transaction"}
           </Btn>
         </div>
         </>
