@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 - Drafted the reimbursements and receivables spec
   (`docs/superpowers/specs/2026-10-13-reimbursements-and-receivables-design.md`): a `reimbursement`
-  kind allocated to expenses, true-cost reporting, expected-reimbursement tracking, and a
-  `receivable` account for money lent.
+  kind allocated to expenses, true-cost reporting, expected-reimbursement tracking, and an
+  "Owes you" reading for the existing `lent` account.
 - Restructured the agent docs for readability. `AGENTS.md` is now a short overview (commands,
   architecture, hard rules, a "read this before changing X" table) and `CLAUDE.md` is a symlink to
   it, replacing the two identical 30 KB copies. The detailed rules moved into

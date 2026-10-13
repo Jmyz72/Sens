@@ -12,11 +12,13 @@ That keeps the money out of income, but the original expense still counts in
 full in spending, nothing links the two rows, and there is no way to see what
 is still owed to you.
 
-Lending is the related case: you hand money to someone and they owe you. Sens
-has no way to show that balance as an asset.
+Lending is the related case: you hand money to someone and they owe you. The
+`lent` account subtype already holds that balance as an asset and transfers
+already move money in and out of it, but nothing labels it as money owed to
+you.
 
-This spec adds reimbursement pairing and a place to track money lent. Loan
-schedules, interest, and due dates stay out of scope.
+This spec adds reimbursement pairing and the "Owes you" reading for `lent`
+accounts. Loan schedules, interest, and due dates stay out of scope.
 
 ## Solution overview
 
@@ -30,9 +32,10 @@ schedules, interest, and due dates stay out of scope.
 - An expense can be flagged **expecting reimbursement** with an expected
   amount. The outstanding amount drives a pending badge, a filter, and a
   dashboard tile.
-- Lending uses a new account subtype, `receivable`, in the `own` group. You
-  lend by transferring into it and are repaid by transferring out. No new
-  transaction kind.
+- Lending uses the **existing** `lent` account subtype (type `receivable`,
+  group `own`, seeded since migration 002). You lend by transferring into it
+  and are repaid by transferring out. No new transaction kind and no new
+  subtype; this spec only changes how the account reads.
 
 There are no existing users. No backfill, no upgrade prompt, no relabeling of
 old rows.
@@ -117,11 +120,11 @@ the receiving account.
 
 ### Receivable accounts
 
-New account subtype `receivable` ("Money owed to me"), group `own`, with the
-usual signed-asset behavior. A positive balance means someone owes you. Added
-to `db/seed.rs`; run `npm run gen:seed-catalog` and commit the JSON. Lending
-and repayment use `create_transfer`. A receivable has no credit limit and is
-neither a payment source nor a payment destination.
+No schema or seed change. The `lent` subtype ("Lent to someone (IOU)",
+type `receivable`, group `own`) already exists and behaves as a signed asset:
+a positive balance means someone owes you. Lending and repayment use
+`create_transfer`. `lent` has no credit limit and is neither a payment source
+nor a payment destination. `seed-catalog.json` does not change.
 
 ## Reporting
 
@@ -135,7 +138,10 @@ stays in its original month and category.
   drop after the month closes, and its net cashflow rises with it. This is
   intended; document it in `transactions.md`.
 - **Split expenses:** the offset is spread across the split lines in
-  proportion to each line's amount; rounding cents go to the first line.
+  proportion to each line's amount using the largest-remainder method
+  (whole cents; ties go to the earliest line). No line can go negative. A
+  rule such as "give the rounding cents to the first line" is not safe: three
+  1-sen lines with a 2-sen offset would push the first line to −1.
 - **Excluded expenses:** an expense with `excludedFromReporting` is skipped by
   reporting, and so are its allocations. Nothing is subtracted twice.
 - Net worth and balances follow postings, so a reimbursement raises the
@@ -150,30 +156,35 @@ stays in its original month and category.
 | Command | Purpose |
 |---|---|
 | `create_reimbursement` | `accountId`, `amountCents`, `description`, `date`, `time`, `allocations: [{expenseId, amountCents}]` |
-| `update_transaction` (extended) | A reimbursement can be edited: amount, account, date, note, time, and allocations together |
-| `set_expected_reimbursement` | Set or clear `expectedReimbursementCents` on one expense |
-| `list_awaiting_reimbursement` | Expenses with `expected > reimbursed`, with the outstanding amount, plus a count and total for the dashboard |
+| `update_reimbursement` | `id` plus the same fields. Replaces the amount, account, date, note, time, and all allocations in one DB transaction |
+| `set_expected_reimbursement` | `expenseId`, `expectedCents` (null clears). The only way to set or change the expectation |
+| `get_awaiting_reimbursement` | `{ count, totalCents }` of expenses whose `expected > reimbursed`, for the dashboard tile |
 
-`create_transaction` / `update_transaction` for expenses also accept
-`expectedReimbursementCents`. Each command is threaded through
+`create_income` / `create_expense` / `update_transaction` keep their
+signatures. The Transactions-screen "Awaiting reimbursement" filter is
+client-side, from `expectedReimbursementCents` and `reimbursedCents` on each
+row. `update_transaction` rejects a `reimbursement` kind with "Edit a
+reimbursement from its own form." Each command is threaded through
 `service.rs` → `commands.rs` → `src/client/index.ts` → `mock.ts`.
 
 ### Validation (`create_reimbursement`)
 
 | Check | Result |
 |---|---|
-| Amount ≤ 0 | `ValidationError`: "Amount must be greater than zero." |
+| Amount ≤ 0 | `ValidationError`: "Amount must be greater than zero" (existing `validate_positive`, no trailing period) |
 | No allocations | `ValidationError`: "Pick at least one expense to reimburse." |
 | An allocation amount ≤ 0 | `ValidationError`: "Each allocation must be greater than zero." |
 | Allocations do not sum to the amount | `ValidationError`: "Allocations must add up to the reimbursement amount." |
 | The same expense listed twice | `ValidationError`: "An expense can only be listed once." |
 | `expenseId` is not an expense, or is a system-category expense | `ValidationError`: "Only expenses can be reimbursed." |
 | An allocation exceeds the expense's remaining amount | `ValidationError`: "Allocation exceeds what's left on that expense." |
-| Receiving account archived | Existing conflict: "The account is archived" |
+| Receiving account archived | Existing conflict: "The selected account is archived" |
 | Otherwise | Insert the row, the allocations, and the two posting legs in one DB transaction. |
 
-The receiving account can be any active `own`-group account, including the
-card that was charged (the merchant-refund case).
+The receiving account can be any active account, including the credit card
+that was charged (the merchant-refund case; a card is an `owe`-group account,
+so the rule must not require `own`). Money landing on a card shrinks the
+debt, the same sign as a payment.
 
 ### Guards
 
@@ -229,8 +240,9 @@ amount filled in.
 - The Dashboard gets a tile: "Awaiting reimbursement: RM X across N
   expenses". It is not part of net worth.
 
-**Receivables.** The New Account modal lists "Money owed to me" under assets.
-The Accounts tile reads "owes you RM X". Lending and repayment use the
+**Receivables.** The Accounts row for a `lent` account shows the label
+"Owes you" above the balance, in the slot owe accounts use for "You owe". The
+New Account modal already offers `lent`. Lending and repayment use the
 existing Transfer form. There is no dedicated form.
 
 ## Testing
@@ -243,21 +255,22 @@ existing Transfer form. There is no dedicated form.
   - Partial reimbursements from two payers on one expense; one reimbursement
     across several expenses; the same-card refund case.
   - A split expense: the offset spreads across lines proportionally and
-    rounding cents land on the first line.
+    rounding cents follow the largest-remainder rule (three 1-sen lines with
+    a 2-sen offset leave no line negative).
   - An `excludedFromReporting` expense with allocations is not double
     subtracted.
   - Reject each row of the validation table.
   - Delete a reimbursement restores outstanding and effective amounts.
     Deleting or shrinking an expense below its allocations is rejected.
-  - `list_awaiting_reimbursement` returns the right outstanding amounts and
-    totals, with over-reimbursed expenses omitted.
+  - `get_awaiting_reimbursement` returns the right count and total, with
+    over-reimbursed and fully reimbursed expenses omitted.
   - The dashboard income total is unchanged by a reimbursement, and net
     worth rises only through the receiving account's balance.
   - Migration 012 preserves existing transfer, payment, and income-with-splits
     rows with their postings and splits, adds the new column as NULL, and
     creates the allocations table.
-  - A `receivable` account transfer in and out: balance moves, net worth
-    includes it, reporting excludes it.
+  - A `lent` account transfer in and out: balance moves, net worth includes
+    it, reporting excludes it.
 - **Vitest:** `postingsFor` / `signedFor` for `reimbursement`;
   `reimbursements.ts` helpers; `mock.test.ts` mirrors every Rust case above.
 - **Gate:** `npm run build`, `npm test`, `cd src-tauri && cargo test --lib`,
@@ -274,8 +287,8 @@ existing Transfer form. There is no dedicated form.
 
 ## Documentation
 
-On implementation, update `AGENTS.md` (the kind list, the migration range),
-`docs/architecture/transactions.md` (reimbursements, the retroactive
-reporting rule), `accounts.md` (`receivable`), and `frontend.md` (the form
-and badges). Add a `CHANGELOG.md` `[Unreleased]` entry. In `ROADMAP.md`, tick
+On implementation, update `AGENTS.md` (hard rule 6 cites migration 012 next
+to 011; there is no kind list there), `docs/architecture/transactions.md` (reimbursements, the retroactive
+reporting rule), `accounts.md` (the `lent` "Owes you" label), `backend.md`
+(the four new commands), and `frontend.md` (the form and badges). Add a `CHANGELOG.md` `[Unreleased]` entry. In `ROADMAP.md`, tick
 the reimbursements item and refresh the status block.

@@ -110,7 +110,7 @@ Loan schedules and interest are unscheduled; see [Later / unscheduled](#later--u
   (cash, e-wallet, savings, or current → credit card or BNPL)
   — spec: `docs/superpowers/specs/2026-10-13-card-bnpl-payments-design.md`
 - [ ] Reimbursements & claims: money back that explicitly offsets an original expense (pairing),
-  beyond the v0.5.0 flag that already excludes it from income; also a `receivable` account for money lent
+  beyond the v0.5.0 flag that already excludes it from income; also an "Owes you" reading for `lent` accounts
   — spec: `docs/superpowers/specs/2026-10-13-reimbursements-and-receivables-design.md` (draft)
 
 ### ⚪ Investment value
