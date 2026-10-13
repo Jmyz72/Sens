@@ -147,6 +147,46 @@ pub fn create_payment_transaction(
 }
 
 #[tauri::command]
+pub fn create_reimbursement_transaction(
+    state: State<'_, DbState>,
+    account_id: String,
+    amount_cents: i64,
+    description: Option<String>,
+    date: String,
+    time: Option<String>,
+    allocations: Vec<Allocation>,
+) -> AppResult<Transaction> {
+    with_conn!(state, c => service::create_reimbursement(
+        &c, &account_id, amount_cents, description.as_deref(), &date, time.as_deref(), allocations
+    ))
+}
+
+#[tauri::command]
+pub fn update_reimbursement_transaction(
+    state: State<'_, DbState>,
+    id: String,
+    account_id: String,
+    amount_cents: i64,
+    description: Option<String>,
+    date: String,
+    time: Option<String>,
+    allocations: Vec<Allocation>,
+) -> AppResult<Transaction> {
+    with_conn!(state, c => service::update_reimbursement(
+        &c, &id, &account_id, amount_cents, description.as_deref(), &date, time.as_deref(), allocations
+    ))
+}
+
+#[tauri::command]
+pub fn set_expected_reimbursement(
+    state: State<'_, DbState>,
+    expense_id: String,
+    expected_cents: Option<i64>,
+) -> AppResult<Transaction> {
+    with_conn!(state, c => service::set_expected_reimbursement(&c, &expense_id, expected_cents))
+}
+
+#[tauri::command]
 pub fn list_transactions(state: State<'_, DbState>, filters: Option<TransactionFilters>) -> AppResult<Vec<Transaction>> {
     with_conn!(state, c => service::list_transactions(&c, filters.unwrap_or_default()))
 }
@@ -193,4 +233,9 @@ pub fn get_account_balance(state: State<'_, DbState>, account_id: String) -> App
 #[tauri::command]
 pub fn get_account_balances(state: State<'_, DbState>) -> AppResult<Vec<AccountBalance>> {
     with_conn!(state, c => service::get_account_balances(&c))
+}
+
+#[tauri::command]
+pub fn get_awaiting_reimbursement(state: State<'_, DbState>) -> AppResult<AwaitingReimbursement> {
+    with_conn!(state, c => service::get_awaiting_reimbursement(&c))
 }
