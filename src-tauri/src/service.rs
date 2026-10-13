@@ -766,6 +766,10 @@ pub fn set_expected_reimbursement(
     repo::get_transaction(conn, expense_id)
 }
 
+pub fn get_awaiting_reimbursement(conn: &Connection) -> AppResult<AwaitingReimbursement> {
+    repo::awaiting_reimbursement(conn)
+}
+
 pub fn list_transactions(conn: &Connection, filters: TransactionFilters) -> AppResult<Vec<Transaction>> {
     repo::list_transactions(conn, &filters)
 }
@@ -941,12 +945,11 @@ pub fn get_account_balances(conn: &Connection) -> AppResult<Vec<AccountBalance>>
     repo::account_balances(conn)
 }
 
-/// Build the dashboard summary for a `YYYY-MM` month. Income/expense/cashflow
-/// and the spending breakdown exclude transfers and adjustments.
+/// Build the dashboard summary for a `YYYY-MM` month. Income/expense/cashflow and the spending breakdown exclude transfers, payments, reimbursements, and adjustments; expenses count net of their reimbursements.
 pub fn get_dashboard_summary(conn: &Connection, month: &str) -> AppResult<DashboardSummary> {
     let (from, to) = month_range(month)?;
     let income = repo::sum_kind_in_range(conn, KIND_INCOME, &from, &to)?;
-    let expense = repo::sum_kind_in_range(conn, KIND_EXPENSE, &from, &to)?;
+    let expense = repo::sum_expense_net_in_range(conn, &from, &to)?;
     let balances = repo::account_balances(conn)?;
     let assets_cents: i64 = balances.iter().filter(|b| b.group == "own").map(|b| b.balance_cents).sum();
     let liabilities_cents: i64 = balances.iter().filter(|b| b.group == "owe").map(|b| b.balance_cents).sum();

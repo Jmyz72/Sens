@@ -1,6 +1,7 @@
 //! Sens backend entry point. Wires the SQLite connection into Tauri managed
 //! state and registers the command surface.
 
+mod apportion;
 mod commands;
 mod db;
 pub mod error;
@@ -1662,7 +1663,7 @@ mod payment_tests {
 mod reimbursement_tests {
     use crate::db::open_in_memory;
     use crate::error::AppError;
-    use crate::models::{Account, Allocation, Transaction, UpdateTransactionInput};
+    use crate::models::{Account, Allocation, SplitInput, Transaction, UpdateTransactionInput};
     use crate::repo;
     use crate::service;
     use rusqlite::Connection;
@@ -2098,5 +2099,104 @@ mod reimbursement_tests {
         let txns: i64 = c.query_row("SELECT COUNT(*) FROM transactions", [], |row| row.get(0)).unwrap();
         assert_eq!(allocs, 0);
         assert_eq!(txns, 0);
+    }
+
+    #[test]
+    fn dashboard_uses_the_effective_expense_in_its_original_month() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 20_000, "2026-06-10");
+        let before = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(before.expense_cents, 20_000);
+
+        reimburse(&c, &savings.id, 15_000, "2026-07-03", vec![alloc(&e, 15_000)]);
+
+        let june = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(june.expense_cents, 5_000);
+        assert_eq!(june.income_cents, before.income_cents);
+        assert_eq!(june.net_cashflow_cents, before.income_cents - 5_000);
+        assert_eq!(june.spending_breakdown.len(), 1);
+        assert_eq!(june.spending_breakdown[0].total_cents, 5_000);
+
+        let july = service::get_dashboard_summary(&c, "2026-07").unwrap();
+        assert_eq!(july.expense_cents, 0);
+        assert_eq!(july.income_cents, 0);
+    }
+
+    #[test]
+    fn a_split_expense_is_offset_in_proportion_across_its_lines() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let a = expense_cat(&c, 0);
+        let b = expense_cat(&c, 1);
+        let e = service::create_expense(
+            &c, &savings.id, None, 10_000, None, "2026-06-10", None, false,
+            Some(vec![
+                SplitInput { category_id: a.clone(), amount_cents: 6_000 },
+                SplitInput { category_id: b.clone(), amount_cents: 4_000 },
+            ]),
+        )
+        .unwrap();
+        reimburse(&c, &savings.id, 5_000, "2026-06-20", vec![alloc(&e, 5_000)]);
+
+        let s = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(s.expense_cents, 5_000);
+        let amount = |id: &str| s.spending_breakdown.iter().find(|x| x.category_id == id).map(|x| x.total_cents);
+        assert_eq!(amount(&a), Some(3_000));
+        assert_eq!(amount(&b), Some(2_000));
+    }
+
+    #[test]
+    fn fully_reimbursed_and_excluded_expenses_report_correctly() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let full = spend(&c, &savings.id, 10_000, "2026-06-02");
+        reimburse(&c, &savings.id, 10_000, "2026-06-03", vec![alloc(&full, 10_000)]);
+
+        let cat = expense_cat(&c, 0);
+        let excluded = service::create_expense(&c, &savings.id, Some(&cat), 7_000, None, "2026-06-04", None, true, None).unwrap();
+        reimburse(&c, &savings.id, 7_000, "2026-06-05", vec![alloc(&excluded, 7_000)]);
+
+        let s = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(s.expense_cents, 0, "neither a fully repaid nor an excluded expense may go negative");
+        assert!(s.spending_breakdown.is_empty());
+    }
+
+    #[test]
+    fn a_reimbursement_never_counts_as_income() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-02");
+        let before = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        reimburse(&c, &savings.id, 4_000, "2026-06-05", vec![alloc(&e, 4_000)]);
+        let after = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(after.income_cents, before.income_cents);
+        assert_eq!(after.net_worth_cents, before.net_worth_cents + 4_000);
+    }
+
+    #[test]
+    fn awaiting_summary_counts_outstanding_expectations_only() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e1 = spend(&c, &savings.id, 10_000, "2026-06-01");
+        let e2 = spend(&c, &savings.id, 5_000, "2026-06-02");
+        let _plain = spend(&c, &savings.id, 3_000, "2026-06-03");
+        service::set_expected_reimbursement(&c, &e1.id, Some(10_000)).unwrap();
+        service::set_expected_reimbursement(&c, &e2.id, Some(5_000)).unwrap();
+
+        let s = service::get_awaiting_reimbursement(&c).unwrap();
+        assert_eq!((s.count, s.total_cents), (2, 15_000));
+
+        reimburse(&c, &savings.id, 4_000, "2026-06-10", vec![alloc(&e1, 4_000)]);
+        let s = service::get_awaiting_reimbursement(&c).unwrap();
+        assert_eq!((s.count, s.total_cents), (2, 11_000));
+
+        reimburse(&c, &savings.id, 6_000, "2026-06-11", vec![alloc(&e1, 6_000)]);
+        let s = service::get_awaiting_reimbursement(&c).unwrap();
+        assert_eq!((s.count, s.total_cents), (1, 5_000));
+
+        reimburse(&c, &savings.id, 5_000, "2026-06-12", vec![alloc(&e2, 5_000)]);
+        let s = service::get_awaiting_reimbursement(&c).unwrap();
+        assert_eq!((s.count, s.total_cents), (0, 0));
     }
 }

@@ -4,6 +4,7 @@
 use crate::error::{AppError, AppResult};
 use crate::models::*;
 use rusqlite::{params, Connection, Row};
+use std::collections::HashMap;
 
 /// SQL expression computing an account's current balance as the sum of its
 /// postings. `{a}` is the accounts-table alias. One uniform rule for every kind
@@ -698,38 +699,100 @@ pub fn sum_kind_in_range(conn: &Connection, kind: &str, from: &str, to: &str) ->
     )?)
 }
 
+/// Net expense total in a half-open range: each non-excluded expense counts at
+/// its amount minus what has been reimbursed, in the expense's own month.
+pub fn sum_expense_net_in_range(conn: &Connection, from: &str, to: &str) -> AppResult<i64> {
+    Ok(conn.query_row(
+        "SELECT COALESCE(SUM(t.amount_cents - COALESCE(
+                  (SELECT SUM(a.amount_cents) FROM reimbursement_allocations a WHERE a.expense_id = t.id), 0)), 0)
+         FROM transactions t
+         WHERE t.kind = 'expense' AND t.excluded_from_reporting = 0
+           AND t.transaction_date >= ?1 AND t.transaction_date < ?2",
+        params![from, to],
+        |r| r.get(0),
+    )?)
+}
+
+/// Expenses whose expectation is not yet received: count and outstanding total.
+pub fn awaiting_reimbursement(conn: &Connection) -> AppResult<AwaitingReimbursement> {
+    let (count, total_cents) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(outstanding), 0) FROM (
+           SELECT MAX(t.expected_reimbursement_cents - COALESCE(
+                    (SELECT SUM(a.amount_cents) FROM reimbursement_allocations a WHERE a.expense_id = t.id), 0), 0) AS outstanding
+           FROM transactions t
+           WHERE t.kind = 'expense' AND t.expected_reimbursement_cents IS NOT NULL
+         ) WHERE outstanding > 0",
+        [],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+    )?;
+    Ok(AwaitingReimbursement { count, total_cents })
+}
+
 pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<Vec<CategoryBreakdown>> {
+    // One row per attributed line (a plain expense is one line; a split expense is
+    // one line per split), carrying the expense's total allocated amount.
     let mut stmt = conn.prepare(
-        "WITH attrib AS (
-           SELECT t.category_id AS cat, t.amount_cents AS amt
+        "SELECT expense_id, cat, amt, alloc FROM (
+           SELECT t.id AS expense_id, t.category_id AS cat, t.amount_cents AS amt, 0 AS ord,
+                  COALESCE((SELECT SUM(a.amount_cents) FROM reimbursement_allocations a WHERE a.expense_id = t.id), 0) AS alloc
            FROM transactions t
            WHERE t.kind='expense' AND t.excluded_from_reporting=0
              AND t.transaction_date >= ?1 AND t.transaction_date < ?2
              AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
            UNION ALL
-           SELECT s.category_id AS cat, s.amount_cents AS amt
+           SELECT t.id, s.category_id, s.amount_cents, s.sort_order,
+                  COALESCE((SELECT SUM(a.amount_cents) FROM reimbursement_allocations a WHERE a.expense_id = t.id), 0)
            FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
            WHERE t.kind='expense' AND t.excluded_from_reporting=0
              AND t.transaction_date >= ?1 AND t.transaction_date < ?2
-         )
-         SELECT COALESCE(c.parent_id, c.id) AS group_id, pc.name, pc.emoji, pc.color, SUM(a.amt) AS total
-         FROM attrib a
-         JOIN categories c  ON c.id = a.cat
-         JOIN categories pc ON pc.id = COALESCE(c.parent_id, c.id)
-         GROUP BY group_id ORDER BY total DESC",
+         ) ORDER BY expense_id, ord",
     )?;
-    let rows = stmt
-        .query_map(params![from, to], |r| {
-            Ok(CategoryBreakdown {
-                category_id: r.get(0)?,
-                category_name: r.get(1)?,
-                emoji: r.get(2)?,
-                color: r.get(3)?,
-                total_cents: r.get(4)?,
-            })
-        })?
+    let lines: Vec<(String, String, i64, i64)> = stmt
+        .query_map(params![from, to], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
+
+    // Offset each expense's lines by its allocations, then total per category.
+    let mut by_category: HashMap<String, i64> = HashMap::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let mut j = i;
+        while j < lines.len() && lines[j].0 == lines[i].0 {
+            j += 1;
+        }
+        let amounts: Vec<i64> = lines[i..j].iter().map(|l| l.2).collect();
+        let shares = crate::apportion::apportion(lines[i].3, &amounts);
+        for (k, line) in lines[i..j].iter().enumerate() {
+            *by_category.entry(line.1.clone()).or_insert(0) += line.2 - shares[k];
+        }
+        i = j;
+    }
+
+    // Roll subcategories into their parent, then attach display fields.
+    let mut by_group: HashMap<String, i64> = HashMap::new();
+    for (cat_id, net) in by_category {
+        let cat = get_category(conn, &cat_id)?;
+        *by_group.entry(cat.parent_id.unwrap_or(cat.id)).or_insert(0) += net;
+    }
+    let mut out = Vec::new();
+    for (group_id, total_cents) in by_group {
+        if total_cents <= 0 {
+            continue;
+        }
+        let g = get_category(conn, &group_id)?;
+        out.push(CategoryBreakdown {
+            category_id: group_id,
+            category_name: g.name,
+            emoji: g.emoji,
+            color: g.color,
+            total_cents,
+        });
+    }
+    out.sort_by(|a, b| {
+        b.total_cents
+            .cmp(&a.total_cents)
+            .then_with(|| a.category_name.cmp(&b.category_name))
+    });
+    Ok(out)
 }
 
 pub fn account_balances(conn: &Connection) -> AppResult<Vec<AccountBalance>> {
