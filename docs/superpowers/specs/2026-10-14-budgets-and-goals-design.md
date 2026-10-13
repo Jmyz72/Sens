@@ -1,7 +1,7 @@
 # Budgets and savings goals
 
 **Date:** 2026-10-14
-**Status:** Approved
+**Status:** Approved — implemented per the plan
 
 ## Problem
 

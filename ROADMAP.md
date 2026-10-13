@@ -126,9 +126,9 @@ Spec: _TBD_
 
 ### ⚪ Budgets & goals
 
-- [ ] Monthly budget per category
-- [ ] Budget-vs-actual + overspend warnings
-- [ ] Savings goals (target amounts + progress)
+- [x] Monthly budget per category
+- [x] Budget-vs-actual + overspend warnings
+- [x] Savings goals (target amounts + progress)
 
 Spec: `docs/superpowers/specs/2026-10-14-budgets-and-goals-design.md`
 

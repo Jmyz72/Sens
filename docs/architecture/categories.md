@@ -35,9 +35,9 @@ Read this before changing category rules, defaults, or the category picker.
 
 | Action | Command | Rule |
 |---|---|---|
-| Delete | `delete_category` | Only a category with **no subcategories and no transactions**. FK `ON DELETE RESTRICT` is the backstop. The delete-guard also counts split references. |
+| Delete | `delete_category` | Only a category with **no subcategories and no transactions**. FK `ON DELETE RESTRICT` is the backstop. The delete-guard also counts split references. Deleting a category removes its budget versions (`category_budgets` cascades on `category_id`). |
 | Reorder | `reorder_categories` | Drag-to-reorder. |
-| Move / convert | `set_category_parent` | New parent must be top-level and the same kind. The moved category must be a leaf. |
+| Move / convert | `set_category_parent` | New parent must be top-level and the same kind. The moved category must be a leaf. Rejected when the **current month's** subcategory budgets would no longer fit the parent envelope after the move. |
 | Bulk archive / restore | `set_categories_archived` | Applies to a selection. |
 
 ## System categories
