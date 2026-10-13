@@ -733,19 +733,19 @@ pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<
     // one line per split), carrying the expense's total allocated amount.
     let mut stmt = conn.prepare(
         "SELECT expense_id, cat, amt, alloc FROM (
-           SELECT t.id AS expense_id, t.category_id AS cat, t.amount_cents AS amt, 0 AS ord,
+           SELECT t.id AS expense_id, t.category_id AS cat, t.amount_cents AS amt, 0 AS ord, 0 AS rid,
                   COALESCE((SELECT SUM(a.amount_cents) FROM reimbursement_allocations a WHERE a.expense_id = t.id), 0) AS alloc
            FROM transactions t
            WHERE t.kind='expense' AND t.excluded_from_reporting=0
              AND t.transaction_date >= ?1 AND t.transaction_date < ?2
              AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
            UNION ALL
-           SELECT t.id, s.category_id, s.amount_cents, s.sort_order,
+           SELECT t.id, s.category_id, s.amount_cents, s.sort_order, s.rowid,
                   COALESCE((SELECT SUM(a.amount_cents) FROM reimbursement_allocations a WHERE a.expense_id = t.id), 0)
            FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
            WHERE t.kind='expense' AND t.excluded_from_reporting=0
              AND t.transaction_date >= ?1 AND t.transaction_date < ?2
-         ) ORDER BY expense_id, ord",
+         ) ORDER BY expense_id, ord, rid",
     )?;
     let lines: Vec<(String, String, i64, i64)> = stmt
         .query_map(params![from, to], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
