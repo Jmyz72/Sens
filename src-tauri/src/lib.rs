@@ -2030,6 +2030,9 @@ mod reimbursement_tests {
         );
         assert_eq!(go(100, vec![alloc(&e, 60), alloc(&e2, 30)]), "Allocations must add up to the reimbursement amount.");
         assert_eq!(go(20_000, vec![alloc(&e, 20_000)]), "Allocation exceeds what's left on that expense.");
+        // Huge client-supplied amounts must fail validation, never overflow.
+        assert_eq!(go(i64::MAX, vec![alloc(&e, i64::MAX)]), "Allocation exceeds what's left on that expense.");
+        assert_eq!(go(100, vec![alloc(&e, i64::MAX - 1), alloc(&e2, 100)]), "Allocation exceeds what's left on that expense.");
 
         let n: i64 = c.query_row("SELECT COUNT(*) FROM transactions WHERE kind='reimbursement'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
@@ -2159,7 +2162,8 @@ mod reimbursement_tests {
 
         let cat = expense_cat(&c, 0);
         let excluded = service::create_expense(&c, &savings.id, Some(&cat), 7_000, None, "2026-06-04", None, true, None).unwrap();
-        reimburse(&c, &savings.id, 7_000, "2026-06-05", vec![alloc(&excluded, 7_000)]);
+        // Only partly repaid: the excluded expense and its allocation are both still skipped.
+        reimburse(&c, &savings.id, 3_000, "2026-06-05", vec![alloc(&excluded, 3_000)]);
 
         let s = service::get_dashboard_summary(&c, "2026-06").unwrap();
         assert_eq!(s.expense_cents, 0, "neither a fully repaid nor an excluded expense may go negative");

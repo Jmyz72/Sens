@@ -49,6 +49,10 @@ mod tests {
         assert_eq!(apportion(2, &[1, 1, 1]), vec![1, 1, 0]);
         assert_eq!(apportion(1, &[2, 2]), vec![1, 0]);
         assert_eq!(apportion(7, &[5, 3, 2]), vec![4, 2, 1]);
+        // The larger remainder wins over the earlier line.
+        assert_eq!(apportion(1, &[1, 2]), vec![0, 1]);
+        // Remainders 6, 6, 8: the biggest goes first, then the tie goes to the earliest line.
+        assert_eq!(apportion(2, &[3, 3, 4]), vec![1, 0, 1]);
     }
 
     #[test]
