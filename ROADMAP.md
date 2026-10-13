@@ -89,7 +89,7 @@ into *Shipped* with its tag.
 
 | # | Phase | Status | Spec |
 |---|---|---|---|
-| 1 | [Credit & debt behavior](#-credit--debt-behavior) | ⚪ (limits and payments done) | credit limit ✅ · payments ✅ · reimbursements TBD |
+| 1 | [Credit & debt behavior](#-credit--debt-behavior) | ⚪ (limits and payments done) | credit limit ✅ · payments ✅ · reimbursements: spec drafted |
 | 2 | [Investment value](#-investment-value) | ⚪ | TBD |
 | 3 | [Budgets & goals](#-budgets--goals) | ⚪ | TBD |
 | 4 | [Recurring & reminders](#-recurring--reminders) | ⚪ | TBD |
@@ -110,8 +110,8 @@ Loan schedules and interest are unscheduled; see [Later / unscheduled](#later--u
   (cash, e-wallet, savings, or current → credit card or BNPL)
   — spec: `docs/superpowers/specs/2026-10-13-card-bnpl-payments-design.md`
 - [ ] Reimbursements & claims: money back that explicitly offsets an original expense (pairing),
-  beyond the v0.5.0 flag that already excludes it from income
-  — spec: _TBD_
+  beyond the v0.5.0 flag that already excludes it from income; also a `receivable` account for money lent
+  — spec: `docs/superpowers/specs/2026-10-13-reimbursements-and-receivables-design.md` (draft)
 
 ### ⚪ Investment value
 
