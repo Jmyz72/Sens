@@ -408,6 +408,9 @@ fn map_transaction(r: &Row) -> rusqlite::Result<Transaction> {
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
         splits: Vec::new(),
+        expected_reimbursement_cents: r.get("expected_reimbursement_cents")?,
+        reimbursed_cents: 0,
+        allocations: Vec::new(),
     })
 }
 
@@ -498,6 +501,88 @@ pub fn delete_splits_for(conn: &Connection, transaction_id: &str) -> AppResult<(
     Ok(())
 }
 
+/// Fill the derived collections on a row: split lines, an expense's reimbursed
+/// total, and a reimbursement's allocations.
+fn hydrate(conn: &Connection, t: &mut Transaction) -> AppResult<()> {
+    t.splits = list_splits_for(conn, &t.id)?;
+    t.reimbursed_cents = conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM reimbursement_allocations WHERE expense_id = ?1",
+        [&t.id],
+        |r| r.get(0),
+    )?;
+    t.allocations = list_allocations_for(conn, &t.id)?;
+    Ok(())
+}
+
+// ── Reimbursement allocations ────────────────────────────────────────────────
+
+pub fn insert_allocation(
+    conn: &Connection,
+    id: &str,
+    reimbursement_id: &str,
+    expense_id: &str,
+    amount_cents: i64,
+    now: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO reimbursement_allocations (id, reimbursement_id, expense_id, amount_cents, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, reimbursement_id, expense_id, amount_cents, now],
+    )
+    .map_err(map_check)?;
+    Ok(())
+}
+
+pub fn list_allocations_for(conn: &Connection, reimbursement_id: &str) -> AppResult<Vec<Allocation>> {
+    let mut stmt = conn.prepare(
+        "SELECT expense_id, amount_cents FROM reimbursement_allocations WHERE reimbursement_id = ?1 ORDER BY rowid",
+    )?;
+    let rows = stmt
+        .query_map([reimbursement_id], |r| {
+            Ok(Allocation { expense_id: r.get(0)?, amount_cents: r.get(1)? })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn delete_allocations_for(conn: &Connection, reimbursement_id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM reimbursement_allocations WHERE reimbursement_id = ?1", [reimbursement_id])?;
+    Ok(())
+}
+
+/// Total already allocated to an expense, optionally ignoring one reimbursement
+/// (the one being edited, so its own links don't count as used).
+pub fn allocated_total_for_expense(
+    conn: &Connection,
+    expense_id: &str,
+    except_reimbursement_id: Option<&str>,
+) -> AppResult<i64> {
+    Ok(conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM reimbursement_allocations
+         WHERE expense_id = ?1 AND (?2 IS NULL OR reimbursement_id <> ?2)",
+        params![expense_id, except_reimbursement_id],
+        |r| r.get(0),
+    )?)
+}
+
+pub fn set_expected_reimbursement(
+    conn: &Connection,
+    expense_id: &str,
+    expected: Option<i64>,
+    now: &str,
+) -> AppResult<()> {
+    let n = conn
+        .execute(
+            "UPDATE transactions SET expected_reimbursement_cents = ?2, updated_at = ?3 WHERE id = ?1",
+            params![expense_id, expected, now],
+        )
+        .map_err(map_check)?;
+    if n == 0 {
+        return Err(AppError::NotFound("Transaction not found".into()));
+    }
+    Ok(())
+}
+
 pub fn get_transaction(conn: &Connection, id: &str) -> AppResult<Transaction> {
     let mut t = conn
         .query_row("SELECT * FROM transactions WHERE id = ?1", [id], map_transaction)
@@ -505,7 +590,7 @@ pub fn get_transaction(conn: &Connection, id: &str) -> AppResult<Transaction> {
             rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Transaction not found".into()),
             other => other.into(),
         })?;
-    t.splits = list_splits_for(conn, id)?;
+    hydrate(conn, &mut t)?;
     Ok(t)
 }
 
@@ -534,13 +619,15 @@ pub fn update_transaction_row(
     transaction_date: &str,
     transaction_time: Option<&str>,
     excluded_from_reporting: bool,
+    expected_reimbursement_cents: Option<i64>,
     now: &str,
 ) -> AppResult<Transaction> {
     let n = conn
         .execute(
             "UPDATE transactions SET kind=?2, account_id=?3, to_account_id=?4, category_id=?5,
-               amount_cents=?6, description=?7, transaction_date=?8, transaction_time=?9, excluded_from_reporting=?10, updated_at=?11 WHERE id=?1",
-            params![id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, transaction_time, excluded_from_reporting as i64, now],
+               amount_cents=?6, description=?7, transaction_date=?8, transaction_time=?9, excluded_from_reporting=?10,
+               expected_reimbursement_cents=?11, updated_at=?12 WHERE id=?1",
+            params![id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, transaction_time, excluded_from_reporting as i64, expected_reimbursement_cents, now],
         )
         .map_err(map_check)?;
     if n == 0 {
@@ -594,7 +681,7 @@ pub fn list_transactions(conn: &Connection, f: &TransactionFilters) -> AppResult
         .query_map(refs.as_slice(), map_transaction)?
         .collect::<Result<Vec<_>, _>>()?;
     for t in rows.iter_mut() {
-        t.splits = list_splits_for(conn, &t.id)?;
+        hydrate(conn, t)?;
     }
     Ok(rows)
 }
@@ -675,7 +762,7 @@ pub fn recent_transactions(conn: &Connection, limit: i64) -> AppResult<Vec<Trans
         .query_map([limit], map_transaction)?
         .collect::<Result<Vec<_>, _>>()?;
     for t in rows.iter_mut() {
-        t.splits = list_splits_for(conn, &t.id)?;
+        hydrate(conn, t)?;
     }
     Ok(rows)
 }

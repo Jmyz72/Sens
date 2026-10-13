@@ -1657,3 +1657,77 @@ mod payment_tests {
         assert_eq!(repo::get_account(&c, &card.id).unwrap().balance_cents, -80_000);
     }
 }
+
+#[cfg(test)]
+mod reimbursement_tests {
+    use crate::db::open_in_memory;
+    use crate::models::{Account, Allocation, Transaction};
+    use crate::repo;
+    use crate::service;
+    use rusqlite::Connection;
+
+    fn expense_cat(c: &Connection, n: i64) -> String {
+        c.query_row(
+            "SELECT id FROM categories WHERE kind='expense' AND is_system=0 AND parent_id IS NULL ORDER BY sort_order LIMIT 1 OFFSET ?1",
+            [n],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    fn pair(c: &Connection) -> (Account, Account) {
+        let savings = service::create_account(c, "Maybank", "savings", 500_000, None, None).unwrap();
+        let card = service::create_account(c, "Visa", "credit-card", -80_000, None, Some(1_000_000)).unwrap();
+        (savings, card)
+    }
+
+    fn spend(c: &Connection, account_id: &str, cents: i64, date: &str) -> Transaction {
+        let cat = expense_cat(c, 0);
+        service::create_expense(c, account_id, Some(&cat), cents, Some("Dinner"), date, None, false, None).unwrap()
+    }
+
+    #[test]
+    fn allocations_hydrate_on_both_sides() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 20_000, "2026-06-01");
+        let r = repo::insert_transaction(
+            &c, "re1", "reimbursement", &savings.id, None, None, 15_000, Some("Back"),
+            "2026-06-05", None, false, "2026-06-05T00:00:00Z",
+        )
+        .unwrap();
+        repo::insert_allocation(&c, "al1", &r.id, &e.id, 15_000, "2026-06-05T00:00:00Z").unwrap();
+
+        let expense = repo::get_transaction(&c, &e.id).unwrap();
+        assert_eq!(expense.reimbursed_cents, 15_000);
+        assert_eq!(expense.expected_reimbursement_cents, None);
+        assert!(expense.allocations.is_empty());
+
+        let reimbursement = repo::get_transaction(&c, &r.id).unwrap();
+        assert_eq!(reimbursement.reimbursed_cents, 0);
+        assert_eq!(
+            reimbursement.allocations,
+            vec![Allocation { expense_id: e.id.clone(), amount_cents: 15_000 }]
+        );
+    }
+
+    #[test]
+    fn factory_reset_clears_allocations() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 20_000, "2026-06-01");
+        let r = repo::insert_transaction(
+            &c, "re1", "reimbursement", &savings.id, None, None, 5_000, None,
+            "2026-06-05", None, false, "2026-06-05T00:00:00Z",
+        )
+        .unwrap();
+        repo::insert_allocation(&c, "al1", &r.id, &e.id, 5_000, "2026-06-05T00:00:00Z").unwrap();
+
+        service::reset_app(&c).unwrap();
+
+        let allocs: i64 = c.query_row("SELECT COUNT(*) FROM reimbursement_allocations", [], |row| row.get(0)).unwrap();
+        let txns: i64 = c.query_row("SELECT COUNT(*) FROM transactions", [], |row| row.get(0)).unwrap();
+        assert_eq!(allocs, 0);
+        assert_eq!(txns, 0);
+    }
+}

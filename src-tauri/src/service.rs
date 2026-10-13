@@ -729,6 +729,7 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
         &input.transaction_date,
         time.as_deref(),
         excluded,
+        existing.expected_reimbursement_cents,
         &now(),
     )?;
     repo::delete_splits_for(&dbtx, &input.id)?;

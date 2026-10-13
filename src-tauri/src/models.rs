@@ -5,14 +5,16 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Transaction kind. `transfer`, `payment`, and `adjustment` are excluded from
-/// income / expense / cashflow aggregates (see the dashboard rules in the spec).
+/// Transaction kind. `transfer`, `payment`, `reimbursement`, and `adjustment` are
+/// excluded from income / expense / cashflow aggregates (see the dashboard rules
+/// in the spec). A reimbursement instead reduces the expenses it repays.
 pub const KIND_INCOME: &str = "income";
 pub const KIND_EXPENSE: &str = "expense";
 pub const KIND_TRANSFER: &str = "transfer";
 pub const KIND_ADJUSTMENT: &str = "adjustment";
 pub const KIND_OPENING: &str = "opening";
 pub const KIND_PAYMENT: &str = "payment";
+pub const KIND_REIMBURSEMENT: &str = "reimbursement";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +90,23 @@ pub struct SplitInput {
     pub amount_cents: i64,
 }
 
+/// One link between a reimbursement and an expense it repays. Used both as a
+/// command input and as the serialized shape on `Transaction.allocations`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Allocation {
+    pub expense_id: String,
+    pub amount_cents: i64,
+}
+
+/// Dashboard tile: expenses whose expected reimbursement is not yet received.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwaitingReimbursement {
+    pub count: i64,
+    pub total_cents: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transaction {
@@ -103,6 +122,12 @@ pub struct Transaction {
     pub excluded_from_reporting: bool,
     #[serde(default)]
     pub splits: Vec<TxnSplit>,
+    /// Expenses only: the amount the user expects to get back. NULL when none.
+    pub expected_reimbursement_cents: Option<i64>,
+    /// Expenses only: sum of this expense's allocations.
+    pub reimbursed_cents: i64,
+    /// Reimbursements only: the expenses this row repays.
+    pub allocations: Vec<Allocation>,
     pub created_at: String,
     pub updated_at: String,
 }
