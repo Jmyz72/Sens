@@ -2208,3 +2208,132 @@ mod reimbursement_tests {
         assert_eq!((s.count, s.total_cents), (0, 0));
     }
 }
+
+#[cfg(test)]
+mod plan_tests {
+    use crate::db::open_in_memory;
+    use crate::error::AppError;
+    use crate::models::*;
+    use crate::service::{self, resolve_amount, shift_month};
+
+    fn msg(err: AppError) -> String {
+        err.to_string()
+    }
+
+    fn parent_and_child(conn: &rusqlite::Connection) -> (String, String) {
+        // The seed already has a top-level expense category named Food.
+        let food = service::create_category(conn, "Plan Food", "expense", "🍜", None, None).unwrap();
+        let dining = service::create_category(conn, "Dining", "expense", "🍽️", None, Some(&food.id)).unwrap();
+        (food.id, dining.id)
+    }
+
+    #[test]
+    fn resolve_amount_uses_the_latest_version_on_or_before_the_month() {
+        let versions = vec![
+            ("2026-10".into(), Some(80_000)),
+            ("2026-11".into(), None),
+        ];
+        assert_eq!(resolve_amount(&versions, "2026-09"), None);
+        assert_eq!(resolve_amount(&versions, "2026-10"), Some(80_000));
+        assert_eq!(resolve_amount(&versions, "2026-11"), None);
+        assert_eq!(resolve_amount(&versions, "2026-12"), None);
+    }
+
+    #[test]
+    fn set_budgets_versions_follow_the_current_month() {
+        let conn = open_in_memory().unwrap();
+        let (food, dining) = parent_and_child(&conn);
+        let today = crate::today();
+        let current = &today[..7];
+        let prev = shift_month(current, -1);
+        let next = shift_month(current, 1);
+        crate::repo::upsert_budget(&conn, "old", &food, &prev, Some(80_000), "t").unwrap();
+
+        service::set_budgets(&conn, &[BudgetWrite { category_id: food.clone(), amount_cents: Some(100_000) }]).unwrap();
+        let versions = crate::repo::list_budget_versions(&conn).unwrap();
+        let food_versions: Vec<_> = versions.into_iter().filter(|v| v.0 == food).map(|v| (v.1, v.2)).collect();
+        assert_eq!(resolve_amount(&food_versions, &prev), Some(80_000));
+        assert_eq!(resolve_amount(&food_versions, current), Some(100_000));
+        assert_eq!(resolve_amount(&food_versions, &next), Some(100_000));
+
+        service::set_budgets(&conn, &[BudgetWrite { category_id: food.clone(), amount_cents: Some(90_000) }]).unwrap();
+        let versions = crate::repo::list_budget_versions(&conn).unwrap();
+        let food_versions: Vec<_> = versions.into_iter().filter(|v| v.0 == food).map(|v| (v.1, v.2)).collect();
+        assert_eq!(resolve_amount(&food_versions, current), Some(90_000), "a second edit replaces this month");
+
+        service::set_budgets(&conn, &[
+            BudgetWrite { category_id: food.clone(), amount_cents: None },
+            BudgetWrite { category_id: dining, amount_cents: None },
+        ]).unwrap();
+        let versions = crate::repo::list_budget_versions(&conn).unwrap();
+        let food_versions: Vec<_> = versions.into_iter().filter(|v| v.0 == food).map(|v| (v.1, v.2)).collect();
+        assert_eq!(resolve_amount(&food_versions, &prev), Some(80_000));
+        assert_eq!(resolve_amount(&food_versions, current), None);
+    }
+
+    #[test]
+    fn set_budgets_rejects_a_bad_tree_and_keeps_the_old_amount() {
+        let conn = open_in_memory().unwrap();
+        let (food, dining) = parent_and_child(&conn);
+        let income = service::list_categories(&conn, Some("income"), false).unwrap()[0].id.clone();
+        let adjustment = service::list_categories(&conn, Some("expense"), true).unwrap()
+            .into_iter().find(|c| c.is_system).unwrap().id;
+        service::set_budgets(&conn, &[
+            BudgetWrite { category_id: food.clone(), amount_cents: Some(80_000) },
+            BudgetWrite { category_id: dining.clone(), amount_cents: Some(25_000) },
+        ]).unwrap();
+
+        let err = service::set_budgets(&conn, &[
+            BudgetWrite { category_id: food.clone(), amount_cents: Some(20_000) },
+        ]).unwrap_err();
+        assert_eq!(msg(err), "Subcategory budgets add up to more than the parent.");
+        let versions = crate::repo::list_budget_versions(&conn).unwrap();
+        let food_amount = versions.iter().find(|v| v.0 == food).map(|v| v.2);
+        assert_eq!(food_amount, Some(Some(80_000)), "the failed batch did not lower Food");
+
+        assert_eq!(
+            msg(service::set_budgets(&conn, &[BudgetWrite { category_id: dining.clone(), amount_cents: Some(1) }, BudgetWrite { category_id: food.clone(), amount_cents: None }]).unwrap_err()),
+            "Set a budget on the parent category first."
+        );
+        assert_eq!(
+            msg(service::set_budgets(&conn, &[BudgetWrite { category_id: income, amount_cents: Some(1) }]).unwrap_err()),
+            "Income categories can't have a budget."
+        );
+        assert_eq!(
+            msg(service::set_budgets(&conn, &[BudgetWrite { category_id: adjustment, amount_cents: Some(1) }]).unwrap_err()),
+            "The Adjustment category can't have a budget."
+        );
+        assert_eq!(
+            msg(service::set_budgets(&conn, &[BudgetWrite { category_id: food.clone(), amount_cents: Some(-1) }]).unwrap_err()),
+            "A budget can't be negative."
+        );
+        assert_eq!(
+            msg(service::set_budgets(&conn, &[
+                BudgetWrite { category_id: food.clone(), amount_cents: Some(1) },
+                BudgetWrite { category_id: food, amount_cents: Some(2) },
+            ]).unwrap_err()),
+            "A category can only be listed once."
+        );
+        service::set_budgets(&conn, &[]).unwrap();
+        service::set_budgets(&conn, &[BudgetWrite { category_id: dining.clone(), amount_cents: Some(0) }, BudgetWrite { category_id: parent_of(&conn, &dining), amount_cents: Some(0) }]).unwrap();
+    }
+
+    fn parent_of(conn: &rusqlite::Connection, id: &str) -> String {
+        crate::repo::get_category(conn, id).unwrap().parent_id.unwrap()
+    }
+
+    #[test]
+    fn archived_category_can_be_cleared_but_not_newly_budgeted() {
+        let conn = open_in_memory().unwrap();
+        let (food, _) = parent_and_child(&conn);
+        service::archive_category(&conn, &food).unwrap();
+        let err = service::set_budgets(&conn, &[BudgetWrite { category_id: food.clone(), amount_cents: Some(1) }]).unwrap_err();
+        assert_eq!(msg(err), "Archived categories can't be given a new budget.");
+        let today = crate::today();
+        crate::repo::upsert_budget(&conn, "pre", &food, &today[..7], Some(50), "t").unwrap();
+        service::set_budgets(&conn, &[BudgetWrite { category_id: food.clone(), amount_cents: None }]).unwrap();
+        let versions = crate::repo::list_budget_versions(&conn).unwrap();
+        let food_versions: Vec<_> = versions.into_iter().filter(|v| v.0 == food).map(|v| (v.1, v.2)).collect();
+        assert_eq!(resolve_amount(&food_versions, &today[..7]), None);
+    }
+}

@@ -988,3 +988,108 @@ fn month_range(month: &str) -> AppResult<(String, String)> {
     let to = format!("{ny:04}-{nm:02}-01");
     Ok((from, to))
 }
+
+// ── Budgets ──────────────────────────────────────────────────────────────────
+
+pub fn shift_month(month: &str, delta: i32) -> String {
+    let year: i32 = month[..4].parse().unwrap_or(0);
+    let mon: i32 = month[5..7].parse().unwrap_or(1);
+    let idx = year * 12 + (mon - 1) + delta;
+    let y = idx.div_euclid(12);
+    let m = idx.rem_euclid(12) + 1;
+    format!("{y:04}-{m:02}")
+}
+
+pub fn resolve_amount(versions: &[(String, Option<i64>)], month: &str) -> Option<i64> {
+    versions
+        .iter()
+        .filter(|(effective, _)| effective.as_str() <= month)
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .and_then(|(_, amount)| *amount)
+}
+
+pub fn set_budgets(conn: &Connection, items: &[BudgetWrite]) -> AppResult<()> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    let mut seen = std::collections::HashSet::new();
+    for item in items {
+        if !seen.insert(item.category_id.clone()) {
+            return Err(AppError::Validation("A category can only be listed once.".into()));
+        }
+        if let Some(amount) = item.amount_cents {
+            if amount < 0 {
+                return Err(AppError::Validation("A budget can't be negative.".into()));
+            }
+        }
+        let cat = repo::get_category(conn, &item.category_id)?;
+        if item.amount_cents.is_some() {
+            if cat.is_system {
+                return Err(AppError::Validation("The Adjustment category can't have a budget.".into()));
+            }
+            if cat.kind != "expense" {
+                return Err(AppError::Validation("Income categories can't have a budget.".into()));
+            }
+            if cat.is_archived {
+                let today = crate::today();
+                let month = &today[..7];
+                let versions = repo::list_budget_versions(conn)?;
+                let mine: Vec<_> = versions.into_iter().filter(|v| v.0 == cat.id).map(|v| (v.1, v.2)).collect();
+                if resolve_amount(&mine, month).is_none() {
+                    return Err(AppError::Conflict("Archived categories can't be given a new budget.".into()));
+                }
+            }
+        }
+    }
+    let today = crate::today();
+    let month = &today[..7];
+    let tx = conn.unchecked_transaction()?;
+    for item in items {
+        repo::upsert_budget(&tx, &new_id(), &item.category_id, month, item.amount_cents, &now())?;
+    }
+    ensure_envelopes(&tx, month)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// The current month's resolved tree must be a valid envelope: a subcategory
+/// amount requires a parent amount, and the slices cannot sum past the parent.
+fn ensure_envelopes(conn: &Connection, month: &str) -> AppResult<()> {
+    let categories = repo::list_categories(conn, None, true)?;
+    let versions = repo::list_budget_versions(conn)?;
+    let mut resolved: std::collections::HashMap<String, Option<i64>> = std::collections::HashMap::new();
+    for cat in &categories {
+        let mine: Vec<_> = versions
+            .iter()
+            .filter(|v| v.0 == cat.id)
+            .map(|v| (v.1.clone(), v.2))
+            .collect();
+        resolved.insert(cat.id.clone(), resolve_amount(&mine, month));
+    }
+
+    for cat in &categories {
+        let Some(parent_id) = cat.parent_id.as_deref() else {
+            continue;
+        };
+        let child_amount = resolved.get(&cat.id).copied().flatten();
+        let parent_amount = resolved.get(parent_id).copied().flatten();
+        if child_amount.is_some() && parent_amount.is_none() {
+            return Err(AppError::Conflict("Set a budget on the parent category first.".into()));
+        }
+    }
+
+    for parent in &categories {
+        let Some(parent_amount) = resolved.get(&parent.id).copied().flatten() else {
+            continue;
+        };
+        let child_sum: i64 = categories
+            .iter()
+            .filter(|c| c.parent_id.as_deref() == Some(parent.id.as_str()))
+            .filter_map(|c| resolved.get(&c.id).copied().flatten())
+            .sum();
+        if child_sum > parent_amount {
+            return Err(AppError::Conflict("Subcategory budgets add up to more than the parent.".into()));
+        }
+    }
+    Ok(())
+}
