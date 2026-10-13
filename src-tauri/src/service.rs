@@ -20,14 +20,16 @@ struct Leg {
 }
 
 /// The single canonical sign rule: turn a transaction header into balanced legs.
-/// `amount_cents` is positive for income/expense/transfer and already-signed for
-/// adjustment/opening. The legs always sum to zero.
+/// `amount_cents` is positive for income/expense/transfer/reimbursement and
+/// already-signed for adjustment/opening. The legs always sum to zero.
 fn postings_for(kind: &str, account_id: &str, to_account_id: Option<&str>, amount_cents: i64) -> Vec<Leg> {
     let real = |amt: i64| Leg { account_id: Some(account_id.to_string()), system_bucket: None, amount_cents: amt };
     let bucket = |b: &'static str, amt: i64| Leg { account_id: None, system_bucket: Some(b), amount_cents: amt };
     match kind {
         KIND_INCOME => vec![real(amount_cents), bucket("income", -amount_cents)],
         KIND_EXPENSE => vec![real(-amount_cents), bucket("expense", amount_cents)],
+        // Money back for spending: the expense bucket shrinks as the account grows.
+        KIND_REIMBURSEMENT => vec![real(amount_cents), bucket("expense", -amount_cents)],
         KIND_TRANSFER | KIND_PAYMENT => vec![
             real(-amount_cents),
             Leg { account_id: to_account_id.map(|s| s.to_string()), system_bucket: None, amount_cents },
@@ -630,6 +632,86 @@ pub fn create_payment(
     materialize_postings(&tx, &t)?;
     tx.commit()?;
     Ok(t)
+}
+
+/// Validate a reimbursement's allocations against its amount and the expenses
+/// they repay. `except_reimbursement_id` is the reimbursement being edited, so
+/// its own existing links do not count as already used.
+fn validate_allocations(
+    conn: &Connection,
+    amount_cents: i64,
+    allocations: &[Allocation],
+    except_reimbursement_id: Option<&str>,
+) -> AppResult<()> {
+    if allocations.is_empty() {
+        return Err(AppError::Validation("Pick at least one expense to reimburse.".into()));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut sum = 0i64;
+    for a in allocations {
+        if a.amount_cents <= 0 {
+            return Err(AppError::Validation("Each allocation must be greater than zero.".into()));
+        }
+        if !seen.insert(a.expense_id.as_str()) {
+            return Err(AppError::Validation("An expense can only be listed once.".into()));
+        }
+        let expense = match repo::get_transaction(conn, &a.expense_id) {
+            Ok(t) => t,
+            Err(AppError::NotFound(_)) => {
+                return Err(AppError::Validation("Only expenses can be reimbursed.".into()))
+            }
+            Err(other) => return Err(other),
+        };
+        if !is_plain_expense(conn, &expense)? {
+            return Err(AppError::Validation("Only expenses can be reimbursed.".into()));
+        }
+        let used = repo::allocated_total_for_expense(conn, &a.expense_id, except_reimbursement_id)?;
+        if used + a.amount_cents > expense.amount_cents {
+            return Err(AppError::Validation("Allocation exceeds what's left on that expense.".into()));
+        }
+        sum += a.amount_cents;
+    }
+    if sum != amount_cents {
+        return Err(AppError::Validation("Allocations must add up to the reimbursement amount.".into()));
+    }
+    Ok(())
+}
+
+/// An expense that is not a balance correction (those sit in a system category).
+fn is_plain_expense(conn: &Connection, t: &Transaction) -> AppResult<bool> {
+    if t.kind != KIND_EXPENSE {
+        return Ok(false);
+    }
+    match t.category_id.as_deref() {
+        Some(cid) => Ok(!repo::get_category(conn, cid)?.is_system),
+        None => Ok(true),
+    }
+}
+
+pub fn create_reimbursement(
+    conn: &Connection,
+    account_id: &str,
+    amount_cents: i64,
+    description: Option<&str>,
+    date: &str,
+    time: Option<&str>,
+    allocations: Vec<Allocation>,
+) -> AppResult<Transaction> {
+    validate_positive(amount_cents)?;
+    ensure_active_account(conn, account_id, "selected")?;
+    let time = resolve_time(conn, time, None)?;
+    let tx = conn.unchecked_transaction()?;
+    validate_allocations(&tx, amount_cents, &allocations, None)?;
+    let t = repo::insert_transaction(
+        &tx, &new_id(), KIND_REIMBURSEMENT, account_id, None, None,
+        amount_cents, description, date, time.as_deref(), false, &now(),
+    )?;
+    for a in &allocations {
+        repo::insert_allocation(&tx, &new_id(), &t.id, &a.expense_id, a.amount_cents, &now())?;
+    }
+    materialize_postings(&tx, &t)?;
+    tx.commit()?;
+    repo::get_transaction(conn, &t.id)
 }
 
 pub fn list_transactions(conn: &Connection, filters: TransactionFilters) -> AppResult<Vec<Transaction>> {
