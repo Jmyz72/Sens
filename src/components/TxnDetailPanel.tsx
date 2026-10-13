@@ -1,5 +1,5 @@
 // src/components/TxnDetailPanel.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Account, Category, Transaction } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { Card, Btn, Money, GlyphTile, IconBtn } from "./ui";
@@ -26,7 +26,26 @@ export function TxnDetailPanel({ tx, accounts, categories, allTxns, onClose, onD
   const editable = tx.kind === "income" || tx.kind === "expense" || movement;
   const split = tx.splits.length >= 2;
   const canReimburse = canReimburseExpense(tx, categories) && !!onReimburse;
-  const expenseOf = (id: string) => allTxns.find((x) => x.id === id);
+  // A reimbursement can repay expenses outside the loaded date range, so any
+  // allocated expense missing from `allTxns` is fetched to be named.
+  const [fetched, setFetched] = useState<Transaction[]>([]);
+  const missingAlloc = tx.kind === "reimbursement" && tx.allocations.some((a) => !allTxns.some((x) => x.id === a.expenseId));
+  useEffect(() => {
+    if (!missingAlloc) return;
+    let cancelled = false;
+    (async () => {
+      const want = new Set(tx.allocations.map((a) => a.expenseId).filter((id) => !allTxns.some((x) => x.id === id)));
+      const found: Transaction[] = [];
+      for (let offset = 0; want.size > 0; offset += 1000) {
+        const page = await client.listTransactions({ kind: "expense", limit: 1000, offset });
+        for (const x of page) if (want.delete(x.id)) found.push(x);
+        if (page.length < 1000) break;
+      }
+      if (!cancelled) setFetched(found);
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, [missingAlloc]);
+  const expenseOf = (id: string) => allTxns.find((x) => x.id === id) ?? fetched.find((x) => x.id === id);
 
   const [categoryId, setCategoryId] = useState(tx.categoryId);
   const [accountId, setAccountId] = useState(tx.accountId);
