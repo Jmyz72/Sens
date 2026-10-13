@@ -1,7 +1,7 @@
 # Budgets and savings goals
 
 **Date:** 2026-10-14
-**Status:** Draft — pending review
+**Status:** Approved
 
 ## Problem
 
