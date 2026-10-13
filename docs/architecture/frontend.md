@@ -13,6 +13,7 @@ Read this before changing UI structure or adding a setting.
 - [AddAccount flow](#addaccount-flow)
 - [Transactions screen](#transactions-screen)
 - [Itemized Add-Transaction builder](#itemized-add-transaction-builder)
+- [Reimbursement form](#reimbursement-form)
 - [Auto-updater](#auto-updater-desktop-only)
 - [App settings & window config](#app-settings--window-config)
 
@@ -121,6 +122,25 @@ Spec: `docs/superpowers/specs/2026-06-06-category-splits-and-add-transaction-red
 - A split row shows a **"Split · N"** pill in `TxnRow.tsx` (in place of a single category label).
 - `TxnDetailPanel.tsx` shows a **read-only per-category breakdown**. Other fields stay editable;
   individual line amounts are edited through the Edit dialog.
+
+## Reimbursement form
+
+Add Transaction has a fourth segment, **Reimbursement**, that swaps in `src/modals/ReimbursementForm.tsx`
+(own state, own Save/Cancel). Fields: amount received, note, receiving account, date/time, and an
+**Applies to** picker built from `candidateExpenses` (expenses with something left, expected ones first).
+Each picked expense gets an editable allocation; Save stays disabled until "Allocated X of Y" balances.
+
+- Entry points: the segment itself, the **Record reimbursement** action on an expense row and in its
+  detail panel (opens the form with that expense picked, `reimburseExpenseId`), and **Edit reimbursement**
+  in a reimbursement's detail panel.
+- While editing an existing transaction the Reimbursement segment is gated (not offered).
+- The expense form has an optional **Expecting reimbursement** toggle with an amount; it saves through
+  `client.setExpectedReimbursement` after the expense is saved. If that call fails, the modal stays open
+  and the retry goes through the edit path rather than creating a duplicate expense.
+- Rows: expenses show a `pending` / `Reimbursed` badge (`reimbursementBadge`); the Transactions toolbar has
+  an **Awaiting reimbursement** filter; list totals count expenses at `effectiveCents`; the Dashboard shows
+  an "Awaiting reimbursement" tile.
+- Helpers: `src/lib/reimbursements.ts`.
 
 ## Auto-updater (desktop only)
 

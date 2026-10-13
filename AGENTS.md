@@ -68,7 +68,7 @@ and commit the JSON. CI fails if it is stale. Details: [backend.md](docs/archite
 3. **Liabilities are negative.** The backend speaks signed cents everywhere; the owe sign adapter is frontend-only.
 4. **Business rules live in `service.rs`** and are mirrored in `mock.ts`. SQL lives only in `repo.rs`.
 5. **The backend generates UUIDs and timestamps.** The frontend never sends them.
-6. **Migrations are append-only.** Don't naively rebuild `transactions` (it cascade-deletes postings and splits). Use `ALTER … ADD COLUMN` or a new table; if a CHECK must change, copy `postings` and `transaction_splits` first (see migration 011).
+6. **Migrations are append-only.** Don't naively rebuild `transactions` (it cascade-deletes postings and splits). Use `ALTER … ADD COLUMN` or a new table; if a CHECK must change, copy `postings` and `transaction_splits` first (see migrations 011 and 012).
 7. **Never hardcode colors** in components. Use `useTheme()` tokens (`src/theme/tokens.ts`). Color is never the only cue; pair it with sign + icon.
 8. **Enriching default categories?** Append only, and bump a new `defaults_vN_seeded` gate.
 9. **Don't remove `dragDropEnabled: false`** from `tauri.conf.json` (it makes drag-to-reorder work).

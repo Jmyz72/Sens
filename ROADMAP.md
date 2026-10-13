@@ -3,7 +3,8 @@
 Sens is built one **phase** at a time. **One phase = one release.** This file is the index; specs and plans hold the detail.
 
 > **Last shipped:** `v0.9.1` (Rust↔mock seed drift guard; latest feature `v0.9.0`, category splits)
-> **Next up:** Credit & debt behavior
+> **Next up:** Investment value
+> Credit & debt behavior is complete and unreleased.
 > **Later:** the climb to `v1.0.0`
 
 Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
@@ -89,7 +90,7 @@ into *Shipped* with its tag.
 
 | # | Phase | Status | Spec |
 |---|---|---|---|
-| 1 | [Credit & debt behavior](#-credit--debt-behavior) | ⚪ (limits and payments done) | credit limit ✅ · payments ✅ · reimbursements: spec drafted |
+| 1 | [Credit & debt behavior](#-credit--debt-behavior) | 🟢 (shipped, awaiting release) | credit limit ✅ · payments ✅ · reimbursements ✅ |
 | 2 | [Investment value](#-investment-value) | ⚪ | TBD |
 | 3 | [Budgets & goals](#-budgets--goals) | ⚪ | TBD |
 | 4 | [Recurring & reminders](#-recurring--reminders) | ⚪ | TBD |
@@ -109,9 +110,9 @@ Loan schedules and interest are unscheduled; see [Later / unscheduled](#later--u
 - [x] Credit-card payments and BNPL repayments recorded as their own `payment` kind
   (cash, e-wallet, savings, or current → credit card or BNPL)
   — spec: `docs/superpowers/specs/2026-10-13-card-bnpl-payments-design.md`
-- [ ] Reimbursements & claims: money back that explicitly offsets an original expense (pairing),
+- [x] Reimbursements & claims: money back that explicitly offsets an original expense (pairing),
   beyond the v0.5.0 flag that already excludes it from income; also an "Owes you" reading for `lent` accounts
-  — spec: `docs/superpowers/specs/2026-10-13-reimbursements-and-receivables-design.md` (draft)
+  — spec: `docs/superpowers/specs/2026-10-13-reimbursements-and-receivables-design.md`
 
 ### ⚪ Investment value
 

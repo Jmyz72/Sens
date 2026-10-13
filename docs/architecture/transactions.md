@@ -19,6 +19,7 @@ Read this before changing balance math, transaction validation, or dashboard tot
 - [Balance correction](#balance-correction)
 - [Category splits](#category-splits)
 - [Card and BNPL payments](#card-and-bnpl-payments)
+- [Reimbursements](#reimbursements)
 - [Dashboard & reporting rules](#dashboard--reporting-rules)
 
 ## Money
@@ -28,7 +29,7 @@ Read this before changing balance math, transaction validation, or dashboard tot
 
 ## Transaction kinds
 
-`kind` ∈ `income | expense | transfer | payment | adjustment | opening`
+`kind` ∈ `income | expense | transfer | payment | reimbursement | adjustment | opening`
 
 | Kind | Amount sign | Notes |
 |---|---|---|
@@ -36,6 +37,7 @@ Read this before changing balance math, transaction validation, or dashboard tot
 | `expense` | positive | Needs a category. Table CHECK enforces the sign. |
 | `transfer` | positive | `−amount` on source, `+amount` on destination. |
 | `payment` | positive | Card/BNPL repayment. Posts like a transfer. See [Card and BNPL payments](#card-and-bnpl-payments). |
+| `reimbursement` | positive | Money back for expenses already booked. No category. Posts `+amount` to the account and `−amount` to the `expense` bucket. See [Reimbursements](#reimbursements). |
 | `adjustment` | **signed** | Neutral balance correction. Not editable. |
 | `opening` | **signed** | Structural, one per account. See [Opening balance](#opening-balance). |
 
@@ -61,7 +63,7 @@ Read this before changing balance math, transaction validation, or dashboard tot
 > `transaction_splits.transaction_id` are `ON DELETE CASCADE`, so a naive rebuild deletes every posting
 > and split. Prefer plain `ALTER TABLE … ADD COLUMN` / `CREATE TABLE` (migrations 007 and 009 do).
 > If a table CHECK must change, copy `postings` and `transaction_splits` **before** swapping the table,
-> as migration 011 does.
+> as migrations 011 and 012 do.
 
 ## Opening balance
 
@@ -89,7 +91,7 @@ An `income` / `expense` row can be flagged **`excludedFromReporting`**.
   transfer / adjustment / opening, and the service re-validates.
 - Flagged rows **still affect balances** but are left out of dashboard reporting.
 - Use cases:
-  - Reimbursements / claims: money back, not new income.
+  - Reimbursements / claims you did not pair to an expense: money back, not new income. (Prefer the reimbursement kind; it also lowers the original expense.)
   - Repayments to an external party: money out, not a new expense.
 
 ## Transaction time
@@ -188,11 +190,45 @@ A `payment` repays a credit card or BNPL account.
 
 Spec: `docs/superpowers/specs/2026-10-13-card-bnpl-payments-design.md`.
 
+## Reimbursements
+
+A `reimbursement` records money that came back for expenses you already booked: an employer claim,
+a friend's share of a bill, a shop refund. It is never income.
+
+- **Posting:** `+amount` on the receiving account, `−amount` on the `expense` system bucket. The
+  receiving account can be any active account, including the card that was charged.
+- **Allocations:** the table `reimbursement_allocations(reimbursement_id, expense_id, amount_cents)`
+  (migration 012) pairs a reimbursement with the expenses it repays.
+  - A reimbursement's allocations sum exactly to its amount.
+  - An expense's allocations sum to at most its amount.
+  - Only a plain expense (not a system-category balance correction) can be repaid.
+  - The same expense appears once per reimbursement; one expense can take several reimbursements.
+- **Expectation:** `transactions.expected_reimbursement_cents` (expenses only, `0 < n ≤ amount`) marks an
+  expense as expecting money back. `outstanding = max(expected − reimbursed, 0)`. Set it only through
+  `set_expected_reimbursement`; `update_transaction` clamps it to a reduced amount and clears it when the
+  row stops being an expense.
+- **True-cost reporting.** An expense's effective amount is its amount minus its allocations, counted in
+  **its own month and category**, so a closed month's spending can fall (and its net cashflow rise) when
+  money arrives later. Excluded expenses are skipped along with their allocations.
+  - A split expense's offset is spread across its lines by largest remainder (`apportion` in
+    `src-tauri/src/apportion.rs` and `src/lib/reimbursements.ts`); no line goes negative.
+  - `spending_breakdown` sorts by total descending, then by name.
+- **Guards:** an expense with allocations cannot be deleted, retyped, or reduced below its reimbursed
+  total; delete or edit the reimbursement first. A reimbursement is edited only through
+  `update_reimbursement` (`update_transaction` rejects the kind) and deleting it removes its allocations.
+- **Dashboard:** `get_awaiting_reimbursement` returns `{count, totalCents}` for the tile. It counts every
+  expense with an outstanding expectation, **including ones excluded from reporting**. Pending claims
+  are not part of net worth.
+- **Mock mirror:** `allocs` + `syncDerived` in `src/client/mock.ts`.
+
+Spec: `docs/superpowers/specs/2026-10-13-reimbursements-and-receivables-design.md`.
+
 ## Dashboard & reporting rules
 
 **Excluded** from income / expense / net cashflow / spending breakdown (balances only):
 
-- transfers and card/BNPL payments
+- transfers, card/BNPL payments, and reimbursements
+- expenses count **net of their reimbursements** (see [Reimbursements](#reimbursements))
 - adjustments
 - `opening` rows
 - any `excludedFromReporting` income/expense
