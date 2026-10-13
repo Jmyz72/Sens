@@ -1093,3 +1093,53 @@ fn ensure_envelopes(conn: &Connection, month: &str) -> AppResult<()> {
     }
     Ok(())
 }
+
+/// Budgets for one `YYYY-MM` month. Spent uses the dashboard's category nets:
+/// a child is its own net, a parent is its own net plus its children's. Goals
+/// are filled by a later task.
+pub fn get_plan(conn: &Connection, month: &str) -> AppResult<Plan> {
+    let (from, to) = month_range(month)?;
+    let own: std::collections::HashMap<String, i64> =
+        repo::category_spend_nets(conn, &from, &to)?.into_iter().collect();
+    let categories = repo::list_categories(conn, None, true)?;
+    let versions = repo::list_budget_versions(conn)?;
+
+    let mut budgets = Vec::new();
+    for cat in &categories {
+        let mine: Vec<(String, Option<i64>)> = versions
+            .iter()
+            .filter(|v| v.0 == cat.id)
+            .map(|v| (v.1.clone(), v.2))
+            .collect();
+        let Some(amount_cents) = resolve_amount(&mine, month) else {
+            continue;
+        };
+        let spent_cents = if cat.parent_id.is_none() {
+            let mut spent = own.get(&cat.id).copied().unwrap_or(0);
+            for child in &categories {
+                if child.parent_id.as_deref() == Some(cat.id.as_str()) {
+                    spent += own.get(&child.id).copied().unwrap_or(0);
+                }
+            }
+            spent
+        } else {
+            own.get(&cat.id).copied().unwrap_or(0)
+        };
+        budgets.push(PlanBudget {
+            category_id: cat.id.clone(),
+            parent_id: cat.parent_id.clone(),
+            name: cat.name.clone(),
+            emoji: cat.emoji.clone(),
+            sort_order: cat.sort_order,
+            is_archived: cat.is_archived,
+            amount_cents,
+            spent_cents,
+        });
+    }
+    budgets.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then_with(|| a.name.cmp(&b.name)));
+    Ok(Plan {
+        month: month.to_string(),
+        budgets,
+        goals: vec![],
+    })
+}

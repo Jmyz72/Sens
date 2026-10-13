@@ -2336,4 +2336,44 @@ mod plan_tests {
         let food_versions: Vec<_> = versions.into_iter().filter(|v| v.0 == food).map(|v| (v.1, v.2)).collect();
         assert_eq!(resolve_amount(&food_versions, &today[..7]), None);
     }
+
+    #[test]
+    fn plan_spent_matches_the_dashboard_and_keeps_the_child() {
+        let conn = open_in_memory().unwrap();
+        let (food, dining) = parent_and_child(&conn);
+        let groceries = service::create_category(&conn, "Groceries", "expense", "🛒", None, Some(&food)).unwrap();
+        let acc = service::create_account(&conn, "Cash", "cash", 0, None, None).unwrap();
+        let month = &crate::today()[..7];
+        service::set_budgets(&conn, &[
+            BudgetWrite { category_id: food.clone(), amount_cents: Some(80_000) },
+            BudgetWrite { category_id: dining.clone(), amount_cents: Some(25_000) },
+        ]).unwrap();
+        service::create_expense(&conn, &acc.id, Some(dining.as_str()), 30_000, None, &format!("{month}-02"), None, false, None).unwrap();
+        service::create_expense(&conn, &acc.id, Some(groceries.id.as_str()), 10_000, None, &format!("{month}-03"), None, false, None).unwrap();
+        let other = service::create_account(&conn, "Other", "savings", 0, None, None).unwrap();
+        service::create_transfer(&conn, &acc.id, &other.id, 5_000, None, &format!("{month}-04"), None).unwrap();
+
+        let plan = service::get_plan(&conn, month).unwrap();
+        let row = |id: &str| plan.budgets.iter().find(|b| b.category_id == id).unwrap();
+        assert_eq!(row(&dining).spent_cents, 30_000);
+        assert_eq!(row(&food).spent_cents, 40_000);
+        assert!(plan.budgets.iter().all(|b| b.category_id != groceries.id), "an unbudgeted child is absent");
+        let dash = service::get_dashboard_summary(&conn, month).unwrap();
+        let dash_food = dash.spending_breakdown.iter().find(|b| b.category_id == food).unwrap();
+        assert_eq!(dash_food.total_cents, 40_000);
+
+        let hidden = service::create_expense(&conn, &acc.id, Some(dining.as_str()), 9_000, None, &format!("{month}-05"), None, true, None).unwrap();
+        assert_eq!(service::get_plan(&conn, month).unwrap().budgets.iter().find(|b| b.category_id == dining).unwrap().spent_cents, 30_000);
+        let _ = hidden;
+
+        let card = service::create_account(&conn, "Visa", "credit-card", 0, None, Some(500_000)).unwrap();
+        service::create_payment(&conn, &acc.id, &card.id, 4_000, None, &format!("{month}-06"), None).unwrap();
+        assert_eq!(service::get_plan(&conn, month).unwrap().budgets.iter().find(|b| b.category_id == food).unwrap().spent_cents, 40_000);
+
+        let owed = service::create_expense(&conn, &acc.id, Some(dining.as_str()), 5_000, None, &format!("{month}-07"), None, false, None).unwrap();
+        let next = shift_month(month, 1);
+        service::create_reimbursement(&conn, &acc.id, 2_000, None, &format!("{next}-01"), None, vec![Allocation { expense_id: owed.id, amount_cents: 2_000 }]).unwrap();
+        assert_eq!(service::get_plan(&conn, month).unwrap().budgets.iter().find(|b| b.category_id == dining).unwrap().spent_cents, 33_000);
+        assert_eq!(service::get_plan(&conn, month).unwrap().budgets.iter().find(|b| b.category_id == food).unwrap().spent_cents, 43_000);
+    }
 }

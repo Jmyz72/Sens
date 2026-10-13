@@ -728,7 +728,10 @@ pub fn awaiting_reimbursement(conn: &Connection) -> AppResult<AwaitingReimbursem
     Ok(AwaitingReimbursement { count, total_cents })
 }
 
-pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<Vec<CategoryBreakdown>> {
+/// Per-category expense nets in a half-open range, after reimbursement apportion
+/// and before parent rollup. A category appears only when it has a line; a fully
+/// offset line is kept as zero.
+pub fn category_spend_nets(conn: &Connection, from: &str, to: &str) -> AppResult<Vec<(String, i64)>> {
     // One row per attributed line (a plain expense is one line; a split expense is
     // one line per split), carrying the expense's total allocated amount.
     let mut stmt = conn.prepare(
@@ -766,10 +769,13 @@ pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<
         }
         i = j;
     }
+    Ok(by_category.into_iter().collect())
+}
 
+pub fn spending_breakdown(conn: &Connection, from: &str, to: &str) -> AppResult<Vec<CategoryBreakdown>> {
     // Roll subcategories into their parent, then attach display fields.
     let mut by_group: HashMap<String, i64> = HashMap::new();
-    for (cat_id, net) in by_category {
+    for (cat_id, net) in category_spend_nets(conn, from, to)? {
         let cat = get_category(conn, &cat_id)?;
         *by_group.entry(cat.parent_id.unwrap_or(cat.id)).or_insert(0) += net;
     }
