@@ -15,6 +15,7 @@ import { NAV, type ScreenId } from "./nav";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { Dashboard } from "./screens/Dashboard";
+import { Plan } from "./screens/Plan";
 import { Accounts } from "./screens/Accounts";
 import { Transactions } from "./screens/Transactions";
 import { Settings } from "./screens/Settings";
@@ -145,7 +146,7 @@ export default function App() {
           <TopBar
             title={nav.label}
             sub={nav.sub}
-            isDashboard={active === "dashboard"}
+            isDashboard={active === "dashboard" || active === "plan"}
             month={month}
             onShiftMonth={(d) => handleSetMonth((m) => shiftMonth(m, d))}
             onAddTransaction={() => setShowTxn(true)}
@@ -153,6 +154,7 @@ export default function App() {
 
           <div ref={scroller} style={{ flex: 1, overflow: "auto", padding: 24 }}>
             {active === "dashboard" && <Dashboard month={month} go={go} />}
+            {active === "plan" && <Plan month={month} />}
             {active === "accounts" && <Accounts go={go} />}
             {active === "transactions" && <Transactions initialAccountId={txnAccountId} initialAwaiting={txnAwaiting} />}
             {active === "categories" && <Categories />}

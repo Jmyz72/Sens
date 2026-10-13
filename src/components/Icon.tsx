@@ -8,7 +8,7 @@ export type IconName =
   | "dots" | "arrowUp" | "arrowDown" | "chevronLeft" | "chevronRight" | "chevronDown"
   | "in" | "out" | "swap" | "card" | "sliders" | "sun" | "moon" | "pencil" | "archive"
   | "restore" | "trash" | "check" | "close" | "scale" | "filter"
-  | "alertCircle" | "info" | "flag" | "copy" | "reimburse";
+  | "alertCircle" | "info" | "flag" | "copy" | "reimburse" | "plan";
 
 export function Icon({
   name, size = 18, stroke = 1.7, color = "currentColor", style = {},
@@ -50,6 +50,7 @@ export function Icon({
     flag: <path {...P} d="M6 21V4M6 4h11l-2.2 4L17 12H6" />,
     copy: <>{<rect {...P} x="8" y="8" width="11" height="11" rx="2" />}<path {...P} d="M5 15V5h10" /></>,
     reimburse: <>{<path {...P} d="M9 7 4 12l5 5" />}<path {...P} d="M4 12h10a6 6 0 0 1 6 6" /></>,
+    plan: <><circle {...P} cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2" fill={color} stroke="none" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: "block", flexShrink: 0, ...style }}>
