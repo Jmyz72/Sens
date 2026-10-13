@@ -9,6 +9,7 @@ describe("postingsFor", () => {
     { kind: "adjustment" as const, amt: -500, acc: "a", to: null },
     { kind: "opening" as const, amt: 7000, acc: "a", to: null },
     { kind: "payment" as const, amt: 1000, acc: "a", to: "b" },
+    { kind: "reimbursement" as const, amt: 1000, acc: "a", to: null },
   ];
 
   it("always produces legs that sum to zero", () => {
@@ -32,5 +33,8 @@ describe("postingsFor", () => {
     expect(paySrc.reduce((s, l) => s + l.amountCents, 0)).toBe(-1000);
     const payDst = postingsFor("payment", 1000, "a", "b").filter((l) => l.accountId === "b");
     expect(payDst.reduce((s, l) => s + l.amountCents, 0)).toBe(1000);
+    const reimb = postingsFor("reimbursement", 1000, "a", null);
+    expect(reimb.filter((l) => l.accountId === "a").reduce((s, l) => s + l.amountCents, 0)).toBe(1000);
+    expect(reimb.find((l) => l.bucket === "expense")?.amountCents).toBe(-1000);
   });
 });

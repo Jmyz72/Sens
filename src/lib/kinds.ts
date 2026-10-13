@@ -19,6 +19,7 @@ export const KIND_META: Record<TransactionKind, KindMeta> = {
   expense: { label: "Expense", icon: "out", colorKey: "expense", sign: -1 },
   transfer: { label: "Transfer", icon: "swap", colorKey: "transfer", sign: 0 },
   payment: { label: "Payment", icon: "card", colorKey: "transfer", sign: 0 },
+  reimbursement: { label: "Reimbursement", icon: "reimburse", colorKey: "transfer", sign: 0 },
   adjustment: { label: "Balance adjustment", icon: "sliders", colorKey: "adjustment", sign: 0 },
   opening: { label: "Opening balance", icon: "flag", colorKey: "opening", sign: 0 },
 };
@@ -32,6 +33,7 @@ export function signedFor(kind: TransactionKind, amountCents: number, isDestinat
   if (kind === "income") return amountCents;
   if (kind === "expense") return -amountCents;
   if (kind === "adjustment" || kind === "opening") return amountCents; // already signed
+  if (kind === "reimbursement") return amountCents; // money back in
   // transfer and payment
   return isDestination ? amountCents : -amountCents;
 }
@@ -63,6 +65,8 @@ export function postingsFor(
     case "transfer":
     case "payment":
       return [real(-amountCents), { accountId: toAccountId, bucket: null, amountCents: amountCents }];
+    case "reimbursement":
+      return [real(amountCents), { accountId: null, bucket: "expense", amountCents: -amountCents }];
     case "adjustment":
     case "opening":
       return [real(amountCents), { accountId: null, bucket: "equity", amountCents: -amountCents }];

@@ -16,6 +16,9 @@ function tx(kind: TransactionKind, amountCents: number, over: Partial<Transactio
     transactionTime: null,
     excludedFromReporting: false,
     splits: [],
+    expectedReimbursementCents: null,
+    reimbursedCents: 0,
+    allocations: [],
     createdAt: "2026-06-01T00:00:00Z",
     updatedAt: "2026-06-01T00:00:00Z",
     ...over,
@@ -35,7 +38,7 @@ describe("summarizeSelection", () => {
     expect(s.inCents).toBe(320000);
     expect(s.outCents).toBe(14280);
     expect(s.netCents).toBe(320000 - 14280);
-    expect(s.otherCounts).toEqual({ transfer: 1, adjustment: 1, opening: 1, payment: 0 });
+    expect(s.otherCounts).toEqual({ transfer: 1, adjustment: 1, opening: 1, payment: 0, reimbursement: 0 });
   });
   it("counts already-excluded income/expense", () => {
     const s = summarizeSelection([
@@ -137,7 +140,7 @@ describe("planBulk", () => {
   it("counts a payment beside transfers and will not recategorize or exclude it", () => {
     const payment = tx("payment", 5000);
     const s = summarizeSelection([payment, tx("transfer", 1000)]);
-    expect(s.otherCounts).toEqual({ transfer: 1, payment: 1, adjustment: 0, opening: 0 });
+    expect(s.otherCounts).toEqual({ transfer: 1, payment: 1, adjustment: 0, opening: 0, reimbursement: 0 });
     expect(s.inCents).toBe(0);
     const recat = planBulk("recategorize", [payment]);
     expect(recat.changeable).toHaveLength(0);
@@ -146,5 +149,17 @@ describe("planBulk", () => {
     expect(excl.changeable).toHaveLength(0);
     const del = planBulk("delete", [payment]);
     expect(del.changeable.map((t) => t.id)).toEqual([payment.id]);
+  });
+
+  it("reimbursement: counted separately, deletable, locked from every other bulk action", () => {
+    const reimb = tx("reimbursement", 500, { id: "rmb" });
+    expect(summarizeSelection([reimb]).otherCounts.reimbursement).toBe(1);
+    expect(planBulk("delete", [reimb]).changeable.map((t) => t.id)).toEqual(["rmb"]);
+    for (const action of ["recategorize", "move", "exclude", "include"] as const) {
+      const p = planBulk(action, [reimb]);
+      expect(p.changeable).toEqual([]);
+      expect(p.lockedSkipped.map((l) => l.tx.id)).toEqual(["rmb"]);
+    }
+    expect(planBulk("recategorize", [reimb]).lockedSkipped[0].reason).toMatch(/categor/i);
   });
 });
