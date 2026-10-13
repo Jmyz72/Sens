@@ -20,11 +20,12 @@ import { isPaymentSource, movementKind, payAmountField } from "../lib/payments";
 import { categoryPickerItems } from "../lib/categories";
 import { addItem, removeItem, itemsTotal, isSplit, finalize, isPendingValid, type BuilderItem } from "../lib/txnBuilder";
 import { useTimeSetting } from "../lib/useTimeSetting";
+import { ReimbursementForm } from "./ReimbursementForm";
 
-const FORM_KINDS: TransactionKind[] = ["expense", "income", "transfer"];
+const FORM_KINDS: TransactionKind[] = ["expense", "income", "transfer", "reimbursement"];
 
-export function AddTransaction({ accounts, categories, editing, payAccountId, onClose, onDone }: {
-  accounts: Account[]; categories: Category[]; editing?: Transaction; payAccountId?: string;
+export function AddTransaction({ accounts, categories, editing, payAccountId, reimburseExpenseId, onClose, onDone }: {
+  accounts: Account[]; categories: Category[]; editing?: Transaction; payAccountId?: string; reimburseExpenseId?: string;
   onClose: () => void; onDone: () => void;
 }) {
   const t = useTheme();
@@ -34,9 +35,11 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
     ?? payTarget?.id
     ?? active.find((a) => a.id !== (editing?.accountId ?? active[0]?.id))?.id
     ?? "";
-  const initialKind: TransactionKind = editing?.kind === "payment" || (!editing && payTarget && movementKind(payTarget.subtype) === "payment")
-    ? "payment"
-    : (editing?.kind ?? "expense");
+  const initialKind: TransactionKind = editing?.kind === "reimbursement" || (!editing && reimburseExpenseId)
+    ? "reimbursement"
+    : editing?.kind === "payment" || (!editing && payTarget && movementKind(payTarget.subtype) === "payment")
+      ? "payment"
+      : (editing?.kind ?? "expense");
   const [kind, setKind] = useState<TransactionKind>(initialKind);
   // The amount field is the PENDING item amount for income/expense, and the
   // whole amount for transfer or payment.
@@ -47,6 +50,10 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
   );
   const [desc, setDesc] = useState(editing?.description ?? "");
   const [excluded, setExcluded] = useState(editing?.excludedFromReporting ?? false);
+  const [expecting, setExpecting] = useState(editing?.expectedReimbursementCents != null);
+  const [expectedStr, setExpectedStr] = useState(
+    editing?.expectedReimbursementCents != null ? (editing.expectedReimbursementCents / 100).toFixed(2) : "",
+  );
   const [date, setDate] = useState(editing?.transactionDate ?? todayISO());
   const [timeEnabled] = useTimeSetting();
   const [time, setTime] = useState(editing?.transactionTime ?? nowTimeHHMM());
@@ -81,12 +88,14 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
   const totalCents = itemsTotal(items) + (isPendingValid(pendingItem) ? pendingItem.amountCents : 0);
   const finalItems = finalize(items, pendingItem);
 
+  const expectedCents = parseAmountToCents(expectedStr);
+  const expectedOk = kind !== "expense" || !expecting || (expectedCents != null && expectedCents <= totalCents);
   const movement = kind === "transfer" || kind === "payment";
   const destAccount = accounts.find((a) => a.id === toAccountId);
   const destKind = movementKind(destAccount?.subtype);
   const valid = movement
     ? !!(cents != null && accountId && toAccountId && toAccountId !== accountId && (!timeEnabled || !!time))
-    : !!(accountId && finalItems.length >= 1 && (!timeEnabled || !!time));
+    : !!(accountId && finalItems.length >= 1 && (!timeEnabled || !!time) && expectedOk);
 
   function changeKind(k: TransactionKind) {
     if (k === kind) return;
@@ -140,6 +149,7 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
       const splits = split ? list.map((it) => ({ categoryId: it.categoryId, amountCents: it.amountCents })) : null;
       const singleCat = !split ? list[0].categoryId : null;
 
+      let savedId: string | null = null;
       if (editing) {
         await client.updateTransaction({
           id: editing.id, kind, accountId, toAccountId: null,
@@ -147,10 +157,15 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
           amountCents: total, description: desc.trim() || null, transactionDate: date,
           transactionTime: txTime, excludedFromReporting: excluded, splits,
         });
+        savedId = editing.id;
       } else if (kind === "income") {
         await client.createIncome(accountId, singleCat, total, desc.trim() || null, date, txTime, excluded, splits);
       } else {
-        await client.createExpense(accountId, singleCat, total, desc.trim() || null, date, txTime, excluded, splits);
+        const created = await client.createExpense(accountId, singleCat, total, desc.trim() || null, date, txTime, excluded, splits);
+        savedId = created.id;
+      }
+      if (kind === "expense" && savedId && (expecting || editing?.expectedReimbursementCents != null)) {
+        await client.setExpectedReimbursement(savedId, expecting ? expectedCents : null);
       }
       onDone();
     } catch (e) {
@@ -195,6 +210,12 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
           })}
         </div>
 
+        {kind === "reimbursement" ? (
+          <ReimbursementForm accounts={accounts} categories={categories}
+            editing={editing?.kind === "reimbursement" ? editing : undefined}
+            presetExpenseId={reimburseExpenseId} onClose={onClose} onDone={onDone} />
+        ) : (
+        <>
         {/* amount */}
         <div style={{ position: "relative" }}>
           <span style={{ position: "absolute", left: 14, top: 14, fontSize: 16, color: t.faint, fontFamily: t.mono }}>RM</span>
@@ -313,6 +334,33 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
           </button>
         )}
 
+        {kind === "expense" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button type="button" role="switch" aria-checked={expecting}
+              onClick={() => { setExpecting((v) => !v); if (!expecting && !expectedStr && totalCents > 0) setExpectedStr((totalCents / 100).toFixed(2)); }}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 9, border: `0.5px solid ${t.border}`, background: expecting ? hexA(t.transfer, 0.12) : t.panel2, cursor: "pointer", textAlign: "left" }}>
+              <span style={{ width: 18, height: 18, borderRadius: 5, display: "grid", placeItems: "center", background: expecting ? t.transfer : "transparent", border: `1.5px solid ${expecting ? t.transfer : t.faint}`, flexShrink: 0 }}>
+                {expecting && <Icon name="check" size={12} color={t.onAccent} stroke={3} />}
+              </span>
+              <span style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>Expecting reimbursement</div>
+                <div style={{ fontSize: 11, color: t.faint }}>Track what's still owed back to you</div>
+              </span>
+            </button>
+            {expecting && (
+              <Field label="Expected back">
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: 12, top: 9, fontSize: 13, color: t.faint, fontFamily: t.mono }}>RM</span>
+                  <input className="sens-input" value={expectedStr} inputMode="decimal" placeholder="0.00" aria-label="Expected reimbursement"
+                    onChange={(e) => setExpectedStr(e.target.value.replace(/[^0-9.]/g, ""))}
+                    style={{ ...inputStyle(t), paddingLeft: 38, fontFamily: t.mono, borderColor: expectedOk ? undefined : t.expense }} />
+                </div>
+                {!expectedOk && <div style={{ fontSize: 11, color: t.expense, marginTop: 4 }}>Can't be more than the expense total</div>}
+              </Field>
+            )}
+          </div>
+        )}
+
         {error && <div style={{ fontSize: 12.5, color: t.expense, background: hexA(t.expense, 0.1), padding: "8px 12px", borderRadius: 8 }}>{error}</div>}
 
         <div style={{ display: "flex", gap: 10, marginTop: 2 }}>
@@ -321,6 +369,8 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
             {editing ? "Save changes" : "Add transaction"}
           </Btn>
         </div>
+        </>
+        )}
       </div>
     </Modal>
   );
