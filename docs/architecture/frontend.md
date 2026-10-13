@@ -133,12 +133,12 @@ Each picked expense gets an editable allocation; Save stays disabled until "Allo
 - Entry points: the segment itself, the **Record reimbursement** action on an expense row and in its
   detail panel (opens the form with that expense picked, `reimburseExpenseId`), and **Edit reimbursement**
   in a reimbursement's detail panel.
-- While editing an existing transaction the Reimbursement segment is gated (not offered).
+- While editing an existing transaction the Reimbursement segment is shown disabled: a reimbursement can't change type, and no other kind can become one.
 - The expense form has an optional **Expecting reimbursement** toggle with an amount; it saves through
   `client.setExpectedReimbursement` after the expense is saved. If that call fails, the modal stays open
   and the retry goes through the edit path rather than creating a duplicate expense.
 - Rows: expenses show a `pending` / `Reimbursed` badge (`reimbursementBadge`); the Transactions toolbar has
-  an **Awaiting reimbursement** filter; list totals count expenses at `effectiveCents`; the Dashboard shows
+  an **Awaiting reimbursement** filter (all-time: it ignores the date range and pages through every expense; the Dashboard tile's View link opens it already on, via `go("transactions", { awaiting: true })`); list totals count expenses at `effectiveCents`; the Dashboard shows
   an "Awaiting reimbursement" tile.
 - Helpers: `src/lib/reimbursements.ts`.
 

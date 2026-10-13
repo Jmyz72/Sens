@@ -33,7 +33,7 @@ Rust is not on the default PATH. Prefix Rust/Tauri commands with `export PATH="$
 | `npm run gen:seed-catalog` | Regenerate `src/generated/seed-catalog.json` from the Rust seed. |
 
 Test locations: frontend tests in `src/lib/__tests__/`, release-tooling tests in `scripts/__tests__/`,
-Rust tests as `#[cfg(test)]` in `src-tauri/src/lib.rs` and `src-tauri/src/db/mod.rs`.
+Rust tests as `#[cfg(test)]` in `src-tauri/src/lib.rs`, `src-tauri/src/db/mod.rs` and `src-tauri/src/apportion.rs`.
 
 ## Architecture
 
