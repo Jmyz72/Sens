@@ -77,9 +77,9 @@ export function ReimbursementForm({ accounts, categories, editing, presetExpense
   const picksValid = picks.length > 0 && picks.every((p, i) => {
     const e = byId.get(p.expenseId);
     const c = pickCents[i];
-    return !!e && c != null && c <= remainingCents(e, ownOf(p.expenseId));
+    return !!e && c != null && c > 0 && c <= remainingCents(e, ownOf(p.expenseId));
   });
-  const balanced = amountCents != null && allocatedCents === amountCents;
+  const balanced = amountCents != null && amountCents > 0 && allocatedCents === amountCents;
   const valid = !!accountId && balanced && picksValid && (!timeEnabled || !!time);
 
   function toggle(e: Transaction) {
