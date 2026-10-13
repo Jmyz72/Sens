@@ -92,7 +92,7 @@ into *Shipped* with its tag.
 |---|---|---|---|
 | 1 | [Credit & debt behavior](#-credit--debt-behavior) | 🟢 (shipped, awaiting release) | credit limit ✅ · payments ✅ · reimbursements ✅ |
 | 2 | [Investment value](#-investment-value) | ⚪ | TBD |
-| 3 | [Budgets & goals](#-budgets--goals) | ⚪ | TBD |
+| 3 | [Budgets & goals](#-budgets--goals) | ⚪ | `2026-10-14-budgets-and-goals-design.md` |
 | 4 | [Recurring & reminders](#-recurring--reminders) | ⚪ | TBD |
 | 5 | [Advanced search, filter & tags](#-advanced-search-filter--tags) | ⚪ | TBD |
 | 6 | [Reports & insights](#-reports--insights) | ⚪ | TBD |
@@ -130,7 +130,7 @@ Spec: _TBD_
 - [ ] Budget-vs-actual + overspend warnings
 - [ ] Savings goals (target amounts + progress)
 
-Spec: _TBD_
+Spec: `docs/superpowers/specs/2026-10-14-budgets-and-goals-design.md`
 
 ### ⚪ Recurring & reminders
 

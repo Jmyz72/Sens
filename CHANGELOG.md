@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Credit limit on credit cards and BNPL.** Creating or editing either account requires a limit. The Accounts screen shows available credit and utilization. A charge past the limit is still saved; available credit stays at zero and the row reads "Over limit".
 
 ### Documentation
+- Specified budgets and savings goals (`docs/superpowers/specs/2026-10-14-budgets-and-goals-design.md`).
 - Specified and planned reimbursements (`docs/superpowers/specs/2026-10-13-reimbursements-and-receivables-design.md`, `docs/superpowers/plans/2026-10-13-reimbursements.md`).
 - Restructured the agent docs for readability. `AGENTS.md` is now a short overview (commands,
   architecture, hard rules, a "read this before changing X" table) and `CLAUDE.md` is a symlink to
