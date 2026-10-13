@@ -86,7 +86,7 @@ function DashboardSkeleton() {
   );
 }
 
-export function Dashboard({ month, go }: { month: string; go: (screen: string) => void }) {
+export function Dashboard({ month, go }: { month: string; go: (screen: string, opts?: { awaiting?: boolean }) => void }) {
   const t = useTheme();
   const { accounts, categories, version } = useAppData();
   const [data, setData] = useState<DashboardSummary | null>(null);
@@ -169,7 +169,7 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string) =
               </div>
             </div>
             <Money cents={awaiting.totalCents} size={16} weight={700} />
-            <span className="sens-link" style={{ fontSize: 12.5, fontWeight: 600 }} onClick={() => go("transactions")}>View</span>
+            <span className="sens-link" style={{ fontSize: 12.5, fontWeight: 600 }} onClick={() => go("transactions", { awaiting: true })}>View</span>
           </div>
         </Card>
       )}

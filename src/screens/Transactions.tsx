@@ -24,7 +24,7 @@ import { useTimeSetting } from "../lib/useTimeSetting";
 
 const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "payment", "reimbursement", "adjustment", "opening"];
 
-export function Transactions({ initialAccountId }: { initialAccountId?: string | null }) {
+export function Transactions({ initialAccountId, initialAwaiting = false }: { initialAccountId?: string | null; initialAwaiting?: boolean }) {
   const t = useTheme();
   const { notify } = useToast();
   const { accounts, categories, reload, version } = useAppData();
@@ -32,7 +32,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [query, setQuery] = useState("");
   const [kinds, setKinds] = useState<Set<TransactionKind>>(new Set());
-  const [awaitingOnly, setAwaitingOnly] = useState(false);
+  const [awaitingOnly, setAwaitingOnly] = useState(initialAwaiting);
   const [reimburseFor, setReimburseFor] = useState<string | null>(null);
   const [acctFilter, setAcctFilter] = useState<string | null>(initialAccountId ?? null);
   const [selId, setSelId] = useState<string | null>(null);
@@ -46,11 +46,25 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
   useEffect(() => { localStorage.setItem("sens.txn.density", density); }, [density]);
 
   useEffect(() => {
-    const r = rangeForPreset(preset, todayISO(), custom);
-    client.listTransactions({ limit: 1000, ...r }).then(setTxns).catch(() => {});
-  }, [version, preset, custom]);
+    // Awaiting is all-time (it matches the Dashboard tile), so it ignores the date
+    // range and pages through every expense past the backend's 1000-row page cap.
+    let cancelled = false;
+    (async () => {
+      if (!awaitingOnly) {
+        return client.listTransactions({ limit: 1000, ...rangeForPreset(preset, todayISO(), custom) });
+      }
+      const all: Transaction[] = [];
+      for (;;) {
+        const page = await client.listTransactions({ kind: "expense", limit: 1000, offset: all.length });
+        all.push(...page);
+        if (page.length < 1000) return all;
+      }
+    })().then((rows) => { if (!cancelled) setTxns(rows); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [version, preset, custom, awaitingOnly]);
   useEffect(() => { setAcctFilter(initialAccountId ?? null); }, [initialAccountId]);
-  useEffect(() => { setSelectedIds(new Set()); }, [preset, custom]);
+  useEffect(() => { setAwaitingOnly(initialAwaiting); }, [initialAwaiting]);
+  useEffect(() => { setSelectedIds(new Set()); }, [preset, custom, awaitingOnly]);
 
   const toggleKind = (k: TransactionKind) => setKinds((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
@@ -306,6 +320,7 @@ export function Transactions({ initialAccountId }: { initialAccountId?: string |
           {acctFilter && <Pill on onClick={() => setAcctFilter(null)}>Account: {accountName(accounts, acctFilter)} ✕</Pill>}
           {KIND_FILTERS.map((k) => <Pill key={k} on={kinds.has(k)} dot={kindColor(t, k)} onClick={() => toggleKind(k)}>{KIND_META[k].label}</Pill>)}
           <Pill on={awaitingOnly} dot={kindColor(t, "reimbursement")} onClick={() => setAwaitingOnly((v) => !v)}>Awaiting reimbursement</Pill>
+          {awaitingOnly && <span style={{ fontSize: 11.5, color: t.faint }}>All dates</span>}
           {(kinds.size > 0 || awaitingOnly) && <Pill onClick={() => { setKinds(new Set()); setAwaitingOnly(false); }}>Clear</Pill>}
           <div style={{ marginLeft: "auto", display: "flex", gap: 14, fontSize: 12.5, flexShrink: 0 }}>
             <span style={{ color: t.dim }}>In <b style={{ color: t.income, fontFamily: t.mono }}>{(totalIn / 100).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</b></span>

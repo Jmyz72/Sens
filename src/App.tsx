@@ -63,6 +63,7 @@ export default function App() {
   const [version, setVersion] = useState(0);
   const [showTxn, setShowTxn] = useState(false);
   const [txnAccountId, setTxnAccountId] = useState<string | null>(null);
+  const [txnAwaiting, setTxnAwaiting] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
 
   const reload = useCallback(async () => {
@@ -112,9 +113,10 @@ export default function App() {
   const portfolioSummary = useMemo(() => sidebarPortfolioSummary(accounts), [accounts]);
   const activeAccountCount = useMemo(() => accounts.filter((a) => !a.isArchived).length, [accounts]);
   const activeCategoryCount = useMemo(() => categories.filter((c) => !c.isArchived).length, [categories]);
-  const go = (id: string, opts?: { accountId?: string }) => {
+  const go = (id: string, opts?: { accountId?: string; awaiting?: boolean }) => {
     setActive(id as ScreenId);
     setTxnAccountId(opts?.accountId ?? null);
+    setTxnAwaiting(opts?.awaiting ?? false);
     if (scroller.current) scroller.current.scrollTop = 0;
   };
   const navCount = (id: ScreenId) => {
@@ -152,7 +154,7 @@ export default function App() {
           <div ref={scroller} style={{ flex: 1, overflow: "auto", padding: 24 }}>
             {active === "dashboard" && <Dashboard month={month} go={go} />}
             {active === "accounts" && <Accounts go={go} />}
-            {active === "transactions" && <Transactions initialAccountId={txnAccountId} />}
+            {active === "transactions" && <Transactions initialAccountId={txnAccountId} initialAwaiting={txnAwaiting} />}
             {active === "categories" && <Categories />}
             {active === "settings" && <Settings updater={updater} />}
           </div>
