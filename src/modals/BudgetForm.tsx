@@ -9,6 +9,7 @@ import { Btn, Field, Modal, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { useAppData } from "../store";
+import { parseSliceBudgetField } from "../lib/budgetAmount";
 
 /** Parse a typed amount into non-negative cents (allows 0). Null if blank/invalid. */
 function parseMagnitude(input: string): number | null {
@@ -99,15 +100,20 @@ export function BudgetForm({
 
   async function save() {
     if (!canSave || parentCents == null) return;
+    const items: BudgetWrite[] = [{ categoryId: selectedId, amountCents: parentCents }];
+    for (const child of children) {
+      const parsed = parseSliceBudgetField(amounts[child.id] ?? "");
+      if (parsed.kind === "invalid") {
+        setError("Enter a valid amount for each subcategory, or leave the field blank.");
+        return;
+      }
+      items.push({
+        categoryId: child.id,
+        amountCents: parsed.kind === "unset" ? null : parsed.cents,
+      });
+    }
     setBusy(true);
     setError(null);
-    const items: BudgetWrite[] = [
-      { categoryId: selectedId, amountCents: parentCents },
-      ...children.map((child) => ({
-        categoryId: child.id,
-        amountCents: parseMagnitude(amounts[child.id] ?? ""),
-      })),
-    ];
     try {
       await client.setBudgets(items);
       await reload();
