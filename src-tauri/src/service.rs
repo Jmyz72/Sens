@@ -20,14 +20,16 @@ struct Leg {
 }
 
 /// The single canonical sign rule: turn a transaction header into balanced legs.
-/// `amount_cents` is positive for income/expense/transfer and already-signed for
-/// adjustment/opening. The legs always sum to zero.
+/// `amount_cents` is positive for income/expense/transfer/reimbursement and
+/// already-signed for adjustment/opening. The legs always sum to zero.
 fn postings_for(kind: &str, account_id: &str, to_account_id: Option<&str>, amount_cents: i64) -> Vec<Leg> {
     let real = |amt: i64| Leg { account_id: Some(account_id.to_string()), system_bucket: None, amount_cents: amt };
     let bucket = |b: &'static str, amt: i64| Leg { account_id: None, system_bucket: Some(b), amount_cents: amt };
     match kind {
         KIND_INCOME => vec![real(amount_cents), bucket("income", -amount_cents)],
         KIND_EXPENSE => vec![real(-amount_cents), bucket("expense", amount_cents)],
+        // Money back for spending: the expense bucket shrinks as the account grows.
+        KIND_REIMBURSEMENT => vec![real(amount_cents), bucket("expense", -amount_cents)],
         KIND_TRANSFER | KIND_PAYMENT => vec![
             real(-amount_cents),
             Leg { account_id: to_account_id.map(|s| s.to_string()), system_bucket: None, amount_cents },
@@ -632,6 +634,146 @@ pub fn create_payment(
     Ok(t)
 }
 
+/// Validate a reimbursement's allocations against its amount and the expenses
+/// they repay. `except_reimbursement_id` is the reimbursement being edited, so
+/// its own existing links do not count as already used.
+fn validate_allocations(
+    conn: &Connection,
+    amount_cents: i64,
+    allocations: &[Allocation],
+    except_reimbursement_id: Option<&str>,
+) -> AppResult<()> {
+    if allocations.is_empty() {
+        return Err(AppError::Validation("Pick at least one expense to reimburse.".into()));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut sum = 0i64;
+    for a in allocations {
+        if a.amount_cents <= 0 {
+            return Err(AppError::Validation("Each allocation must be greater than zero.".into()));
+        }
+        if !seen.insert(a.expense_id.as_str()) {
+            return Err(AppError::Validation("An expense can only be listed once.".into()));
+        }
+        let expense = match repo::get_transaction(conn, &a.expense_id) {
+            Ok(t) => t,
+            Err(AppError::NotFound(_)) => {
+                return Err(AppError::Validation("Only expenses can be reimbursed.".into()))
+            }
+            Err(other) => return Err(other),
+        };
+        if !is_plain_expense(conn, &expense)? {
+            return Err(AppError::Validation("Only expenses can be reimbursed.".into()));
+        }
+        let used = repo::allocated_total_for_expense(conn, &a.expense_id, except_reimbursement_id)?;
+        // `a.amount_cents` is client-supplied, so compare without adding (no overflow).
+        if a.amount_cents > expense.amount_cents.saturating_sub(used) {
+            return Err(AppError::Validation("Allocation exceeds what's left on that expense.".into()));
+        }
+        sum = match sum.checked_add(a.amount_cents) {
+            Some(v) => v,
+            None => return Err(AppError::Validation("Allocations must add up to the reimbursement amount.".into())),
+        };
+    }
+    if sum != amount_cents {
+        return Err(AppError::Validation("Allocations must add up to the reimbursement amount.".into()));
+    }
+    Ok(())
+}
+
+/// An expense that is not a balance correction (those sit in a system category).
+fn is_plain_expense(conn: &Connection, t: &Transaction) -> AppResult<bool> {
+    if t.kind != KIND_EXPENSE {
+        return Ok(false);
+    }
+    match t.category_id.as_deref() {
+        Some(cid) => Ok(!repo::get_category(conn, cid)?.is_system),
+        None => Ok(true),
+    }
+}
+
+pub fn create_reimbursement(
+    conn: &Connection,
+    account_id: &str,
+    amount_cents: i64,
+    description: Option<&str>,
+    date: &str,
+    time: Option<&str>,
+    allocations: Vec<Allocation>,
+) -> AppResult<Transaction> {
+    validate_positive(amount_cents)?;
+    ensure_active_account(conn, account_id, "selected")?;
+    let time = resolve_time(conn, time, None)?;
+    let tx = conn.unchecked_transaction()?;
+    validate_allocations(&tx, amount_cents, &allocations, None)?;
+    let t = repo::insert_transaction(
+        &tx, &new_id(), KIND_REIMBURSEMENT, account_id, None, None,
+        amount_cents, description, date, time.as_deref(), false, &now(),
+    )?;
+    for a in &allocations {
+        repo::insert_allocation(&tx, &new_id(), &t.id, &a.expense_id, a.amount_cents, &now())?;
+    }
+    materialize_postings(&tx, &t)?;
+    tx.commit()?;
+    repo::get_transaction(conn, &t.id)
+}
+
+pub fn update_reimbursement(
+    conn: &Connection,
+    id: &str,
+    account_id: &str,
+    amount_cents: i64,
+    description: Option<&str>,
+    date: &str,
+    time: Option<&str>,
+    allocations: Vec<Allocation>,
+) -> AppResult<Transaction> {
+    let existing = repo::get_transaction(conn, id)?;
+    if existing.kind != KIND_REIMBURSEMENT {
+        return Err(AppError::Validation("Only reimbursements can be edited here.".into()));
+    }
+    validate_positive(amount_cents)?;
+    ensure_active_account(conn, account_id, "selected")?;
+    let time = resolve_time(conn, time, existing.transaction_time.clone())?;
+    let tx = conn.unchecked_transaction()?;
+    validate_allocations(&tx, amount_cents, &allocations, Some(id))?;
+    let t = repo::update_transaction_row(
+        &tx, id, KIND_REIMBURSEMENT, account_id, None, None,
+        amount_cents, description, date, time.as_deref(), false, None, &now(),
+    )?;
+    repo::delete_allocations_for(&tx, id)?;
+    for a in &allocations {
+        repo::insert_allocation(&tx, &new_id(), id, &a.expense_id, a.amount_cents, &now())?;
+    }
+    materialize_postings(&tx, &t)?;
+    tx.commit()?;
+    repo::get_transaction(conn, id)
+}
+
+pub fn set_expected_reimbursement(
+    conn: &Connection,
+    expense_id: &str,
+    expected_cents: Option<i64>,
+) -> AppResult<Transaction> {
+    let expense = repo::get_transaction(conn, expense_id)?;
+    if !is_plain_expense(conn, &expense)? {
+        return Err(AppError::Validation("Only expenses can expect a reimbursement.".into()));
+    }
+    if let Some(n) = expected_cents {
+        if n <= 0 || n > expense.amount_cents {
+            return Err(AppError::Validation(
+                "Expected reimbursement must be more than zero and no more than the expense amount.".into(),
+            ));
+        }
+    }
+    repo::set_expected_reimbursement(conn, expense_id, expected_cents, &now())?;
+    repo::get_transaction(conn, expense_id)
+}
+
+pub fn get_awaiting_reimbursement(conn: &Connection) -> AppResult<AwaitingReimbursement> {
+    repo::awaiting_reimbursement(conn)
+}
+
 pub fn list_transactions(conn: &Connection, filters: TransactionFilters) -> AppResult<Vec<Transaction>> {
     repo::list_transactions(conn, &filters)
 }
@@ -646,6 +788,9 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
     if existing.kind == KIND_ADJUSTMENT || input.kind == KIND_ADJUSTMENT {
         return Err(AppError::Validation("Adjustments cannot be edited; delete it and reconcile again".into()));
     }
+    if existing.kind == KIND_REIMBURSEMENT || input.kind == KIND_REIMBURSEMENT {
+        return Err(AppError::Validation("Edit a reimbursement from its own form.".into()));
+    }
     // Corrections booked as income/expense carry a protected (system) category.
     // They are structural like adjustments — edit by deleting and reconciling.
     if let Some(cid) = existing.category_id.as_deref() {
@@ -655,6 +800,19 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
     }
     validate_positive(input.amount_cents)?;
     ensure_active_account(conn, &input.account_id, "selected")?;
+    // A reimbursed expense stays an expense, and cannot drop below what is already repaid.
+    if existing.reimbursed_cents > 0 {
+        if input.kind != KIND_EXPENSE {
+            return Err(AppError::Conflict(
+                "This expense has been reimbursed. Edit or delete the reimbursement first.".into(),
+            ));
+        }
+        if input.amount_cents < existing.reimbursed_cents {
+            return Err(AppError::Validation(
+                "Amount can't go below what's already been reimbursed.".into(),
+            ));
+        }
+    }
 
     let (to_account_id, category_id) = match input.kind.as_str() {
         KIND_INCOME | KIND_EXPENSE => match &input.splits {
@@ -713,6 +871,12 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
     };
 
     let excluded = matches!(input.kind.as_str(), KIND_INCOME | KIND_EXPENSE) && input.excluded_from_reporting;
+    // The expectation survives an expense edit (clamped to the new amount) and is
+    // cleared when the row stops being an expense, so the table CHECK still holds.
+    let expected = match existing.expected_reimbursement_cents {
+        Some(n) if input.kind == KIND_EXPENSE => Some(n.min(input.amount_cents)),
+        _ => None,
+    };
 
     let time = resolve_time(conn, input.transaction_time.as_deref(), existing.transaction_time.clone())?;
 
@@ -729,6 +893,7 @@ pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> A
         &input.transaction_date,
         time.as_deref(),
         excluded,
+        expected,
         &now(),
     )?;
     repo::delete_splits_for(&dbtx, &input.id)?;
@@ -748,6 +913,11 @@ pub fn delete_transaction(conn: &Connection, id: &str) -> AppResult<()> {
     let existing = repo::get_transaction(conn, id)?;
     if existing.kind == KIND_OPENING {
         return Err(AppError::Validation("The opening balance can't be deleted".into()));
+    }
+    if existing.reimbursed_cents > 0 {
+        return Err(AppError::Conflict(
+            "This expense has been reimbursed. Edit or delete the reimbursement first.".into(),
+        ));
     }
     repo::delete_transaction(conn, id)
 }
@@ -779,12 +949,11 @@ pub fn get_account_balances(conn: &Connection) -> AppResult<Vec<AccountBalance>>
     repo::account_balances(conn)
 }
 
-/// Build the dashboard summary for a `YYYY-MM` month. Income/expense/cashflow
-/// and the spending breakdown exclude transfers and adjustments.
+/// Build the dashboard summary for a `YYYY-MM` month. Income/expense/cashflow and the spending breakdown exclude transfers, payments, reimbursements, and adjustments; expenses count net of their reimbursements.
 pub fn get_dashboard_summary(conn: &Connection, month: &str) -> AppResult<DashboardSummary> {
     let (from, to) = month_range(month)?;
     let income = repo::sum_kind_in_range(conn, KIND_INCOME, &from, &to)?;
-    let expense = repo::sum_kind_in_range(conn, KIND_EXPENSE, &from, &to)?;
+    let expense = repo::sum_expense_net_in_range(conn, &from, &to)?;
     let balances = repo::account_balances(conn)?;
     let assets_cents: i64 = balances.iter().filter(|b| b.group == "own").map(|b| b.balance_cents).sum();
     let liabilities_cents: i64 = balances.iter().filter(|b| b.group == "owe").map(|b| b.balance_cents).sum();

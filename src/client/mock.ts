@@ -14,9 +14,11 @@ import type {
   CategoryBreakdown,
   DashboardSummary,
   Transaction,
+  TxnAllocation,
 } from "../types";
 import catalog from "../generated/seed-catalog.json";
 import { postingsFor } from "../lib/kinds";
+import { apportion } from "../lib/reimbursements";
 
 const fail = (code: string, message: string): never => {
   throw { code, message };
@@ -129,6 +131,54 @@ function validateSplits(kind: string, splits: { categoryId: string; amountCents:
 
 const accounts: Account[] = [];
 const txns: Transaction[] = [];
+
+// Reimbursement links, mirroring the `reimbursement_allocations` table. Each
+// Transaction's `reimbursedCents` / `allocations` are derived from these.
+interface AllocRow { id: string; reimbursementId: string; expenseId: string; amountCents: number }
+const allocs: AllocRow[] = [];
+
+const reimbDefaults = () => ({
+  expectedReimbursementCents: null as number | null,
+  reimbursedCents: 0,
+  allocations: [] as TxnAllocation[],
+});
+
+function syncDerived() {
+  for (const t of txns) {
+    t.reimbursedCents = allocs.filter((a) => a.expenseId === t.id).reduce((s, a) => s + a.amountCents, 0);
+    t.allocations = t.kind === "reimbursement"
+      ? allocs.filter((a) => a.reimbursementId === t.id).map((a) => ({ expenseId: a.expenseId, amountCents: a.amountCents }))
+      : [];
+  }
+}
+
+const allocatedOn = (expenseId: string, exceptReimbursementId?: string) =>
+  allocs
+    .filter((a) => a.expenseId === expenseId && a.reimbursementId !== exceptReimbursementId)
+    .reduce((s, a) => s + a.amountCents, 0);
+
+// Mirrors Rust service::is_plain_expense: an expense that is not a balance correction.
+const isPlainExpense = (t: Transaction) =>
+  t.kind === "expense" && !categories.find((c) => c.id === t.categoryId)?.isSystem;
+
+// Mirrors Rust service::validate_allocations.
+function validateAllocations(amountCents: number, list: TxnAllocation[], exceptReimbursementId?: string): void {
+  if (!Array.isArray(list) || list.length === 0) return fail("ValidationError", "Pick at least one expense to reimburse.");
+  const seen = new Set<string>();
+  let sum = 0;
+  for (const l of list) {
+    if (l.amountCents <= 0) return fail("ValidationError", "Each allocation must be greater than zero.");
+    if (seen.has(l.expenseId)) return fail("ValidationError", "An expense can only be listed once.");
+    seen.add(l.expenseId);
+    const e = txns.find((t) => t.id === l.expenseId);
+    if (!e || !isPlainExpense(e)) return fail("ValidationError", "Only expenses can be reimbursed.");
+    if (l.amountCents > e.amountCents - allocatedOn(l.expenseId, exceptReimbursementId)) {
+      return fail("ValidationError", "Allocation exceeds what's left on that expense.");
+    }
+    sum += l.amountCents;
+  }
+  if (sum !== amountCents) fail("ValidationError", "Allocations must add up to the reimbursement amount.");
+}
 const settings = new Map<string, string>();
 
 function timeEnabled(): boolean {
@@ -178,14 +228,14 @@ function seedDemo() {
     const s = subtypeOf(t.defaultSubtype)!;
     const id = uid();
     accounts.push({ id, templateKey: key, name, accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: opening, creditLimitCents: null, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
-    txns.push({ id: uid(), kind: "opening", accountId: id, toAccountId: null, categoryId: null, amountCents: opening, description: "Opening balance", transactionDate: "2026-01-01", transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
+    txns.push({ id: uid(), kind: "opening", accountId: id, toAccountId: null, categoryId: null, amountCents: opening, description: "Opening balance", transactionDate: "2026-01-01", transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() });
   };
   mk("maybank", "Maybank Savings", 842000);
   mk("tng-ewallet", "Touch 'n Go", 12750);
   mk("stashaway", "StashAway", 1860000);
   const cat = (n: string) => categories.find((c) => c.name === n)!.id;
   const add = (kind: Transaction["kind"], acc: number, amt: number, catName: string | null, desc: string, date: string, to?: number) =>
-    txns.push({ id: uid(), kind, accountId: accounts[acc].id, toAccountId: to != null ? accounts[to].id : null, categoryId: catName ? cat(catName) : null, amountCents: amt, description: desc, transactionDate: date, transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
+    txns.push({ id: uid(), kind, accountId: accounts[acc].id, toAccountId: to != null ? accounts[to].id : null, categoryId: catName ? cat(catName) : null, amountCents: amt, description: desc, transactionDate: date, transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() });
   const d = (n: number) => { const x = new Date(); x.setDate(x.getDate() - n); return x.toISOString().slice(0, 10); };
   add("income", 0, 650000, "Salary", "Salary — Acme Sdn Bhd", d(2));
   add("expense", 1, 4250, "Food", "Nasi Lemak", d(1));
@@ -197,6 +247,12 @@ function seedDemo() {
 seedDemo();
 
 export async function mockInvoke<T>(command: string, args: Record<string, unknown>): Promise<T> {
+  const result = await mockInvokeInner<T>(command, args);
+  syncDerived();
+  return result;
+}
+
+async function mockInvokeInner<T>(command: string, args: Record<string, unknown>): Promise<T> {
   const a = args as any;
   await new Promise((r) => setTimeout(r, 30)); // mimic IPC latency
   switch (command) {
@@ -211,7 +267,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       const creditLimitCents = resolveCreditLimit(s.key, a.creditLimitCents ?? null, null);
       const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, creditLimitCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
       accounts.push(acc);
-      txns.push({ id: uid(), kind: "opening", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: a.openingBalanceCents, description: "Opening balance", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
+      txns.push({ id: uid(), kind: "opening", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: a.openingBalanceCents, description: "Opening balance", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() });
       return hydrate(acc) as T;
     }
     case "list_accounts":
@@ -256,9 +312,9 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
           if (a.recordAsIncomeExpense) {
             const kind = diff > 0 ? "income" : "expense";
             const cat = categories.find((c) => c.isSystem && c.kind === kind && c.parentId == null);
-            txns.unshift({ id: uid(), kind, accountId: acc.id, toAccountId: null, categoryId: cat ? cat.id : null, amountCents: Math.abs(diff), description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
+            txns.unshift({ id: uid(), kind, accountId: acc.id, toAccountId: null, categoryId: cat ? cat.id : null, amountCents: Math.abs(diff), description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() });
           } else {
-            txns.unshift({ id: uid(), kind: "adjustment", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: diff, description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] });
+            txns.unshift({ id: uid(), kind: "adjustment", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: diff, description: "Balance adjustment", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() });
           }
         }
       }
@@ -385,6 +441,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         createdAt: now(), updatedAt: now(),
         excludedFromReporting: !!a.excludedFromReporting,
         splits: hasSplits ? a.splits.map((s: any) => ({ categoryId: s.categoryId, amountCents: s.amountCents })) : [],
+        ...reimbDefaults(),
       };
       txns.unshift(tx);
       return tx as T;
@@ -398,7 +455,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (dest.isArchived) fail("Conflict", "The destination account is archived");
       if (isPaymentDestination(dest.subtype)) fail("ValidationError", "Pay a credit card or BNPL as a payment.");
       const transactionTime = resolveTime(a.time, null);
-      const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] };
+      const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() };
       txns.unshift(tx);
       return tx as T;
     }
@@ -412,9 +469,56 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (!isPaymentDestination(dest.subtype)) fail("ValidationError", "Payments can only pay a credit card or BNPL.");
       if (!isPaymentSource(src.subtype)) fail("ValidationError", "Payments can only come from cash, an e-wallet, savings, or a current account.");
       const transactionTime = resolveTime(a.time, null);
-      const tx: Transaction = { id: uid(), kind: "payment", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [] };
+      const tx: Transaction = { id: uid(), kind: "payment", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() };
       txns.unshift(tx);
       return tx as T;
+    }
+    case "create_reimbursement_transaction": {
+      if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
+      const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
+      if (acc.isArchived) fail("Conflict", "The selected account is archived");
+      const transactionTime = resolveTime(a.time, null);
+      validateAllocations(a.amountCents, a.allocations);
+      const id = uid();
+      const tx: Transaction = { id, kind: "reimbursement", accountId: a.accountId, toAccountId: null, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() };
+      txns.unshift(tx);
+      for (const l of a.allocations as TxnAllocation[]) allocs.push({ id: uid(), reimbursementId: id, expenseId: l.expenseId, amountCents: l.amountCents });
+      return tx as T;
+    }
+    case "update_reimbursement_transaction": {
+      const i = txns.findIndex((t) => t.id === a.id);
+      if (i < 0) fail("NotFound", "Transaction not found");
+      if (txns[i].kind !== "reimbursement") fail("ValidationError", "Only reimbursements can be edited here.");
+      if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
+      const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
+      if (acc.isArchived) fail("Conflict", "The selected account is archived");
+      const transactionTime = resolveTime(a.time, txns[i].transactionTime);
+      validateAllocations(a.amountCents, a.allocations, a.id);
+      txns[i] = { ...txns[i], accountId: a.accountId, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, updatedAt: now() };
+      for (let k = allocs.length - 1; k >= 0; k--) if (allocs[k].reimbursementId === a.id) allocs.splice(k, 1);
+      for (const l of a.allocations as TxnAllocation[]) allocs.push({ id: uid(), reimbursementId: a.id, expenseId: l.expenseId, amountCents: l.amountCents });
+      return txns[i] as T;
+    }
+    case "set_expected_reimbursement": {
+      const e = txns.find((t) => t.id === a.expenseId) ?? fail("NotFound", "Transaction not found");
+      if (!isPlainExpense(e)) fail("ValidationError", "Only expenses can expect a reimbursement.");
+      const n: number | null = a.expectedCents ?? null;
+      if (n != null && (n <= 0 || n > e.amountCents)) {
+        fail("ValidationError", "Expected reimbursement must be more than zero and no more than the expense amount.");
+      }
+      e.expectedReimbursementCents = n;
+      e.updatedAt = now();
+      return e as T;
+    }
+    case "get_awaiting_reimbursement": {
+      let count = 0;
+      let totalCents = 0;
+      for (const t of txns) {
+        if (t.kind !== "expense" || t.expectedReimbursementCents == null) continue;
+        const outstanding = t.expectedReimbursementCents - allocatedOn(t.id);
+        if (outstanding > 0) { count += 1; totalCents += outstanding; }
+      }
+      return { count, totalCents } as T;
     }
     case "list_transactions": {
       const f = a.filters ?? {};
@@ -433,6 +537,12 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (i < 0) fail("NotFound", "Transaction not found");
       if (txns[i].kind === "opening" || a.input.kind === "opening") fail("ValidationError", "The opening balance can't be edited here; change it from the account's opening balance field");
       if (txns[i].kind === "adjustment" || a.input.kind === "adjustment") fail("ValidationError", "Adjustments cannot be edited; delete it and reconcile again");
+      if (txns[i].kind === "reimbursement" || a.input.kind === "reimbursement") fail("ValidationError", "Edit a reimbursement from its own form.");
+      const reimbursed = allocatedOn(txns[i].id);
+      if (reimbursed > 0) {
+        if (a.input.kind !== "expense") fail("Conflict", "This expense has been reimbursed. Edit or delete the reimbursement first.");
+        if (a.input.amountCents < reimbursed) fail("ValidationError", "Amount can't go below what's already been reimbursed.");
+      }
       const exCat = categories.find((x) => x.id === txns[i].categoryId);
       if (exCat?.isSystem) fail("ValidationError", "Balance corrections can't be edited; delete it and reconcile again");
       if ((a.input.kind === "income" || a.input.kind === "expense") && a.input.categoryId) {
@@ -460,14 +570,20 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       if (hasSplits) validateSplits(a.input.kind, a.input.splits, a.input.amountCents);
       const splits = a.input.kind === "payment" ? [] : hasSplits ? a.input.splits.map((s: any) => ({ categoryId: s.categoryId, amountCents: s.amountCents })) : [];
       const categoryId = a.input.kind === "payment" ? null : hasSplits ? a.input.splits[0].categoryId : a.input.categoryId;
-      txns[i] = { ...txns[i], ...a.input, categoryId, transactionTime, excludedFromReporting: excluded, splits, updatedAt: now() };
+      const prevExpected = txns[i].expectedReimbursementCents;
+      const expectedReimbursementCents = a.input.kind === "expense" && prevExpected != null ? Math.min(prevExpected, a.input.amountCents) : null;
+      txns[i] = { ...txns[i], ...a.input, categoryId, transactionTime, excludedFromReporting: excluded, splits, expectedReimbursementCents, updatedAt: now() };
       return txns[i] as T;
     }
     case "delete_transaction": {
       const i = txns.findIndex((t) => t.id === a.id);
       if (i < 0) fail("NotFound", "Transaction not found");
       if (txns[i].kind === "opening") fail("ValidationError", "The opening balance can't be deleted");
-      txns.splice(i, 1);
+      if (allocatedOn(txns[i].id) > 0) fail("Conflict", "This expense has been reimbursed. Edit or delete the reimbursement first.");
+      const [removed] = txns.splice(i, 1);
+      if (removed.kind === "reimbursement") {
+        for (let k = allocs.length - 1; k >= 0; k--) if (allocs[k].reimbursementId === removed.id) allocs.splice(k, 1);
+      }
       return undefined as T;
     }
     case "get_account_balances":
@@ -482,19 +598,26 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
       const to = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
       const inRange = (t: Transaction) => t.transactionDate >= from && t.transactionDate < to;
       const income = txns.filter((t) => t.kind === "income" && !t.excludedFromReporting && inRange(t)).reduce((s, t) => s + t.amountCents, 0);
-      const expense = txns.filter((t) => t.kind === "expense" && !t.excludedFromReporting && inRange(t)).reduce((s, t) => s + t.amountCents, 0);
+      const inRangeExpenses = txns.filter((t) => t.kind === "expense" && !t.excludedFromReporting && inRange(t));
+      const expense = inRangeExpenses.reduce((s, t) => s + t.amountCents - allocatedOn(t.id), 0);
       const parentOf = (cid: string) => categories.find((x) => x.id === cid)?.parentId ?? cid;
       const attrib: { cat: string; amt: number }[] = [];
-      txns.filter((t) => t.kind === "expense" && !t.excludedFromReporting && inRange(t)).forEach((t) => {
-        if (t.splits.length) t.splits.forEach((s) => attrib.push({ cat: s.categoryId, amt: s.amountCents }));
-        else if (t.categoryId) attrib.push({ cat: t.categoryId, amt: t.amountCents });
+      inRangeExpenses.forEach((t) => {
+        const lines = t.splits.length
+          ? t.splits.map((s) => ({ cat: s.categoryId, amt: s.amountCents }))
+          : t.categoryId ? [{ cat: t.categoryId, amt: t.amountCents }] : [];
+        const shares = apportion(allocatedOn(t.id), lines.map((l) => l.amt));
+        lines.forEach((l, k) => attrib.push({ cat: l.cat, amt: l.amt - shares[k] }));
       });
       const byCat = new Map<string, number>();
       attrib.forEach(({ cat, amt }) => { const pid = parentOf(cat); byCat.set(pid, (byCat.get(pid) ?? 0) + amt); });
-      const breakdown: CategoryBreakdown[] = [...byCat.entries()].map(([cid, total]) => {
-        const c = categories.find((x) => x.id === cid)!;
-        return { categoryId: cid, categoryName: c.name, emoji: c.emoji, color: c.color, totalCents: total };
-      }).sort((x, y) => y.totalCents - x.totalCents);
+      const breakdown: CategoryBreakdown[] = [...byCat.entries()]
+        .filter(([, total]) => total > 0)
+        .map(([cid, total]) => {
+          const c = categories.find((x) => x.id === cid)!;
+          return { categoryId: cid, categoryName: c.name, emoji: c.emoji, color: c.color, totalCents: total };
+        })
+        .sort((x, y) => y.totalCents - x.totalCents || (x.categoryName < y.categoryName ? -1 : x.categoryName > y.categoryName ? 1 : 0));
       const active = accounts.filter((x) => !x.isArchived);
       const withGroup = active.map((x) => ({ x, s: subtypeOf(x.subtype), bal: balanceOf(x) }));
       const assetsCents = withGroup.filter((r) => (r.s?.group ?? "own") === "own").reduce((sum, r) => sum + r.bal, 0);
@@ -520,6 +643,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
     case "reset_app": {
       accounts.length = 0;
       txns.length = 0;
+      allocs.length = 0;
       settings.clear();
       seedCategories();
       return undefined as T;

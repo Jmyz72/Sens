@@ -70,6 +70,12 @@ Each account stores **one classifier: `subtype`**. Everything else is derived.
 - Over-limit charges **still save**.
 - The Accounts row and expanded panel show the readout. Dashboard totals do not.
 
+## Money lent (`lent`)
+
+The `lent` subtype (type `receivable`, group `own`) is an ordinary signed asset. You lend by transferring
+into it and are repaid by transferring out; neither is income or an expense. A positive balance reads
+**"Owes you"** on the Accounts row (`lentLabel` in `src/lib/accounts.ts`).
+
 ## Frontend helpers
 
 - `TYPE_LABEL`, `TYPE_ORDER`, `balanceDisplay`, `toneColor`, `creditReadout` live in `src/lib/accounts.ts`.

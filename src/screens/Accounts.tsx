@@ -20,7 +20,7 @@ import { EditAccount } from "../modals/EditAccount";
 import { AddAccount } from "../modals/AddAccount";
 import { AddTransaction } from "../modals/AddTransaction";
 import { ProviderLogo } from "../components/ProviderLogo";
-import { balanceDisplay, creditReadout, toneColor, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
+import { balanceDisplay, creditReadout, lentLabel, toneColor, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
 import { useToast } from "../components/Toast";
 import { computeRunningBalances, txnSortKey } from "../lib/kinds";
 import { fmtDate, fmtMoney, todayISO } from "../lib/format";
@@ -148,6 +148,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
                 const st = stats.get(a.id);
                 const txns = txnsByAccount.get(a.id) ?? [];
                 const v = balanceDisplay(a.group, a.balanceCents);
+                const rowLabel = v.label ?? lentLabel(a.subtype, a.balanceCents);
                 const readout = a.creditLimitCents != null && a.creditLimitCents > 0
                   ? creditReadout(a.balanceCents, a.creditLimitCents)
                   : null;
@@ -177,7 +178,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
                       </div>
                       {sparkPoints.length >= 2 && <Sparkline points={sparkPoints} color={trendColor} fill width={64} height={28} />}
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                        {v.label && <span style={{ fontSize: 10, color: t.faint }}>{v.label}</span>}
+                        {rowLabel && <span style={{ fontSize: 10, color: t.faint }}>{rowLabel}</span>}
                         <Money cents={v.magnitude} size={15} color={toneColor(v.tone, t)} />
                         {st && <Delta cents={st.monthChangeCents} t={t} />}
                         {readout && (

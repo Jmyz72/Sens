@@ -29,6 +29,7 @@ export function TxnSelectionPanel({
   const others = [
     s.otherCounts.transfer && `${s.otherCounts.transfer} transfer`,
     s.otherCounts.payment && `${s.otherCounts.payment} payment`,
+    s.otherCounts.reimbursement && `${s.otherCounts.reimbursement} reimbursement`,
     s.otherCounts.adjustment && `${s.otherCounts.adjustment} adjustment`,
     s.otherCounts.opening && `${s.otherCounts.opening} opening`,
   ]

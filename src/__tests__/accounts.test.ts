@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { balanceDisplay, sidebarPortfolioSummary, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
+import { balanceDisplay, lentLabel, sidebarPortfolioSummary, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
 import type { Account } from "../types";
 
 describe("balanceDisplay", () => {
@@ -50,5 +50,15 @@ describe("sidebarPortfolioSummary", () => {
       liabilitiesCents: 0,
       netWorthCents: 120000,
     });
+  });
+});
+
+describe("lentLabel", () => {
+  it("reads 'Owes you' for a lent account that is owed money", () => {
+    expect(lentLabel("lent", 50_000)).toBe("Owes you");
+  });
+  it("is absent for a settled lent account and for every other subtype", () => {
+    expect(lentLabel("lent", 0)).toBeNull();
+    expect(lentLabel("savings", 50_000)).toBeNull();
   });
 });

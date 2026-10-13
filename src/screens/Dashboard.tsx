@@ -4,9 +4,9 @@
 // adjustments, opening, and non-cashflow rows (the backend enforces this).
 
 import { useEffect, useMemo, useState } from "react";
-import type { DashboardSummary } from "../types";
+import type { AwaitingReimbursement, DashboardSummary } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
-import { Card, Empty, Money, SectionTitle } from "../components/ui";
+import { Card, Empty, GlyphTile, Money, SectionTitle } from "../components/ui";
 import { TxnRow } from "../components/TxnRow";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { Icon } from "../components/Icon";
@@ -86,10 +86,11 @@ function DashboardSkeleton() {
   );
 }
 
-export function Dashboard({ month, go }: { month: string; go: (screen: string) => void }) {
+export function Dashboard({ month, go }: { month: string; go: (screen: string, opts?: { awaiting?: boolean }) => void }) {
   const t = useTheme();
   const { accounts, categories, version } = useAppData();
   const [data, setData] = useState<DashboardSummary | null>(null);
+  const [awaiting, setAwaiting] = useState<AwaitingReimbursement | null>(null);
   const { notify } = useToast();
 
   // accountId → templateKey, so dashboard account tiles can show provider logos
@@ -105,6 +106,10 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string) =
       notify((err instanceof Error ? err.message : null) ?? "Could not load dashboard", "error");
     });
   }, [month, version, notify]);
+
+  useEffect(() => {
+    client.getAwaitingReimbursement().then(setAwaiting).catch(() => setAwaiting(null));
+  }, [version]);
 
   if (!data) return <DashboardSkeleton />;
   const empty = accounts.length === 0;
@@ -152,6 +157,22 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string) =
           </div>
         </div>
       </Card>
+
+      {awaiting && awaiting.count > 0 && (
+        <Card pad={16}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <GlyphTile tone={t.transfer} size={36} icon="reimburse" />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600 }}>Awaiting reimbursement</div>
+              <div style={{ fontSize: 11.5, color: t.faint }}>
+                {awaiting.count} expense{awaiting.count === 1 ? "" : "s"} · not counted in net worth
+              </div>
+            </div>
+            <Money cents={awaiting.totalCents} size={16} weight={700} />
+            <span className="sens-link" style={{ fontSize: 12.5, fontWeight: 600 }} onClick={() => go("transactions", { awaiting: true })}>View</span>
+          </div>
+        </Card>
+      )}
 
       {/* Spending — full width */}
       <Card>

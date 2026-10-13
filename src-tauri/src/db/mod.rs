@@ -184,6 +184,9 @@ pub fn reset_to_defaults(conn: &Connection) -> AppResult<()> {
         // (CASCADE) and accounts (RESTRICT); transactions reference accounts +
         // categories; categories self-reference via parent_id. Delete postings
         // first so the accounts delete below isn't blocked by the RESTRICT FK.
+        // reimbursement_allocations.expense_id is ON DELETE RESTRICT, so the links
+        // must go before the transactions they reference.
+        conn.execute("DELETE FROM reimbursement_allocations", [])?;
         conn.execute("DELETE FROM postings", [])?;
         conn.execute("DELETE FROM transactions", [])?;
         conn.execute("DELETE FROM categories WHERE parent_id IS NOT NULL", [])?;
@@ -508,5 +511,87 @@ mod migration_tests {
             [],
         );
         assert!(rejected.is_err(), "a payment cannot carry a category");
+    }
+
+    #[test]
+    fn migration_012_copies_rows_and_adds_reimbursements() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        let apply = |sql: &str| {
+            conn.execute_batch("BEGIN").unwrap();
+            conn.execute_batch(sql).unwrap();
+            conn.execute_batch("COMMIT").unwrap();
+        };
+        for i in 0..11 {
+            apply(MIGRATIONS[i].1);
+        }
+        apply(
+            "INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at)
+               VALUES ('src', NULL, 'Savings', 'savings', 'MYR', 0, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'),
+                      ('card', NULL, 'Visa', 'credit-card', 'MYR', 0, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+             INSERT INTO categories (id, name, kind, emoji, sort_order, is_system, is_archived, created_at, updated_at)
+               VALUES ('c1', 'Food', 'expense', '🍜', 0, 0, 0, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+             INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, transaction_time, created_at, updated_at)
+               VALUES ('xfer', 'payment', 'src', 'card', NULL, 4000, 'Pay', '2026-02-01', 0, NULL, '2026-02-01T00:00:00+00:00', '2026-02-01T00:00:00+00:00'),
+                      ('exp', 'expense', 'src', NULL, 'c1', 1500, 'Lunch', '2026-02-02', 0, NULL, '2026-02-02T00:00:00+00:00', '2026-02-02T00:00:00+00:00');
+             INSERT INTO postings (id, transaction_id, account_id, system_bucket, amount_cents)
+               VALUES ('p1', 'xfer', 'src', NULL, -4000), ('p2', 'xfer', 'card', NULL, 4000);
+             INSERT INTO transaction_splits (id, transaction_id, category_id, amount_cents, sort_order, created_at)
+               VALUES ('s1', 'exp', 'c1', 1500, 0, '2026-02-02T00:00:00+00:00');",
+        );
+        apply(MIGRATIONS[11].1);
+
+        let kind: String = conn.query_row("SELECT kind FROM transactions WHERE id='xfer'", [], |r| r.get(0)).unwrap();
+        assert_eq!(kind, "payment");
+        let postings: i64 = conn.query_row("SELECT COUNT(*) FROM postings WHERE transaction_id='xfer'", [], |r| r.get(0)).unwrap();
+        assert_eq!(postings, 2);
+        let splits: i64 = conn.query_row("SELECT COUNT(*) FROM transaction_splits WHERE transaction_id='exp'", [], |r| r.get(0)).unwrap();
+        assert_eq!(splits, 1);
+        let expected: Option<i64> = conn.query_row("SELECT expected_reimbursement_cents FROM transactions WHERE id='exp'", [], |r| r.get(0)).unwrap();
+        assert_eq!(expected, None);
+
+        let insert = |id: &str, kind: &str, to: &str, cat: &str| {
+            conn.execute(
+                &format!(
+                    "INSERT INTO transactions (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, transaction_time, created_at, updated_at)
+                     VALUES ('{id}', '{kind}', 'src', {to}, {cat}, 1000, NULL, '2026-03-01', 0, NULL, '2026-03-01T00:00:00+00:00', '2026-03-01T00:00:00+00:00')"
+                ),
+                [],
+            )
+        };
+        insert("re1", "reimbursement", "NULL", "NULL").unwrap();
+        assert!(insert("bad1", "reimbursement", "NULL", "'c1'").is_err(), "a reimbursement cannot carry a category");
+        assert!(insert("bad2", "reimbursement", "'card'", "NULL").is_err(), "a reimbursement cannot carry a destination");
+
+        conn.execute("UPDATE transactions SET expected_reimbursement_cents = 1500 WHERE id='exp'", []).unwrap();
+        assert!(
+            conn.execute("UPDATE transactions SET expected_reimbursement_cents = 1501 WHERE id='exp'", []).is_err(),
+            "expectation cannot exceed the expense amount"
+        );
+        assert!(
+            conn.execute("UPDATE transactions SET expected_reimbursement_cents = 100 WHERE id='xfer'", []).is_err(),
+            "only an expense can carry an expectation"
+        );
+
+        conn.execute(
+            "INSERT INTO reimbursement_allocations (id, reimbursement_id, expense_id, amount_cents, created_at)
+             VALUES ('a1', 're1', 'exp', 1000, '2026-03-01T00:00:00+00:00')",
+            [],
+        ).unwrap();
+        assert!(
+            conn.execute(
+                "INSERT INTO reimbursement_allocations (id, reimbursement_id, expense_id, amount_cents, created_at)
+                 VALUES ('a2', 're1', 'exp', 100, '2026-03-01T00:00:00+00:00')",
+                [],
+            ).is_err(),
+            "one reimbursement lists an expense once"
+        );
+        assert!(
+            conn.execute("DELETE FROM transactions WHERE id='exp'", []).is_err(),
+            "an expense with allocations cannot be deleted at the SQL level"
+        );
+        conn.execute("DELETE FROM transactions WHERE id='re1'", []).unwrap();
+        let left: i64 = conn.query_row("SELECT COUNT(*) FROM reimbursement_allocations", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 0, "deleting a reimbursement removes its allocations");
     }
 }
