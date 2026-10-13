@@ -830,6 +830,119 @@ pub fn recent_transactions(conn: &Connection, limit: i64) -> AppResult<Vec<Trans
     Ok(rows)
 }
 
+// ── Budgets & goals ──────────────────────────────────────────────────────────
+
+pub fn upsert_budget(
+    conn: &Connection,
+    id: &str,
+    category_id: &str,
+    effective_month: &str,
+    amount_cents: Option<i64>,
+    now: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO category_budgets (id, category_id, effective_month, amount_cents, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(category_id, effective_month) DO UPDATE SET amount_cents = excluded.amount_cents",
+        params![id, category_id, effective_month, amount_cents, now],
+    )?;
+    Ok(())
+}
+
+pub fn list_budget_versions(conn: &Connection) -> AppResult<Vec<(String, String, Option<i64>)>> {
+    let mut stmt = conn.prepare(
+        "SELECT category_id, effective_month, amount_cents FROM category_budgets ORDER BY effective_month, category_id",
+    )?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone)]
+pub struct GoalRow {
+    pub id: String,
+    pub name: String,
+    pub account_id: String,
+    pub target_cents: i64,
+    pub target_date: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+fn map_goal(r: &Row) -> rusqlite::Result<GoalRow> {
+    Ok(GoalRow {
+        id: r.get("id")?,
+        name: r.get("name")?,
+        account_id: r.get("account_id")?,
+        target_cents: r.get("target_cents")?,
+        target_date: r.get("target_date")?,
+        created_at: r.get("created_at")?,
+        updated_at: r.get("updated_at")?,
+    })
+}
+
+pub fn insert_goal(
+    conn: &Connection,
+    id: &str,
+    name: &str,
+    account_id: &str,
+    target_cents: i64,
+    target_date: Option<&str>,
+    now: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO savings_goals (id, name, account_id, target_cents, target_date, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+        params![id, name, account_id, target_cents, target_date, now],
+    )?;
+    Ok(())
+}
+
+pub fn update_goal(
+    conn: &Connection,
+    id: &str,
+    name: &str,
+    account_id: &str,
+    target_cents: i64,
+    target_date: Option<&str>,
+    now: &str,
+) -> AppResult<()> {
+    let n = conn.execute(
+        "UPDATE savings_goals SET name = ?2, account_id = ?3, target_cents = ?4, target_date = ?5, updated_at = ?6 WHERE id = ?1",
+        params![id, name, account_id, target_cents, target_date, now],
+    )?;
+    if n == 0 {
+        return Err(AppError::NotFound("Goal not found".into()));
+    }
+    Ok(())
+}
+
+pub fn delete_goal(conn: &Connection, id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM savings_goals WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+pub fn get_goal(conn: &Connection, id: &str) -> AppResult<GoalRow> {
+    conn.query_row("SELECT * FROM savings_goals WHERE id = ?1", [id], map_goal).map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Goal not found".into()),
+        other => other.into(),
+    })
+}
+
+pub fn goal_for_account(conn: &Connection, account_id: &str) -> AppResult<Option<GoalRow>> {
+    let result = conn.query_row(
+        "SELECT * FROM savings_goals WHERE account_id = ?1",
+        [account_id],
+        map_goal,
+    );
+    match result {
+        Ok(row) => Ok(Some(row)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
 // ── App Settings ─────────────────────────────────────────────────────────────
 
 pub fn get_setting(conn: &Connection, key: &str) -> AppResult<Option<String>> {

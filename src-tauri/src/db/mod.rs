@@ -186,6 +186,8 @@ pub fn reset_to_defaults(conn: &Connection) -> AppResult<()> {
         // first so the accounts delete below isn't blocked by the RESTRICT FK.
         // reimbursement_allocations.expense_id is ON DELETE RESTRICT, so the links
         // must go before the transactions they reference.
+        conn.execute("DELETE FROM savings_goals", [])?;
+        conn.execute("DELETE FROM category_budgets", [])?;
         conn.execute("DELETE FROM reimbursement_allocations", [])?;
         conn.execute("DELETE FROM postings", [])?;
         conn.execute("DELETE FROM transactions", [])?;
@@ -593,5 +595,57 @@ mod migration_tests {
         conn.execute("DELETE FROM transactions WHERE id='re1'", []).unwrap();
         let left: i64 = conn.query_row("SELECT COUNT(*) FROM reimbursement_allocations", [], |r| r.get(0)).unwrap();
         assert_eq!(left, 0, "deleting a reimbursement removes its allocations");
+    }
+
+    #[test]
+    fn migration_013_creates_budgets_and_goals() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        let apply = |sql: &str| {
+            conn.execute_batch("BEGIN").unwrap();
+            conn.execute_batch(sql).unwrap();
+            conn.execute_batch("COMMIT").unwrap();
+        };
+        for i in 0..12 {
+            apply(MIGRATIONS[i].1);
+        }
+        apply(
+            "INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at)
+               VALUES ('sav', NULL, 'Savings', 'savings', 'MYR', 0, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+             INSERT INTO categories (id, name, kind, emoji, sort_order, is_system, is_archived, created_at, updated_at)
+               VALUES ('food', 'Food', 'expense', '🍜', 0, 0, 0, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');",
+        );
+        apply(MIGRATIONS[12].1);
+
+        conn.execute(
+            "INSERT INTO category_budgets (id, category_id, effective_month, amount_cents, created_at)
+             VALUES ('b1', 'food', '2026-10', 80000, '2026-10-01T00:00:00+00:00')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO savings_goals (id, name, account_id, target_cents, target_date, created_at, updated_at)
+             VALUES ('g1', 'Emergency', 'sav', 1000000, '2027-06-01', '2026-10-01T00:00:00+00:00', '2026-10-01T00:00:00+00:00')",
+            [],
+        ).unwrap();
+        assert!(conn.execute(
+            "INSERT INTO category_budgets (id, category_id, effective_month, amount_cents, created_at)
+             VALUES ('b2', 'food', '2026-10', 1, '2026-10-01T00:00:00+00:00')",
+            [],
+        ).is_err(), "one version per category per month");
+        assert!(conn.execute(
+            "INSERT INTO category_budgets (id, category_id, effective_month, amount_cents, created_at)
+             VALUES ('b3', 'food', '2026-11', -1, '2026-10-01T00:00:00+00:00')",
+            [],
+        ).is_err(), "amount cannot be negative");
+        assert!(conn.execute(
+            "INSERT INTO savings_goals (id, name, account_id, target_cents, target_date, created_at, updated_at)
+             VALUES ('g2', 'Other', 'sav', 1, NULL, '2026-10-01T00:00:00+00:00', '2026-10-01T00:00:00+00:00')",
+            [],
+        ).is_err(), "one goal per account");
+        assert!(conn.execute(
+            "INSERT INTO savings_goals (id, name, account_id, target_cents, target_date, created_at, updated_at)
+             VALUES ('g3', 'Zero', 'sav', 0, NULL, '2026-10-01T00:00:00+00:00', '2026-10-01T00:00:00+00:00')",
+            [],
+        ).is_err(), "target must be > 0");
     }
 }
