@@ -2,7 +2,7 @@
 // All money is integer MYR cents. Field names are camelCase to match the
 // backend's serde(rename_all = "camelCase").
 
-export type TransactionKind = "income" | "expense" | "transfer" | "adjustment" | "opening" | "payment";
+export type TransactionKind = "income" | "expense" | "transfer" | "adjustment" | "opening" | "payment" | "reimbursement";
 export type CategoryKind = "income" | "expense" | "transfer";
 export type AccountGroup = "own" | "owe";
 export type AccountTypeName = "fund" | "financial" | "receivable" | "payable" | "credit";
@@ -62,6 +62,16 @@ export interface TxnSplit {
   amountCents: number;
 }
 
+export interface TxnAllocation {
+  expenseId: string;
+  amountCents: number;
+}
+
+export interface AwaitingReimbursement {
+  count: number;
+  totalCents: number;
+}
+
 export interface Transaction {
   id: string;
   kind: TransactionKind;
@@ -74,6 +84,12 @@ export interface Transaction {
   transactionTime: string | null;
   excludedFromReporting: boolean;
   splits: TxnSplit[];
+  /** Expenses only: the amount expected back, or null. */
+  expectedReimbursementCents: number | null;
+  /** Expenses only: sum of this expense's allocations. */
+  reimbursedCents: number;
+  /** Reimbursements only: the expenses this row repays. */
+  allocations: TxnAllocation[];
   createdAt: string;
   updatedAt: string;
 }

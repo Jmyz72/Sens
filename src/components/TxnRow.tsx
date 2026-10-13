@@ -9,7 +9,8 @@ import { GlyphTile, Money } from "./ui";
 import { Icon } from "./Icon";
 import { hexA } from "../theme/tokens";
 import { KIND_META, kindColor, signedFor } from "../lib/kinds";
-import { fmtDate, fmtTime } from "../lib/format";
+import { fmtDate, fmtMoney, fmtTime } from "../lib/format";
+import { reimbursementBadge } from "../lib/reimbursements";
 
 export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick, showDate = true, balanceAfterCents, density = "comfortable", selected, onToggleSelect, quickActions }: {
   tx: Transaction; accounts: Account[]; categories: Category[]; perspectiveAccountId?: string; onClick?: () => void; showDate?: boolean; balanceAfterCents?: number;
@@ -24,6 +25,7 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
   const color = kindColor(t, tx.kind);
 
   const split = tx.splits.length >= 2;
+  const badge = tx.kind === "expense" ? reimbursementBadge(tx) : null;
   const splitNames = split
     ? tx.splits.map((s) => categories.find((c) => c.id === s.categoryId)?.name ?? "—").join(" · ")
     : null;
@@ -40,6 +42,10 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
   let subtitle: string;
   if (movement) subtitle = `${accName(tx.accountId)} → ${accName(tx.toAccountId)}`;
   else if (tx.kind === "adjustment" || tx.kind === "opening") subtitle = accName(tx.accountId);
+  else if (tx.kind === "reimbursement") {
+    const n = tx.allocations.length;
+    subtitle = `${accName(tx.accountId)} · ${n} expense${n === 1 ? "" : "s"}`;
+  }
   else subtitle = split ? `${splitNames} · ${accName(tx.accountId)}` : `${cat?.name ?? ""} · ${accName(tx.accountId)}`;
 
   const isDest = perspectiveAccountId != null && tx.toAccountId === perspectiveAccountId;
@@ -49,7 +55,7 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
   const signed = !movement || perspectiveAccountId != null;
   // Structural kinds (opening/adjustment) keep their +/− sign but use their own
   // kind color — never income-green/expense-red, which would misread as cashflow.
-  const useKindColor = (movement && !signed) || tx.kind === "adjustment" || tx.kind === "opening";
+  const useKindColor = (movement && !signed) || tx.kind === "adjustment" || tx.kind === "opening" || tx.kind === "reimbursement";
 
   return (
     <div className={`sens-row${onClick ? " click" : ""}`} onClick={onClick}
@@ -81,6 +87,12 @@ export function TxnRow({ tx, accounts, categories, perspectiveAccountId, onClick
           {tx.excludedFromReporting && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, color: t.opening, background: hexA(t.opening, 0.14), padding: "1px 5px", borderRadius: 5 }}>
               <Icon name="flag" size={9} color={t.opening} stroke={2.4} /> Excluded
+            </span>
+          )}
+          {badge && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, color: t.transfer, background: hexA(t.transfer, 0.16), padding: "1px 5px", borderRadius: 5 }}>
+              <Icon name="reimburse" size={9} color={t.transfer} stroke={2.4} />
+              {badge.state === "pending" ? `${fmtMoney(badge.cents, { cents: true })} pending` : "Reimbursed"}
             </span>
           )}
         </div>

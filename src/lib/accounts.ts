@@ -44,6 +44,11 @@ export function toneColor(tone: BalanceTone, t: { text: string; negative: string
   return tone === "negative" ? t.negative : tone === "income" ? t.income : t.text;
 }
 
+/** Label for an account that holds money someone owes you (the `lent` subtype). */
+export function lentLabel(subtype: string, balanceCents: number): string | null {
+  return subtype === "lent" && balanceCents > 0 ? "Owes you" : null;
+}
+
 export interface SidebarPortfolioSummary {
   assetsCents: number;
   liabilitiesCents: number;

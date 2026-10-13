@@ -8,11 +8,13 @@ import type {
   AccountBalance,
   AccountSubtype,
   AccountTemplate,
+  AwaitingReimbursement,
   Category,
   CategoryKind,
   DashboardSummary,
   Transaction,
   TransactionFilters,
+  TxnAllocation,
   TxnSplit,
   UpdateTransactionInput,
 } from "../types";
@@ -57,6 +59,12 @@ export const client = {
     dispatch<Transaction>("create_transfer_transaction", { fromAccountId, toAccountId, amountCents, description, date, time }),
   createPayment: (fromAccountId: string, toAccountId: string, amountCents: number, description: string | null, date: string, time: string | null = null) =>
     dispatch<Transaction>("create_payment_transaction", { fromAccountId, toAccountId, amountCents, description, date, time }),
+  createReimbursement: (accountId: string, amountCents: number, allocations: TxnAllocation[], description: string | null, date: string, time: string | null = null) =>
+    dispatch<Transaction>("create_reimbursement_transaction", { accountId, amountCents, description, date, time, allocations }),
+  updateReimbursement: (id: string, accountId: string, amountCents: number, allocations: TxnAllocation[], description: string | null, date: string, time: string | null = null) =>
+    dispatch<Transaction>("update_reimbursement_transaction", { id, accountId, amountCents, description, date, time, allocations }),
+  setExpectedReimbursement: (expenseId: string, expectedCents: number | null) =>
+    dispatch<Transaction>("set_expected_reimbursement", { expenseId, expectedCents }),
   listTransactions: (filters?: TransactionFilters) =>
     dispatch<Transaction[]>("list_transactions", { filters: filters ?? null }),
   updateTransaction: (input: UpdateTransactionInput) => dispatch<Transaction>("update_transaction", { input }),
@@ -64,6 +72,7 @@ export const client = {
 
   // Dashboard
   getDashboardSummary: (month: string) => dispatch<DashboardSummary>("get_dashboard_summary", { month }),
+  getAwaitingReimbursement: () => dispatch<AwaitingReimbursement>("get_awaiting_reimbursement"),
   getAccountBalances: () => dispatch<AccountBalance[]>("get_account_balances"),
   getAccountBalance: (accountId: string) => dispatch<number>("get_account_balance", { accountId }),
 

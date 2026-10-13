@@ -48,6 +48,17 @@ describe("signedFor", () => {
     expect(KIND_META.payment.icon).toBe("card");
     expect(KIND_META.payment.colorKey).toBe("transfer");
   });
+
+  it("signs a reimbursement as money in", () => {
+    expect(signedFor("reimbursement", 10000)).toBe(10000);
+    expect(signedFor("reimbursement", 10000, true)).toBe(10000);
+  });
+
+  it("labels a reimbursement and reuses the transfer color token", () => {
+    expect(KIND_META.reimbursement.label).toBe("Reimbursement");
+    expect(KIND_META.reimbursement.icon).toBe("reimburse");
+    expect(KIND_META.reimbursement.colorKey).toBe("transfer");
+  });
 });
 
 // ── kindColor ─────────────────────────────────────────────────────────────────
@@ -132,6 +143,9 @@ const mkTx = (overrides: Partial<Transaction> & { id: string }): Transaction => 
   transactionTime: null,
   excludedFromReporting: false,
   splits: [],
+  expectedReimbursementCents: null,
+  reimbursedCents: 0,
+  allocations: [],
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
   ...overrides,
@@ -227,7 +241,9 @@ describe("opening kind", () => {
     const mk = (over: Partial<Transaction>): Transaction => ({
       id: "x", kind: "expense", accountId: "a", toAccountId: null, categoryId: "c",
       amountCents: 0, description: null, transactionDate: "2026-05-01", transactionTime: null,
-      excludedFromReporting: false, splits: [], createdAt: "1", updatedAt: "1", ...over,
+      excludedFromReporting: false, splits: [],
+      expectedReimbursementCents: null, reimbursedCents: 0, allocations: [],
+      createdAt: "1", updatedAt: "1", ...over,
     });
     const txns = [
       mk({ id: "open", kind: "opening", categoryId: null, amountCents: 10000, transactionDate: "2026-05-01", createdAt: "1" }),

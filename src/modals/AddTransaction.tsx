@@ -20,11 +20,12 @@ import { isPaymentSource, movementKind, payAmountField } from "../lib/payments";
 import { categoryPickerItems } from "../lib/categories";
 import { addItem, removeItem, itemsTotal, isSplit, finalize, isPendingValid, type BuilderItem } from "../lib/txnBuilder";
 import { useTimeSetting } from "../lib/useTimeSetting";
+import { ReimbursementForm } from "./ReimbursementForm";
 
-const FORM_KINDS: TransactionKind[] = ["expense", "income", "transfer"];
+const FORM_KINDS: TransactionKind[] = ["expense", "income", "transfer", "reimbursement"];
 
-export function AddTransaction({ accounts, categories, editing, payAccountId, onClose, onDone }: {
-  accounts: Account[]; categories: Category[]; editing?: Transaction; payAccountId?: string;
+export function AddTransaction({ accounts, categories, editing, payAccountId, reimburseExpenseId, onClose, onDone }: {
+  accounts: Account[]; categories: Category[]; editing?: Transaction; payAccountId?: string; reimburseExpenseId?: string;
   onClose: () => void; onDone: () => void;
 }) {
   const t = useTheme();
@@ -34,9 +35,11 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
     ?? payTarget?.id
     ?? active.find((a) => a.id !== (editing?.accountId ?? active[0]?.id))?.id
     ?? "";
-  const initialKind: TransactionKind = editing?.kind === "payment" || (!editing && payTarget && movementKind(payTarget.subtype) === "payment")
-    ? "payment"
-    : (editing?.kind ?? "expense");
+  const initialKind: TransactionKind = editing?.kind === "reimbursement" || (!editing && reimburseExpenseId)
+    ? "reimbursement"
+    : editing?.kind === "payment" || (!editing && payTarget && movementKind(payTarget.subtype) === "payment")
+      ? "payment"
+      : (editing?.kind ?? "expense");
   const [kind, setKind] = useState<TransactionKind>(initialKind);
   // The amount field is the PENDING item amount for income/expense, and the
   // whole amount for transfer or payment.
@@ -47,6 +50,10 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
   );
   const [desc, setDesc] = useState(editing?.description ?? "");
   const [excluded, setExcluded] = useState(editing?.excludedFromReporting ?? false);
+  const [expecting, setExpecting] = useState(editing?.expectedReimbursementCents != null);
+  const [expectedStr, setExpectedStr] = useState(
+    editing?.expectedReimbursementCents != null ? (editing.expectedReimbursementCents / 100).toFixed(2) : "",
+  );
   const [date, setDate] = useState(editing?.transactionDate ?? todayISO());
   const [timeEnabled] = useTimeSetting();
   const [time, setTime] = useState(editing?.transactionTime ?? nowTimeHHMM());
@@ -60,6 +67,13 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
   const [toAccountId, setToAccountId] = useState(initialTo);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Set once a NEW expense has been created but the expected-reimbursement step
+  // failed. From then on the modal behaves as an edit of that saved expense, so
+  // a retry updates it (never duplicates it) and persists exactly what is shown.
+  const [saved, setSaved] = useState<Transaction | null>(null);
+  const target = saved ?? editing;
+  // True once any write succeeded, so closing must still refresh the lists.
+  const [persisted, setPersisted] = useState(false);
 
   const catKind: Category["kind"] = kind === "income" ? "income" : kind === "expense" ? "expense" : "transfer";
   const pickerItems = useMemo(() => categoryPickerItems(categories, catKind), [categories, catKind]);
@@ -81,12 +95,14 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
   const totalCents = itemsTotal(items) + (isPendingValid(pendingItem) ? pendingItem.amountCents : 0);
   const finalItems = finalize(items, pendingItem);
 
+  const expectedCents = parseAmountToCents(expectedStr);
+  const expectedOk = kind !== "expense" || !expecting || (expectedCents != null && expectedCents <= totalCents);
   const movement = kind === "transfer" || kind === "payment";
   const destAccount = accounts.find((a) => a.id === toAccountId);
   const destKind = movementKind(destAccount?.subtype);
   const valid = movement
     ? !!(cents != null && accountId && toAccountId && toAccountId !== accountId && (!timeEnabled || !!time))
-    : !!(accountId && finalItems.length >= 1 && (!timeEnabled || !!time));
+    : !!(accountId && finalItems.length >= 1 && (!timeEnabled || !!time) && expectedOk);
 
   function changeKind(k: TransactionKind) {
     if (k === kind) return;
@@ -117,9 +133,9 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
     try {
       if (kind === "transfer" || kind === "payment") {
         if (cents == null) return;
-        if (editing) {
+        if (target) {
           await client.updateTransaction({
-            id: editing.id, kind, accountId, toAccountId,
+            id: target.id, kind, accountId, toAccountId,
             categoryId: null, amountCents: cents, description: desc.trim() || null,
             transactionDate: date, transactionTime: txTime, excludedFromReporting: false, splits: null,
           });
@@ -140,17 +156,33 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
       const splits = split ? list.map((it) => ({ categoryId: it.categoryId, amountCents: it.amountCents })) : null;
       const singleCat = !split ? list[0].categoryId : null;
 
-      if (editing) {
+      let savedId: string | null = null;
+      let createdTxn: Transaction | null = null;
+      if (target) {
         await client.updateTransaction({
-          id: editing.id, kind, accountId, toAccountId: null,
+          id: target.id, kind, accountId, toAccountId: null,
           categoryId: split ? null : singleCat,
           amountCents: total, description: desc.trim() || null, transactionDate: date,
           transactionTime: txTime, excludedFromReporting: excluded, splits,
         });
+        savedId = target.id;
       } else if (kind === "income") {
         await client.createIncome(accountId, singleCat, total, desc.trim() || null, date, txTime, excluded, splits);
       } else {
-        await client.createExpense(accountId, singleCat, total, desc.trim() || null, date, txTime, excluded, splits);
+        const created = await client.createExpense(accountId, singleCat, total, desc.trim() || null, date, txTime, excluded, splits);
+        savedId = created.id;
+        createdTxn = created;
+      }
+      setPersisted(true);
+      if (kind === "expense" && savedId && (expecting || target?.expectedReimbursementCents != null)) {
+        try {
+          await client.setExpectedReimbursement(savedId, expecting ? expectedCents : null);
+        } catch (e) {
+          if (createdTxn) setSaved(createdTxn);
+          const why = (e as { message?: string })?.message ?? "Something went wrong";
+          setError(`The expense was saved, but the expected reimbursement could not be set: ${why}`);
+          return;
+        }
       }
       onDone();
     } catch (e) {
@@ -160,14 +192,16 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
     }
   }
 
+  // After a write has landed (even if a follow-up step failed), closing must still refresh the lists.
+  const close = persisted ? onDone : onClose;
   const accentForKind = kindColor(t, kind);
   const sel = { ...inputStyle(t), appearance: "none" as const, cursor: "pointer" };
 
   return (
-    <Modal onClose={onClose} width={430}>
+    <Modal onClose={close} width={430}>
       <div style={{ padding: "16px 20px", borderBottom: `0.5px solid ${t.divider}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 15, fontWeight: 700 }}>{editing ? "Edit transaction" : "Add transaction"}</span>
-        <button className="sens-icon-btn" onClick={onClose} style={{ width: 28, height: 28, color: t.dim }}><Icon name="close" size={16} /></button>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>{target ? "Edit transaction" : "Add transaction"}</span>
+        <button className="sens-icon-btn" onClick={close} style={{ width: 28, height: 28, color: t.dim }}><Icon name="close" size={16} /></button>
       </div>
 
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -177,8 +211,18 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
             const segmentKind: TransactionKind = k === "transfer" && destKind === "payment" ? "payment" : k;
             const on = k === "transfer" ? (kind === "transfer" || kind === "payment") : k === kind;
             const col = kindColor(t, on && segmentKind === "payment" ? "payment" : k);
+            // A reimbursement is its own record type: it can't become another
+            // kind, and nothing else can become one.
+            const disabledReason = target
+              ? (target.kind === "reimbursement"
+                ? (k !== "reimbursement" ? "A reimbursement can't be changed to another type" : null)
+                : (k === "reimbursement" ? "Reimbursements are created separately" : null))
+              : null;
+            const segDisabled = disabledReason != null;
             return (
-              <button key={k} className="sens-btn" onClick={() => {
+              <button key={k} type="button" className="sens-btn" disabled={segDisabled} aria-disabled={segDisabled}
+                title={disabledReason ?? undefined} onClick={() => {
+                if (segDisabled) return;
                 if (k === "transfer") {
                   if (kind === "transfer" || kind === "payment") return;
                   changeKind(destKind);
@@ -187,14 +231,28 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
                 changeKind(k);
               }}
                 style={{ flex: 1, height: 32, justifyContent: "center", borderRadius: 7, fontSize: 12.5, fontWeight: 600,
-                  color: on ? "#fff" : t.dim, background: on ? col : "transparent" }}>
+                  color: on ? "#fff" : t.dim, background: on ? col : "transparent",
+                  opacity: segDisabled ? 0.45 : 1, cursor: segDisabled ? "not-allowed" : undefined }}>
                 <Icon name={KIND_META[segmentKind].icon} size={14} color={on ? "#fff" : t.dim} stroke={2} />
                 {KIND_META[segmentKind].label}
               </button>
             );
           })}
         </div>
+        {target && (
+          <div style={{ fontSize: 11, color: t.faint, marginTop: -6 }}>
+            {target.kind === "reimbursement"
+              ? "A reimbursement can't be changed to another type"
+              : "Reimbursements are created separately"}
+          </div>
+        )}
 
+        {kind === "reimbursement" ? (
+          <ReimbursementForm accounts={accounts} categories={categories}
+            editing={editing?.kind === "reimbursement" ? editing : undefined}
+            presetExpenseId={reimburseExpenseId} onClose={close} onDone={onDone} />
+        ) : (
+        <>
         {/* amount */}
         <div style={{ position: "relative" }}>
           <span style={{ position: "absolute", left: 14, top: 14, fontSize: 16, color: t.faint, fontFamily: t.mono }}>RM</span>
@@ -313,14 +371,43 @@ export function AddTransaction({ accounts, categories, editing, payAccountId, on
           </button>
         )}
 
+        {kind === "expense" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button type="button" role="switch" aria-checked={expecting}
+              onClick={() => { setExpecting((v) => !v); if (!expecting && !expectedStr && totalCents > 0) setExpectedStr((totalCents / 100).toFixed(2)); }}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 9, border: `0.5px solid ${t.border}`, background: expecting ? hexA(t.transfer, 0.12) : t.panel2, cursor: "pointer", textAlign: "left" }}>
+              <span style={{ width: 18, height: 18, borderRadius: 5, display: "grid", placeItems: "center", background: expecting ? t.transfer : "transparent", border: `1.5px solid ${expecting ? t.transfer : t.faint}`, flexShrink: 0 }}>
+                {expecting && <Icon name="check" size={12} color={t.onAccent} stroke={3} />}
+              </span>
+              <span style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text }}>Expecting reimbursement</div>
+                <div style={{ fontSize: 11, color: t.faint }}>Track what's still owed back to you</div>
+              </span>
+            </button>
+            {expecting && (
+              <Field label="Expected back">
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: 12, top: 9, fontSize: 13, color: t.faint, fontFamily: t.mono }}>RM</span>
+                  <input className="sens-input" value={expectedStr} inputMode="decimal" placeholder="0.00" aria-label="Expected reimbursement"
+                    onChange={(e) => setExpectedStr(e.target.value.replace(/[^0-9.]/g, ""))}
+                    style={{ ...inputStyle(t), paddingLeft: 38, fontFamily: t.mono, borderColor: expectedOk ? undefined : t.expense }} />
+                </div>
+                {!expectedOk && <div style={{ fontSize: 11, color: t.expense, marginTop: 4 }}>Can't be more than the expense total</div>}
+              </Field>
+            )}
+          </div>
+        )}
+
         {error && <div style={{ fontSize: 12.5, color: t.expense, background: hexA(t.expense, 0.1), padding: "8px 12px", borderRadius: 8 }}>{error}</div>}
 
         <div style={{ display: "flex", gap: 10, marginTop: 2 }}>
-          <Btn variant="outline" onClick={onClose} style={{ flex: 1, justifyContent: "center", height: 38 }}>Cancel</Btn>
+          <Btn variant="outline" onClick={close} style={{ flex: 1, justifyContent: "center", height: 38 }}>{persisted ? "Close" : "Cancel"}</Btn>
           <Btn variant="primary" onClick={submit} disabled={!valid || busy} style={{ flex: 1, justifyContent: "center", height: 38, background: accentForKind, boxShadow: `0 1px 8px ${hexA(accentForKind, 0.35)}` }}>
-            {editing ? "Save changes" : "Add transaction"}
+            {target ? "Save changes" : "Add transaction"}
           </Btn>
         </div>
+        </>
+        )}
       </div>
     </Modal>
   );

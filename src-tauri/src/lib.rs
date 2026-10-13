@@ -1,6 +1,7 @@
 //! Sens backend entry point. Wires the SQLite connection into Tauri managed
 //! state and registers the command surface.
 
+mod apportion;
 mod commands;
 mod db;
 pub mod error;
@@ -60,12 +61,16 @@ pub fn run() {
             commands::create_expense_transaction,
             commands::create_transfer_transaction,
             commands::create_payment_transaction,
+            commands::create_reimbursement_transaction,
+            commands::update_reimbursement_transaction,
+            commands::set_expected_reimbursement,
             commands::list_transactions,
             commands::update_transaction,
             commands::delete_transaction,
             commands::get_dashboard_summary,
             commands::get_account_balance,
             commands::get_account_balances,
+            commands::get_awaiting_reimbursement,
             commands::get_setting,
             commands::set_setting,
             commands::reset_app,
@@ -1655,5 +1660,551 @@ mod payment_tests {
         service::delete_transaction(&c, &pay.id).unwrap();
         assert_eq!(repo::get_account(&c, &savings.id).unwrap().balance_cents, 500_000);
         assert_eq!(repo::get_account(&c, &card.id).unwrap().balance_cents, -80_000);
+    }
+}
+
+#[cfg(test)]
+mod reimbursement_tests {
+    use crate::db::open_in_memory;
+    use crate::error::AppError;
+    use crate::models::{Account, Allocation, SplitInput, Transaction, UpdateTransactionInput};
+    use crate::repo;
+    use crate::service;
+    use rusqlite::Connection;
+
+    fn expense_cat(c: &Connection, n: i64) -> String {
+        c.query_row(
+            "SELECT id FROM categories WHERE kind='expense' AND is_system=0 AND parent_id IS NULL ORDER BY sort_order LIMIT 1 OFFSET ?1",
+            [n],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    fn pair(c: &Connection) -> (Account, Account) {
+        let savings = service::create_account(c, "Maybank", "savings", 500_000, None, None).unwrap();
+        let card = service::create_account(c, "Visa", "credit-card", -80_000, None, Some(1_000_000)).unwrap();
+        (savings, card)
+    }
+
+    fn spend(c: &Connection, account_id: &str, cents: i64, date: &str) -> Transaction {
+        let cat = expense_cat(c, 0);
+        service::create_expense(c, account_id, Some(&cat), cents, Some("Dinner"), date, None, false, None).unwrap()
+    }
+
+    fn validation_message(err: AppError) -> String {
+        match err {
+            AppError::Validation(m) => m,
+            other => panic!("expected Validation, got {other:?}"),
+        }
+    }
+
+    fn conflict_message(err: AppError) -> String {
+        match err {
+            AppError::Conflict(m) => m,
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+    }
+
+    fn income_cat(c: &Connection) -> String {
+        c.query_row(
+            "SELECT id FROM categories WHERE kind='income' AND is_system=0 AND parent_id IS NULL ORDER BY sort_order LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    fn alloc(expense: &Transaction, cents: i64) -> Allocation {
+        Allocation { expense_id: expense.id.clone(), amount_cents: cents }
+    }
+
+    fn reimburse(c: &Connection, account_id: &str, cents: i64, date: &str, allocs: Vec<Allocation>) -> Transaction {
+        service::create_reimbursement(c, account_id, cents, Some("Back"), date, None, allocs).unwrap()
+    }
+
+    fn balance(c: &Connection, id: &str) -> i64 {
+        repo::get_account(c, id).unwrap().balance_cents
+    }
+
+    fn expense_update(e: &Transaction, amount: i64) -> UpdateTransactionInput {
+        UpdateTransactionInput {
+            id: e.id.clone(),
+            kind: "expense".into(),
+            account_id: e.account_id.clone(),
+            to_account_id: None,
+            category_id: e.category_id.clone(),
+            amount_cents: amount,
+            description: e.description.clone(),
+            transaction_date: e.transaction_date.clone(),
+            transaction_time: None,
+            excluded_from_reporting: false,
+            splits: None,
+        }
+    }
+
+    #[test]
+    fn expectation_can_be_set_changed_and_cleared() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-01");
+        let t = service::set_expected_reimbursement(&c, &e.id, Some(7_000)).unwrap();
+        assert_eq!(t.expected_reimbursement_cents, Some(7_000));
+        let t = service::set_expected_reimbursement(&c, &e.id, Some(10_000)).unwrap();
+        assert_eq!(t.expected_reimbursement_cents, Some(10_000));
+
+        let range = "Expected reimbursement must be more than zero and no more than the expense amount.";
+        assert_eq!(validation_message(service::set_expected_reimbursement(&c, &e.id, Some(10_001)).unwrap_err()), range);
+        assert_eq!(validation_message(service::set_expected_reimbursement(&c, &e.id, Some(0)).unwrap_err()), range);
+
+        let inc_cat = income_cat(&c);
+        let income = service::create_income(&c, &savings.id, Some(&inc_cat), 1_000, None, "2026-06-01", None, false, None).unwrap();
+        assert_eq!(
+            validation_message(service::set_expected_reimbursement(&c, &income.id, Some(100)).unwrap_err()),
+            "Only expenses can expect a reimbursement."
+        );
+
+        let t = service::set_expected_reimbursement(&c, &e.id, None).unwrap();
+        assert_eq!(t.expected_reimbursement_cents, None);
+    }
+
+    #[test]
+    fn update_reimbursement_rewrites_amount_account_and_allocations() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let cash = service::create_account(&c, "Wallet", "cash", 0, None, None).unwrap();
+        let e1 = spend(&c, &savings.id, 20_000, "2026-06-01");
+        let e2 = spend(&c, &savings.id, 5_000, "2026-06-02");
+        let r = reimburse(&c, &savings.id, 10_000, "2026-06-05", vec![alloc(&e1, 10_000)]);
+        assert_eq!(balance(&c, &savings.id), 485_000);
+
+        let u = service::update_reimbursement(
+            &c, &r.id, &cash.id, 6_000, Some("Fixed"), "2026-06-09", None,
+            vec![alloc(&e1, 1_000), alloc(&e2, 5_000)],
+        )
+        .unwrap();
+
+        assert_eq!(u.amount_cents, 6_000);
+        assert_eq!(u.account_id, cash.id);
+        assert_eq!(u.description.as_deref(), Some("Fixed"));
+        assert_eq!(u.allocations, vec![alloc(&e1, 1_000), alloc(&e2, 5_000)]);
+        assert_eq!(repo::get_transaction(&c, &e1.id).unwrap().reimbursed_cents, 1_000);
+        assert_eq!(repo::get_transaction(&c, &e2.id).unwrap().reimbursed_cents, 5_000);
+        assert_eq!(balance(&c, &cash.id), 6_000);
+        assert_eq!(balance(&c, &savings.id), 475_000);
+    }
+
+    #[test]
+    fn update_reimbursement_ignores_its_own_links_when_checking_what_is_left() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-01");
+        let r = reimburse(&c, &savings.id, 10_000, "2026-06-05", vec![alloc(&e, 10_000)]);
+        let u = service::update_reimbursement(&c, &r.id, &savings.id, 10_000, None, "2026-06-06", None, vec![alloc(&e, 10_000)])
+            .unwrap();
+        assert_eq!(u.allocations, vec![alloc(&e, 10_000)]);
+    }
+
+    #[test]
+    fn a_failed_update_reimbursement_changes_nothing() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-01");
+        let r = reimburse(&c, &savings.id, 4_000, "2026-06-05", vec![alloc(&e, 4_000)]);
+        let err = service::update_reimbursement(&c, &r.id, &savings.id, 12_000, None, "2026-06-06", None, vec![alloc(&e, 12_000)])
+            .unwrap_err();
+        assert_eq!(validation_message(err), "Allocation exceeds what's left on that expense.");
+        let stored = repo::get_transaction(&c, &r.id).unwrap();
+        assert_eq!(stored.amount_cents, 4_000);
+        assert_eq!(stored.allocations, vec![alloc(&e, 4_000)]);
+        assert_eq!(balance(&c, &savings.id), 494_000);
+    }
+
+    #[test]
+    fn update_reimbursement_rolls_back_when_a_write_fails_midway() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let cash = service::create_account(&c, "Wallet", "cash", 0, None, None).unwrap();
+        let e1 = spend(&c, &savings.id, 20_000, "2026-06-01");
+        let e2 = spend(&c, &savings.id, 5_000, "2026-06-02");
+        let r = reimburse(&c, &savings.id, 10_000, "2026-06-05", vec![alloc(&e1, 10_000)]);
+
+        let before_r = repo::get_transaction(&c, &r.id).unwrap();
+        let before_e1 = repo::get_transaction(&c, &e1.id).unwrap();
+        let before_e2 = repo::get_transaction(&c, &e2.id).unwrap();
+        let before_savings = balance(&c, &savings.id);
+        let before_cash = balance(&c, &cash.id);
+
+        // Fails on the first allocation insert, after validation, header update, and delete.
+        // Without service::update_reimbursement's unchecked_transaction, those earlier writes
+        // would persist on `c` and leave header/postings/allocations inconsistent.
+        c.execute_batch(
+            "CREATE TRIGGER fail_alloc BEFORE INSERT ON reimbursement_allocations
+             BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+        )
+        .unwrap();
+
+        assert!(
+            service::update_reimbursement(
+                &c,
+                &r.id,
+                &cash.id,
+                6_000,
+                Some("Fixed"),
+                "2026-06-09",
+                None,
+                vec![alloc(&e1, 1_000), alloc(&e2, 5_000)],
+            )
+            .is_err()
+        );
+
+        let stored = repo::get_transaction(&c, &r.id).unwrap();
+        assert_eq!(stored.amount_cents, before_r.amount_cents);
+        assert_eq!(stored.account_id, before_r.account_id);
+        assert_eq!(stored.transaction_date, before_r.transaction_date);
+        assert_eq!(stored.allocations, before_r.allocations);
+        assert_eq!(repo::get_transaction(&c, &e1.id).unwrap().reimbursed_cents, before_e1.reimbursed_cents);
+        assert_eq!(repo::get_transaction(&c, &e2.id).unwrap().reimbursed_cents, before_e2.reimbursed_cents);
+        assert_eq!(balance(&c, &savings.id), before_savings);
+        assert_eq!(balance(&c, &cash.id), before_cash);
+    }
+
+    #[test]
+    fn update_reimbursement_only_accepts_reimbursements() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-01");
+        let err = service::update_reimbursement(&c, &e.id, &savings.id, 100, None, "2026-06-06", None, vec![alloc(&e, 100)])
+            .unwrap_err();
+        assert_eq!(validation_message(err), "Only reimbursements can be edited here.");
+    }
+
+    #[test]
+    fn update_transaction_refuses_reimbursements() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-01");
+        let r = reimburse(&c, &savings.id, 4_000, "2026-06-05", vec![alloc(&e, 4_000)]);
+
+        let mut input = expense_update(&e, 4_000);
+        input.id = r.id.clone();
+        input.kind = "reimbursement".into();
+        assert_eq!(
+            validation_message(service::update_transaction(&c, input).unwrap_err()),
+            "Edit a reimbursement from its own form."
+        );
+        let mut as_expense = expense_update(&e, 4_000);
+        as_expense.id = r.id.clone();
+        assert_eq!(
+            validation_message(service::update_transaction(&c, as_expense).unwrap_err()),
+            "Edit a reimbursement from its own form."
+        );
+    }
+
+    #[test]
+    fn a_reimbursed_expense_cannot_be_deleted_shrunk_or_retyped() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-01");
+        let r = reimburse(&c, &savings.id, 6_000, "2026-06-05", vec![alloc(&e, 6_000)]);
+
+        let locked = "This expense has been reimbursed. Edit or delete the reimbursement first.";
+        assert_eq!(conflict_message(service::delete_transaction(&c, &e.id).unwrap_err()), locked);
+        assert_eq!(
+            validation_message(service::update_transaction(&c, expense_update(&e, 5_000)).unwrap_err()),
+            "Amount can't go below what's already been reimbursed."
+        );
+        service::update_transaction(&c, expense_update(&e, 6_000)).unwrap();
+
+        let mut retyped = expense_update(&e, 6_000);
+        retyped.kind = "income".into();
+        retyped.category_id = None;
+        assert_eq!(conflict_message(service::update_transaction(&c, retyped).unwrap_err()), locked);
+
+        service::delete_transaction(&c, &r.id).unwrap();
+        assert_eq!(repo::get_transaction(&c, &e.id).unwrap().reimbursed_cents, 0);
+        assert_eq!(balance(&c, &savings.id), 494_000);
+        service::delete_transaction(&c, &e.id).unwrap();
+    }
+
+    #[test]
+    fn editing_an_expense_clamps_or_clears_the_expectation() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-01");
+        service::set_expected_reimbursement(&c, &e.id, Some(10_000)).unwrap();
+
+        let shrunk = service::update_transaction(&c, expense_update(&e, 8_000)).unwrap();
+        assert_eq!(shrunk.expected_reimbursement_cents, Some(8_000));
+
+        let mut as_income = expense_update(&e, 8_000);
+        as_income.kind = "income".into();
+        as_income.category_id = Some(income_cat(&c));
+        let flipped = service::update_transaction(&c, as_income).unwrap();
+        assert_eq!(flipped.kind, "income");
+        assert_eq!(flipped.expected_reimbursement_cents, None);
+    }
+
+    #[test]
+    fn reimbursement_raises_the_balance_and_offsets_the_expense_bucket() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 20_000, "2026-06-01");
+        assert_eq!(balance(&c, &savings.id), 480_000);
+
+        let r = reimburse(&c, &savings.id, 15_000, "2026-06-05", vec![alloc(&e, 15_000)]);
+
+        assert_eq!(r.kind, "reimbursement");
+        assert_eq!(r.category_id, None);
+        assert_eq!(r.to_account_id, None);
+        assert!(!r.excluded_from_reporting);
+        assert_eq!(r.allocations, vec![alloc(&e, 15_000)]);
+        assert_eq!(balance(&c, &savings.id), 495_000);
+        let sum: i64 = c
+            .query_row("SELECT COALESCE(SUM(amount_cents),0) FROM postings WHERE transaction_id=?1", [&r.id], |row| row.get(0))
+            .unwrap();
+        assert_eq!(sum, 0);
+        let bucket: i64 = c
+            .query_row(
+                "SELECT amount_cents FROM postings WHERE transaction_id=?1 AND system_bucket='expense'",
+                [&r.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(bucket, -15_000);
+        assert_eq!(repo::get_transaction(&c, &e.id).unwrap().reimbursed_cents, 15_000);
+    }
+
+    #[test]
+    fn a_refund_can_land_on_the_card_that_was_charged() {
+        let c = open_in_memory().unwrap();
+        let (_savings, card) = pair(&c);
+        let e = spend(&c, &card.id, 8_000, "2026-06-01");
+        assert_eq!(balance(&c, &card.id), -88_000);
+        reimburse(&c, &card.id, 8_000, "2026-06-03", vec![alloc(&e, 8_000)]);
+        assert_eq!(balance(&c, &card.id), -80_000);
+    }
+
+    #[test]
+    fn one_reimbursement_covers_many_and_one_expense_takes_parts() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e1 = spend(&c, &savings.id, 10_000, "2026-06-01");
+        let e2 = spend(&c, &savings.id, 5_000, "2026-06-02");
+        reimburse(&c, &savings.id, 15_000, "2026-06-10", vec![alloc(&e1, 10_000), alloc(&e2, 5_000)]);
+        assert_eq!(repo::get_transaction(&c, &e1.id).unwrap().reimbursed_cents, 10_000);
+        assert_eq!(repo::get_transaction(&c, &e2.id).unwrap().reimbursed_cents, 5_000);
+
+        let e3 = spend(&c, &savings.id, 10_000, "2026-06-03");
+        reimburse(&c, &savings.id, 3_000, "2026-06-11", vec![alloc(&e3, 3_000)]);
+        reimburse(&c, &savings.id, 2_000, "2026-06-12", vec![alloc(&e3, 2_000)]);
+        assert_eq!(repo::get_transaction(&c, &e3.id).unwrap().reimbursed_cents, 5_000);
+
+        let err = service::create_reimbursement(&c, &savings.id, 6_000, None, "2026-06-13", None, vec![alloc(&e3, 6_000)])
+            .unwrap_err();
+        assert_eq!(validation_message(err), "Allocation exceeds what's left on that expense.");
+    }
+
+    #[test]
+    fn create_rejects_each_bad_shape_without_writing() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-01");
+        let e2 = spend(&c, &savings.id, 4_000, "2026-06-02");
+        let inc_cat = income_cat(&c);
+        let income = service::create_income(&c, &savings.id, Some(&inc_cat), 1_000, None, "2026-06-01", None, false, None).unwrap();
+
+        let go = |amount: i64, allocs: Vec<Allocation>| {
+            validation_message(
+                service::create_reimbursement(&c, &savings.id, amount, None, "2026-06-02", None, allocs).unwrap_err(),
+            )
+        };
+        assert_eq!(go(0, vec![alloc(&e, 1)]), "Amount must be greater than zero");
+        assert_eq!(go(100, vec![]), "Pick at least one expense to reimburse.");
+        assert_eq!(go(100, vec![alloc(&e, 0)]), "Each allocation must be greater than zero.");
+        assert_eq!(go(200, vec![alloc(&e, 100), alloc(&e, 100)]), "An expense can only be listed once.");
+        assert_eq!(go(100, vec![alloc(&income, 100)]), "Only expenses can be reimbursed.");
+        assert_eq!(
+            go(100, vec![Allocation { expense_id: "nope".into(), amount_cents: 100 }]),
+            "Only expenses can be reimbursed."
+        );
+        assert_eq!(go(100, vec![alloc(&e, 60), alloc(&e2, 30)]), "Allocations must add up to the reimbursement amount.");
+        assert_eq!(go(20_000, vec![alloc(&e, 20_000)]), "Allocation exceeds what's left on that expense.");
+        // Huge client-supplied amounts must fail validation, never overflow.
+        assert_eq!(go(i64::MAX, vec![alloc(&e, i64::MAX)]), "Allocation exceeds what's left on that expense.");
+        assert_eq!(go(100, vec![alloc(&e, i64::MAX - 1), alloc(&e2, 100)]), "Allocation exceeds what's left on that expense.");
+
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM transactions WHERE kind='reimbursement'", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn create_rejects_balance_corrections_and_archived_accounts() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-01");
+        // A shortfall booked as an expense lands in the protected "Adjustment" category.
+        service::set_account_balance(&c, &savings.id, 400_000, true).unwrap();
+        let correction_id: String = c
+            .query_row(
+                "SELECT t.id FROM transactions t JOIN categories k ON k.id = t.category_id WHERE k.is_system = 1 AND t.kind = 'expense'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let correction = repo::get_transaction(&c, &correction_id).unwrap();
+        let err = service::create_reimbursement(&c, &savings.id, 100, None, "2026-06-02", None, vec![alloc(&correction, 100)])
+            .unwrap_err();
+        assert_eq!(validation_message(err), "Only expenses can be reimbursed.");
+
+        service::archive_account(&c, &savings.id).unwrap();
+        let err = service::create_reimbursement(&c, &savings.id, 100, None, "2026-06-02", None, vec![alloc(&e, 100)])
+            .unwrap_err();
+        assert_eq!(conflict_message(err), "The selected account is archived");
+    }
+
+    #[test]
+    fn allocations_hydrate_on_both_sides() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 20_000, "2026-06-01");
+        let r = repo::insert_transaction(
+            &c, "re1", "reimbursement", &savings.id, None, None, 15_000, Some("Back"),
+            "2026-06-05", None, false, "2026-06-05T00:00:00Z",
+        )
+        .unwrap();
+        repo::insert_allocation(&c, "al1", &r.id, &e.id, 15_000, "2026-06-05T00:00:00Z").unwrap();
+
+        let expense = repo::get_transaction(&c, &e.id).unwrap();
+        assert_eq!(expense.reimbursed_cents, 15_000);
+        assert_eq!(expense.expected_reimbursement_cents, None);
+        assert!(expense.allocations.is_empty());
+
+        let reimbursement = repo::get_transaction(&c, &r.id).unwrap();
+        assert_eq!(reimbursement.reimbursed_cents, 0);
+        assert_eq!(
+            reimbursement.allocations,
+            vec![Allocation { expense_id: e.id.clone(), amount_cents: 15_000 }]
+        );
+    }
+
+    #[test]
+    fn factory_reset_clears_allocations() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 20_000, "2026-06-01");
+        let r = repo::insert_transaction(
+            &c, "re1", "reimbursement", &savings.id, None, None, 5_000, None,
+            "2026-06-05", None, false, "2026-06-05T00:00:00Z",
+        )
+        .unwrap();
+        repo::insert_allocation(&c, "al1", &r.id, &e.id, 5_000, "2026-06-05T00:00:00Z").unwrap();
+
+        service::reset_app(&c).unwrap();
+
+        let allocs: i64 = c.query_row("SELECT COUNT(*) FROM reimbursement_allocations", [], |row| row.get(0)).unwrap();
+        let txns: i64 = c.query_row("SELECT COUNT(*) FROM transactions", [], |row| row.get(0)).unwrap();
+        assert_eq!(allocs, 0);
+        assert_eq!(txns, 0);
+    }
+
+    #[test]
+    fn dashboard_uses_the_effective_expense_in_its_original_month() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 20_000, "2026-06-10");
+        let before = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(before.expense_cents, 20_000);
+
+        reimburse(&c, &savings.id, 15_000, "2026-07-03", vec![alloc(&e, 15_000)]);
+
+        let june = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(june.expense_cents, 5_000);
+        assert_eq!(june.income_cents, before.income_cents);
+        assert_eq!(june.net_cashflow_cents, before.income_cents - 5_000);
+        assert_eq!(june.spending_breakdown.len(), 1);
+        assert_eq!(june.spending_breakdown[0].total_cents, 5_000);
+
+        let july = service::get_dashboard_summary(&c, "2026-07").unwrap();
+        assert_eq!(july.expense_cents, 0);
+        assert_eq!(july.income_cents, 0);
+    }
+
+    #[test]
+    fn a_split_expense_is_offset_in_proportion_across_its_lines() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let a = expense_cat(&c, 0);
+        let b = expense_cat(&c, 1);
+        let e = service::create_expense(
+            &c, &savings.id, None, 10_000, None, "2026-06-10", None, false,
+            Some(vec![
+                SplitInput { category_id: a.clone(), amount_cents: 6_000 },
+                SplitInput { category_id: b.clone(), amount_cents: 4_000 },
+            ]),
+        )
+        .unwrap();
+        reimburse(&c, &savings.id, 5_000, "2026-06-20", vec![alloc(&e, 5_000)]);
+
+        let s = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(s.expense_cents, 5_000);
+        let amount = |id: &str| s.spending_breakdown.iter().find(|x| x.category_id == id).map(|x| x.total_cents);
+        assert_eq!(amount(&a), Some(3_000));
+        assert_eq!(amount(&b), Some(2_000));
+    }
+
+    #[test]
+    fn fully_reimbursed_and_excluded_expenses_report_correctly() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let full = spend(&c, &savings.id, 10_000, "2026-06-02");
+        reimburse(&c, &savings.id, 10_000, "2026-06-03", vec![alloc(&full, 10_000)]);
+
+        let cat = expense_cat(&c, 0);
+        let excluded = service::create_expense(&c, &savings.id, Some(&cat), 7_000, None, "2026-06-04", None, true, None).unwrap();
+        // Only partly repaid: the excluded expense and its allocation are both still skipped.
+        reimburse(&c, &savings.id, 3_000, "2026-06-05", vec![alloc(&excluded, 3_000)]);
+
+        let s = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(s.expense_cents, 0, "neither a fully repaid nor an excluded expense may go negative");
+        assert!(s.spending_breakdown.is_empty());
+    }
+
+    #[test]
+    fn a_reimbursement_never_counts_as_income() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e = spend(&c, &savings.id, 10_000, "2026-06-02");
+        let before = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        reimburse(&c, &savings.id, 4_000, "2026-06-05", vec![alloc(&e, 4_000)]);
+        let after = service::get_dashboard_summary(&c, "2026-06").unwrap();
+        assert_eq!(after.income_cents, before.income_cents);
+        assert_eq!(after.net_worth_cents, before.net_worth_cents + 4_000);
+    }
+
+    #[test]
+    fn awaiting_summary_counts_outstanding_expectations_only() {
+        let c = open_in_memory().unwrap();
+        let (savings, _card) = pair(&c);
+        let e1 = spend(&c, &savings.id, 10_000, "2026-06-01");
+        let e2 = spend(&c, &savings.id, 5_000, "2026-06-02");
+        let _plain = spend(&c, &savings.id, 3_000, "2026-06-03");
+        service::set_expected_reimbursement(&c, &e1.id, Some(10_000)).unwrap();
+        service::set_expected_reimbursement(&c, &e2.id, Some(5_000)).unwrap();
+
+        let s = service::get_awaiting_reimbursement(&c).unwrap();
+        assert_eq!((s.count, s.total_cents), (2, 15_000));
+
+        reimburse(&c, &savings.id, 4_000, "2026-06-10", vec![alloc(&e1, 4_000)]);
+        let s = service::get_awaiting_reimbursement(&c).unwrap();
+        assert_eq!((s.count, s.total_cents), (2, 11_000));
+
+        reimburse(&c, &savings.id, 6_000, "2026-06-11", vec![alloc(&e1, 6_000)]);
+        let s = service::get_awaiting_reimbursement(&c).unwrap();
+        assert_eq!((s.count, s.total_cents), (1, 5_000));
+
+        reimburse(&c, &savings.id, 5_000, "2026-06-12", vec![alloc(&e2, 5_000)]);
+        let s = service::get_awaiting_reimbursement(&c).unwrap();
+        assert_eq!((s.count, s.total_cents), (0, 0));
     }
 }

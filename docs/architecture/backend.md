@@ -67,7 +67,7 @@ The UI never touches SQL.
   the migration in `BEGIN…COMMIT`.
 - First-run seeding and the `seeded` flag commit atomically.
 - The runner applies migrations **cumulatively**, so a DB at any earlier version is carried forward.
-  Fresh installs run **001 → 011** and reach the same end schema.
+  Fresh installs run **001 → 012** and reach the same end schema.
 - There are no existing users, so don't add backfill or conversion for a prior user base. Keep
   migrations append-only so a local dev DB and a fresh install match.
 
@@ -83,10 +83,11 @@ The UI never touches SQL.
 | 009 | `CREATE TABLE transaction_splits` | **Plain CREATE, not a rebuild** |
 | 010 | Adds `credit_limit_cents` | Credit-card and BNPL limits |
 | 011 | **Rebuilds `transactions`** to add the `payment` kind to the CHECK, copying `postings` and `transaction_splits` first | Safe because the cascading child tables are copied before the swap |
+| 012 | **Rebuilds `transactions`** to add the `reimbursement` kind and the nullable `expected_reimbursement_cents`, then creates `reimbursement_allocations` | Copies `postings` and `transaction_splits` first (like 011); the allocations table is created after the swap |
 
 > ⚠ After migration 006, **a naive rebuild of `transactions` deletes every posting and split**
 > (`ON DELETE CASCADE`). Prefer `ALTER … ADD COLUMN` or a new table (as 007 and 009 do). If a table
-> CHECK must change, copy `postings` and `transaction_splits` before the swap (as 011 does).
+> CHECK must change, copy `postings` and `transaction_splits` before the swap (as 011 and 012 do).
 
 ## Default categories and backfill
 
@@ -103,8 +104,8 @@ The UI never touches SQL.
 - **Bump a new `defaults_vN_seeded` gate whenever you enrich the default tree**, so existing users
   pick up the additions. A single later gate also covers users who never hit an earlier one, because
   `seed_categories` always seeds the current full tree.
-- Saving/investing, loans & debt, reimbursements/claims, and credit-card payments are intentionally
-  **not categories**. They are money movement, handled by later-phase features (see [`ROADMAP.md`](../../ROADMAP.md)).
+- Saving/investing, loans & debt, reimbursements/claims (the `reimbursement` kind), and card payments are intentionally
+  **not categories**. They are money movement, handled by their own transaction kinds and later-phase features (see [`ROADMAP.md`](../../ROADMAP.md)).
 - All defaults are normal (non-system) rows that users can archive or delete.
 - Top-level categories are deduped by the partial unique index `idx_categories_top_kind_name`
   on `(kind, name) WHERE parent_id IS NULL`.
@@ -113,7 +114,7 @@ The UI never touches SQL.
 
 The `reset_app` command (`service::reset_app` → `db::reset_to_defaults`):
 
-- Wipes `transactions` / `categories` / `accounts` / `app_settings` in **one transaction**.
+- Wipes `reimbursement_allocations` (first, its `expense_id` FK is `RESTRICT`), `postings`, `transactions` / `categories` / `accounts` / `app_settings` in **one transaction**.
 - Re-runs the idempotent seed, re-setting the `seeded` flag and all `defaults_v*_seeded` flags.
 - Mirrored by `resetApp()` in `mock.ts`.
 - Exposed in Settings → Danger zone (type `RESET` to confirm).

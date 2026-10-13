@@ -6,7 +6,7 @@
 pub const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004),
     (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008),
-    (9, MIGRATION_009), (10, MIGRATION_010), (11, MIGRATION_011),
+    (9, MIGRATION_009), (10, MIGRATION_010), (11, MIGRATION_011), (12, MIGRATION_012),
 ];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
@@ -354,4 +354,97 @@ CREATE INDEX idx_postings_account ON postings(account_id);
 CREATE INDEX idx_postings_txn ON postings(transaction_id);
 CREATE INDEX idx_splits_txn ON transaction_splits(transaction_id);
 CREATE INDEX idx_splits_cat ON transaction_splits(category_id);
+"#;
+
+// Reimbursements. Rebuilds transactions so the CHECK can name 'reimbursement' and
+// adds the nullable expected_reimbursement_cents column, then creates the
+// allocation table that pairs a reimbursement with the expenses it repays.
+// postings and transaction_splits reference transactions ON DELETE CASCADE, so
+// they are copied first and dropped before transactions (same pattern as 011).
+// reimbursement_allocations is created AFTER the swap so its foreign keys point
+// at the final `transactions` table.
+const MIGRATION_012: &str = r#"
+CREATE TABLE transactions_new (
+  id               TEXT PRIMARY KEY,
+  kind             TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'transfer', 'adjustment', 'opening', 'payment', 'reimbursement')),
+  account_id       TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  to_account_id    TEXT REFERENCES accounts(id) ON DELETE RESTRICT,
+  category_id      TEXT REFERENCES categories(id) ON DELETE RESTRICT,
+  amount_cents     INTEGER NOT NULL,
+  description      TEXT,
+  transaction_date TEXT NOT NULL,
+  excluded_from_reporting INTEGER NOT NULL DEFAULT 0 CHECK (excluded_from_reporting IN (0, 1)),
+  transaction_time TEXT,
+  expected_reimbursement_cents INTEGER,
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL,
+  CHECK (
+    (kind IN ('income', 'expense') AND amount_cents > 0 AND to_account_id IS NULL AND category_id IS NOT NULL) OR
+    (kind = 'transfer' AND amount_cents > 0 AND to_account_id IS NOT NULL AND to_account_id <> account_id AND category_id IS NULL AND excluded_from_reporting = 0) OR
+    (kind = 'payment'  AND amount_cents > 0 AND to_account_id IS NOT NULL AND to_account_id <> account_id AND category_id IS NULL AND excluded_from_reporting = 0) OR
+    (kind = 'reimbursement' AND amount_cents > 0 AND to_account_id IS NULL AND category_id IS NULL AND excluded_from_reporting = 0) OR
+    (kind = 'adjustment' AND amount_cents <> 0 AND to_account_id IS NULL AND category_id IS NULL AND excluded_from_reporting = 0) OR
+    (kind = 'opening' AND to_account_id IS NULL AND category_id IS NULL AND excluded_from_reporting = 0)
+  ),
+  CHECK (
+    expected_reimbursement_cents IS NULL OR
+    (kind = 'expense' AND expected_reimbursement_cents > 0 AND expected_reimbursement_cents <= amount_cents)
+  )
+);
+
+INSERT INTO transactions_new
+  (id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, transaction_time, created_at, updated_at)
+  SELECT id, kind, account_id, to_account_id, category_id, amount_cents, description, transaction_date, excluded_from_reporting, transaction_time, created_at, updated_at
+  FROM transactions;
+
+CREATE TABLE postings_new (
+  id             TEXT PRIMARY KEY,
+  transaction_id TEXT NOT NULL REFERENCES transactions_new(id) ON DELETE CASCADE,
+  account_id     TEXT REFERENCES accounts(id) ON DELETE RESTRICT,
+  system_bucket  TEXT CHECK (system_bucket IN ('income', 'expense', 'equity')),
+  amount_cents   INTEGER NOT NULL,
+  CHECK ((account_id IS NOT NULL AND system_bucket IS NULL)
+      OR (account_id IS NULL     AND system_bucket IS NOT NULL))
+);
+INSERT INTO postings_new (id, transaction_id, account_id, system_bucket, amount_cents)
+  SELECT id, transaction_id, account_id, system_bucket, amount_cents FROM postings;
+
+CREATE TABLE transaction_splits_new (
+  id              TEXT PRIMARY KEY,
+  transaction_id  TEXT NOT NULL REFERENCES transactions_new(id) ON DELETE CASCADE,
+  category_id     TEXT NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+  amount_cents    INTEGER NOT NULL CHECK (amount_cents > 0),
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL
+);
+INSERT INTO transaction_splits_new (id, transaction_id, category_id, amount_cents, sort_order, created_at)
+  SELECT id, transaction_id, category_id, amount_cents, sort_order, created_at FROM transaction_splits;
+
+DROP TABLE transaction_splits;
+DROP TABLE postings;
+DROP TABLE transactions;
+ALTER TABLE transactions_new RENAME TO transactions;
+ALTER TABLE postings_new RENAME TO postings;
+ALTER TABLE transaction_splits_new RENAME TO transaction_splits;
+
+CREATE INDEX idx_tx_date ON transactions(transaction_date);
+CREATE INDEX idx_tx_account ON transactions(account_id);
+CREATE INDEX idx_tx_to_account ON transactions(to_account_id);
+CREATE INDEX idx_tx_category ON transactions(category_id);
+CREATE INDEX idx_tx_kind ON transactions(kind);
+CREATE INDEX idx_postings_account ON postings(account_id);
+CREATE INDEX idx_postings_txn ON postings(transaction_id);
+CREATE INDEX idx_splits_txn ON transaction_splits(transaction_id);
+CREATE INDEX idx_splits_cat ON transaction_splits(category_id);
+
+CREATE TABLE reimbursement_allocations (
+  id               TEXT PRIMARY KEY,
+  reimbursement_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  expense_id       TEXT NOT NULL REFERENCES transactions(id) ON DELETE RESTRICT,
+  amount_cents     INTEGER NOT NULL CHECK (amount_cents > 0),
+  created_at       TEXT NOT NULL,
+  UNIQUE (reimbursement_id, expense_id)
+);
+CREATE INDEX idx_alloc_reimbursement ON reimbursement_allocations(reimbursement_id);
+CREATE INDEX idx_alloc_expense ON reimbursement_allocations(expense_id);
 "#;

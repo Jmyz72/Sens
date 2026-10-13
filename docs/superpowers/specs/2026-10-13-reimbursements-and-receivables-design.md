@@ -1,7 +1,7 @@
 # Reimbursements, claims, and money owed to me
 
 **Date:** 2026-10-13
-**Status:** Draft: awaiting review
+**Status:** Approved — implemented per the plan
 
 ## Problem
 

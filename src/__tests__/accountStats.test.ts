@@ -20,6 +20,7 @@ function tx(kind: TransactionKind, accountId: string, amountCents: number, date:
   return {
     id: `t${seq}`, kind, accountId, toAccountId, categoryId: null, amountCents,
     description: null, transactionDate: date, transactionTime: null, excludedFromReporting: false, splits: [],
+    expectedReimbursementCents: null, reimbursedCents: 0, allocations: [],
     createdAt: `${date}T00:00:0${seq % 10}`, updatedAt: `${date}T00:00:00`,
   };
 }
