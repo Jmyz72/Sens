@@ -2405,4 +2405,157 @@ mod plan_tests {
         let left = crate::repo::list_budget_versions(&conn).unwrap();
         assert!(left.iter().all(|v| v.0 != lone.id));
     }
+
+    #[test]
+    fn monthly_required_matches_the_worked_examples() {
+        assert_eq!(service::monthly_required("2026-10-14", Some("2027-06-01"), 420_000, 1_000_000), Some(72_500));
+        // Eight months (Oct through May), so ceil(1001/8) is 126. 334 is that gap over three months.
+        assert_eq!(service::monthly_required("2026-10-14", Some("2027-06-01"), 0, 1_001), Some(126));
+        assert_eq!(service::monthly_required("2026-10-14", Some("2027-01-01"), 0, 1_001), Some(334));
+        assert_eq!(service::monthly_required("2026-10-14", None, 0, 1_000), None);
+        assert_eq!(service::monthly_required("2026-10-14", Some("2026-06-01"), 0, 1_000), None);
+        assert_eq!(service::monthly_required("2026-10-14", Some("2027-06-01"), 1_000, 1_000), None);
+        assert_eq!(service::monthly_required("2026-10-14", Some("2026-01-01"), 2_000, 1_000), None);
+        assert_eq!(service::monthly_required("2026-10-14", Some("2026-10-14"), 0, 500), Some(500));
+        assert_eq!(service::monthly_required("2026-10-14", Some("2026-10-20"), 0, 500), Some(500));
+        assert_eq!(service::monthly_required("2026-10-14", Some("2026-11-01"), 0, 500), Some(500));
+        assert_eq!(service::monthly_required("2026-10-14", Some("2026-10-20"), -100, 500), Some(600));
+    }
+
+    #[test]
+    fn a_goal_uses_the_live_balance_and_one_eligible_account() {
+        let conn = open_in_memory().unwrap();
+        let sav = service::create_account(&conn, "Maybank", "savings", 420_000, None, None).unwrap();
+        let card = service::create_account(&conn, "Visa", "credit-card", 0, None, Some(500_000)).unwrap();
+        let goal = service::create_goal(&conn, GoalWrite {
+            id: None, name: "  Emergency  ".into(), account_id: sav.id.clone(),
+            target_cents: 1_000_000, target_date: Some("2027-06-01".into()),
+        }).unwrap();
+        assert_eq!(goal.name, "Emergency");
+        assert_eq!(goal.balance_cents, 420_000);
+        assert!(goal.monthly_cents.is_some());
+
+        let err = service::create_goal(&conn, GoalWrite {
+            id: None, name: "Holiday".into(), account_id: sav.id.clone(),
+            target_cents: 1, target_date: None,
+        }).unwrap_err();
+        assert_eq!(msg(err), "This account already has a goal.");
+        let err = service::create_goal(&conn, GoalWrite {
+            id: None, name: "Card".into(), account_id: card.id.clone(),
+            target_cents: 1, target_date: None,
+        }).unwrap_err();
+        assert_eq!(msg(err), "Goals can only sit on cash, an e-wallet, savings, or a current account.");
+        let err = service::update_account(&conn, UpdateAccountInput {
+            id: sav.id.clone(), name: None, subtype: Some("credit-card".into()),
+            opening_balance_cents: None, credit_limit_cents: Some(100_000),
+        }).unwrap_err();
+        assert_eq!(msg(err), "Delete this account's goal before changing its type.");
+
+        service::archive_account(&conn, &sav.id).unwrap();
+        assert!(service::get_plan(&conn, &crate::today()[..7]).unwrap().goals.is_empty());
+        service::restore_account(&conn, &sav.id).unwrap();
+        assert_eq!(service::get_plan(&conn, &crate::today()[..7]).unwrap().goals.len(), 1);
+
+        service::delete_goal(&conn, &goal.id).unwrap();
+        assert!(service::get_plan(&conn, &crate::today()[..7]).unwrap().goals.is_empty());
+        assert_eq!(service::get_account(&conn, &sav.id).unwrap().balance_cents, 420_000);
+    }
+
+    #[test]
+    fn factory_reset_clears_budgets_and_goals() {
+        let conn = open_in_memory().unwrap();
+        let sav = service::create_account(&conn, "Maybank", "savings", 0, None, None).unwrap();
+        // Seed already has a top-level expense category named Food.
+        let food = service::create_category(&conn, "Plan Food", "expense", "🍜", None, None).unwrap();
+        service::set_budgets(&conn, &[BudgetWrite { category_id: food.id, amount_cents: Some(1) }]).unwrap();
+        service::create_goal(&conn, GoalWrite {
+            id: None, name: "Emergency".into(), account_id: sav.id, target_cents: 1, target_date: None,
+        }).unwrap();
+        service::reset_app(&conn).unwrap();
+        assert_eq!(crate::repo::list_budget_versions(&conn).unwrap().len(), 0);
+        let plan = service::get_plan(&conn, "2026-10").unwrap();
+        assert!(plan.goals.is_empty());
+    }
+
+    #[test]
+    fn update_goal_keeps_its_account_and_rejects_a_taken_one() {
+        let conn = open_in_memory().unwrap();
+        let sav = service::create_account(&conn, "Maybank", "savings", 0, None, None).unwrap();
+        let cash = service::create_account(&conn, "Wallet", "cash", 0, None, None).unwrap();
+        let current = service::create_account(&conn, "Checking", "current", 0, None, None).unwrap();
+        let wallet = service::create_account(&conn, "TnG", "ewallet", 0, None, None).unwrap();
+        let goal = service::create_goal(&conn, GoalWrite {
+            id: None, name: "Emergency".into(), account_id: sav.id.clone(),
+            target_cents: 500, target_date: Some("2027-06-01".into()),
+        }).unwrap();
+
+        let updated = service::update_goal(&conn, GoalWrite {
+            id: Some(goal.id.clone()), name: "  Rainy day  ".into(), account_id: sav.id.clone(),
+            target_cents: 800, target_date: None,
+        }).unwrap();
+        assert_eq!(updated.id, goal.id);
+        assert_eq!(updated.name, "Rainy day");
+        assert_eq!(updated.account_id, sav.id);
+        assert_eq!(updated.target_cents, 800);
+        assert!(updated.target_date.is_none());
+        assert!(updated.monthly_cents.is_none());
+
+        let moved = service::update_goal(&conn, GoalWrite {
+            id: Some(goal.id.clone()), name: "Rainy day".into(), account_id: cash.id.clone(),
+            target_cents: 800, target_date: None,
+        }).unwrap();
+        assert_eq!(moved.account_id, cash.id);
+
+        service::create_goal(&conn, GoalWrite {
+            id: None, name: "Holiday".into(), account_id: current.id.clone(),
+            target_cents: 10, target_date: None,
+        }).unwrap();
+        service::create_goal(&conn, GoalWrite {
+            id: None, name: "Phone".into(), account_id: wallet.id,
+            target_cents: 10, target_date: None,
+        }).unwrap();
+        let err = service::update_goal(&conn, GoalWrite {
+            id: Some(goal.id.clone()), name: "Rainy day".into(), account_id: current.id,
+            target_cents: 800, target_date: None,
+        }).unwrap_err();
+        assert_eq!(msg(err), "This account already has a goal.");
+        assert_eq!(
+            msg(service::update_goal(&conn, GoalWrite {
+                id: None, name: "Rainy day".into(), account_id: cash.id.clone(),
+                target_cents: 800, target_date: None,
+            }).unwrap_err()),
+            "Goal not found"
+        );
+        assert_eq!(
+            msg(service::update_goal(&conn, GoalWrite {
+                id: Some(goal.id.clone()), name: "   ".into(), account_id: cash.id.clone(),
+                target_cents: 800, target_date: None,
+            }).unwrap_err()),
+            "Goal name cannot be empty"
+        );
+        assert_eq!(
+            msg(service::update_goal(&conn, GoalWrite {
+                id: Some(goal.id.clone()), name: "Rainy day".into(), account_id: cash.id.clone(),
+                target_cents: 0, target_date: None,
+            }).unwrap_err()),
+            "Target must be greater than zero."
+        );
+        assert_eq!(
+            msg(service::update_goal(&conn, GoalWrite {
+                id: Some(goal.id), name: "Rainy day".into(), account_id: cash.id.clone(),
+                target_cents: 800, target_date: Some("2027-02-31".into()),
+            }).unwrap_err()),
+            "Date must be a real YYYY-MM-DD."
+        );
+        assert_eq!(msg(service::delete_goal(&conn, "missing").unwrap_err()), "Goal not found");
+
+        service::archive_account(&conn, &cash.id).unwrap();
+        assert_eq!(
+            msg(service::create_goal(&conn, GoalWrite {
+                id: None, name: "Again".into(), account_id: cash.id,
+                target_cents: 1, target_date: None,
+            }).unwrap_err()),
+            "The selected account is archived"
+        );
+    }
 }

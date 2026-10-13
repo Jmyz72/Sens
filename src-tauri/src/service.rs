@@ -162,6 +162,10 @@ pub fn list_accounts(conn: &Connection, include_archived: bool) -> AppResult<Vec
     repo::list_accounts(conn, include_archived)
 }
 
+pub fn get_account(conn: &Connection, id: &str) -> AppResult<Account> {
+    repo::get_account(conn, id)
+}
+
 pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult<Account> {
     let existing = repo::get_account(conn, &input.id)?; // existence
     let name = match &input.name {
@@ -174,6 +178,9 @@ pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult
         }
     }
     let resulting_subtype = input.subtype.as_deref().unwrap_or(existing.subtype.as_str());
+    if !goal_subtype(resulting_subtype) && repo::goal_for_account(conn, &input.id)?.is_some() {
+        return Err(AppError::Conflict("Delete this account's goal before changing its type.".into()));
+    }
     let limit = resolve_credit_limit(resulting_subtype, input.credit_limit_cents, existing.credit_limit_cents)?;
     let tx = conn.unchecked_transaction()?;
     repo::update_account_fields(
@@ -1108,7 +1115,7 @@ fn ensure_envelopes(conn: &Connection, month: &str) -> AppResult<()> {
 
 /// Budgets for one `YYYY-MM` month. Spent uses the dashboard's category nets:
 /// a child is its own net, a parent is its own net plus its children's. Goals
-/// are filled by a later task.
+/// are every goal whose account is not archived.
 pub fn get_plan(conn: &Connection, month: &str) -> AppResult<Plan> {
     let (from, to) = month_range(month)?;
     let own: std::collections::HashMap<String, i64> =
@@ -1149,9 +1156,126 @@ pub fn get_plan(conn: &Connection, month: &str) -> AppResult<Plan> {
         });
     }
     budgets.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then_with(|| a.name.cmp(&b.name)));
+    let mut goals = Vec::new();
+    for account in repo::list_accounts(conn, true)? {
+        if account.is_archived {
+            continue;
+        }
+        if let Some(row) = repo::goal_for_account(conn, &account.id)? {
+            goals.push(plan_goal(&account, &row));
+        }
+    }
     Ok(Plan {
         month: month.to_string(),
         budgets,
-        goals: vec![],
+        goals,
     })
+}
+
+pub fn monthly_required(today: &str, target_date: Option<&str>, balance_cents: i64, target_cents: i64) -> Option<i64> {
+    let date = target_date?;
+    let gap = target_cents - balance_cents;
+    if gap <= 0 || date < today {
+        return None;
+    }
+    let months = months_left(&today[..7], &date[..7]);
+    Some((gap + i64::from(months) - 1) / i64::from(months))
+}
+
+fn months_left(today_month: &str, target_month: &str) -> i32 {
+    let idx = |ym: &str| -> i32 {
+        let y: i32 = ym[..4].parse().unwrap_or(0);
+        let m: i32 = ym[5..7].parse().unwrap_or(1);
+        y * 12 + (m - 1)
+    };
+    let d = idx(target_month) - idx(today_month);
+    if d <= 0 { 1 } else { d }
+}
+
+fn goal_subtype(subtype: &str) -> bool {
+    matches!(subtype, "cash" | "ewallet" | "savings" | "current")
+}
+
+fn plan_goal(account: &Account, row: &repo::GoalRow) -> PlanGoal {
+    PlanGoal {
+        id: row.id.clone(),
+        name: row.name.clone(),
+        account_id: row.account_id.clone(),
+        account_name: account.name.clone(),
+        balance_cents: account.balance_cents,
+        target_cents: row.target_cents,
+        target_date: row.target_date.clone(),
+        monthly_cents: monthly_required(
+            &crate::today(),
+            row.target_date.as_deref(),
+            account.balance_cents,
+            row.target_cents,
+        ),
+    }
+}
+
+/// Shared checks for create and update. `current_id` is the goal being edited,
+/// so that goal may keep its account. Any other account must be free.
+fn prepare_goal(conn: &Connection, input: &GoalWrite, current_id: Option<&str>) -> AppResult<String> {
+    let name = require_nonempty("Goal name", &input.name)?;
+    if input.target_cents <= 0 {
+        return Err(AppError::Validation("Target must be greater than zero.".into()));
+    }
+    if let Some(date) = &input.target_date {
+        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .map_err(|_| AppError::Validation("Date must be a real YYYY-MM-DD.".into()))?;
+    }
+    ensure_active_account(conn, &input.account_id, "selected")?;
+    let account = repo::get_account(conn, &input.account_id)?;
+    if !goal_subtype(&account.subtype) {
+        return Err(AppError::Conflict(
+            "Goals can only sit on cash, an e-wallet, savings, or a current account.".into(),
+        ));
+    }
+    if let Some(existing) = repo::goal_for_account(conn, &input.account_id)? {
+        if current_id != Some(existing.id.as_str()) {
+            return Err(AppError::Conflict("This account already has a goal.".into()));
+        }
+    }
+    Ok(name)
+}
+
+pub fn create_goal(conn: &Connection, input: GoalWrite) -> AppResult<PlanGoal> {
+    let name = prepare_goal(conn, &input, None)?;
+    let id = new_id();
+    repo::insert_goal(
+        conn,
+        &id,
+        &name,
+        &input.account_id,
+        input.target_cents,
+        input.target_date.as_deref(),
+        &now(),
+    )?;
+    let account = repo::get_account(conn, &input.account_id)?;
+    let row = repo::get_goal(conn, &id)?;
+    Ok(plan_goal(&account, &row))
+}
+
+pub fn update_goal(conn: &Connection, input: GoalWrite) -> AppResult<PlanGoal> {
+    let id = input.id.clone().unwrap_or_default();
+    repo::get_goal(conn, &id)?;
+    let name = prepare_goal(conn, &input, Some(&id))?;
+    repo::update_goal(
+        conn,
+        &id,
+        &name,
+        &input.account_id,
+        input.target_cents,
+        input.target_date.as_deref(),
+        &now(),
+    )?;
+    let account = repo::get_account(conn, &input.account_id)?;
+    let row = repo::get_goal(conn, &id)?;
+    Ok(plan_goal(&account, &row))
+}
+
+pub fn delete_goal(conn: &Connection, id: &str) -> AppResult<()> {
+    repo::get_goal(conn, id)?;
+    repo::delete_goal(conn, id)
 }
