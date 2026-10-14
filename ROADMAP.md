@@ -120,9 +120,9 @@ Set what a fixed deposit, investment, unit trust, or crypto account is worth
 now. The difference is income or expense in a category saved on the account,
 or picked for that update. Correct balance stays as it is.
 
-- [ ] Update Net Worth on those four account kinds
-- [ ] Optional gain and loss categories on the account
-- [ ] A rise records income and a drop records expense, counted in reporting and budgets
+- [x] Update Net Worth on those four account kinds
+- [x] Optional gain and loss categories on the account
+- [x] A rise records income and a drop records expense, counted in reporting and budgets
 
 Spec: `docs/superpowers/specs/2026-10-14-update-net-worth-design.md`
 

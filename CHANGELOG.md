@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Update Net Worth.** On a fixed deposit, investment, unit trust, or crypto account, enter what it is worth now. The difference is saved as income or expense, dated today, described "Value update", and counted in income, spending, and budgets. The account can remember an income category for a rise and an expense category for a drop. When it has no category for that side, the update asks once and does not save the choice. Correct balance is unchanged.
+
 ### Documentation
 - Specified Update Net Worth for fixed deposit, investment, unit trust, and crypto accounts (`docs/superpowers/specs/2026-10-14-update-net-worth-design.md`).
 - Planned Update Net Worth (`docs/superpowers/plans/2026-10-14-update-net-worth.md`).
