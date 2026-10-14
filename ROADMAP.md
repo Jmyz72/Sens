@@ -136,9 +136,9 @@ Spec: `docs/superpowers/specs/2026-10-14-budgets-and-goals-design.md`
 
 ### ⚪ Recurring & reminders
 
-- [ ] Recurring/scheduled transactions
-- [ ] Upcoming list + one-tap post
-- [ ] Bill due-date reminders
+- [x] Recurring/scheduled transactions
+- [x] Upcoming list + one-tap post
+- [x] Bill due-date reminders
 
 Spec: `docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`
 

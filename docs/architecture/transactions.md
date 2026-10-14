@@ -16,6 +16,7 @@ Read this before changing balance math, transaction validation, or dashboard tot
 - [Opening balance](#opening-balance)
 - [Excluded from reporting](#excluded-from-reporting)
 - [Transaction time](#transaction-time)
+- [Schedules](#schedules)
 - [Balance correction](#balance-correction)
 - [Update Net Worth](#update-net-worth)
 - [Category splits](#category-splits)
@@ -116,6 +117,21 @@ Optional. A nullable `transaction_time TEXT` column holds 24-hour `"HH:MM"` or N
 - Time appears in the Add/Edit modal, `TxnDetailPanel`, and `TxnRow` (whenever a row has one).
 - The Settings toggle "Record transaction times" drives the setting (read via `useTimeSetting`).
 - Mock mirror: `timeEnabled` / `resolveTime`.
+- A new schedule's time starts as the current minute while the setting is on. While it is off, schedules store no time.
+
+## Schedules
+
+A schedule is a saved income, expense, transfer, or payment plus a repeat rule. It is not a transaction until a pass or a tap posts one date.
+
+- **Auto** posts each due date. **Tap to post** leaves it on Upcoming until Post or Skip.
+- The pass runs when Sens opens, when the window focuses, when the next due time arrives, and when a schedule is saved or deleted.
+- Upcoming is due and overdue tap-to-post dates only. The Transactions sidebar count is that number, and it is hidden at zero.
+- Post can use a different amount for that one transaction. Skip writes no transaction. A schedule that cannot post shows the reason; Skip still works.
+- While you were away lists the transactions a pass wrote, then Dismiss closes it.
+- Repeat presets fill the pattern from the first date. A later change to that date does not rewrite the pattern. Custom edits the pattern and leaves the first date alone. Weeks start on Monday.
+- Factory reset deletes schedules and their occurrence rows.
+
+Spec: `docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`.
 
 ## Balance correction
 

@@ -78,9 +78,12 @@ Spec: `docs/superpowers/specs/2026-06-02-transactions-screen-redesign-design.md`
 - Date-range segmented control (This month / Last month / Custom / All), wired to `listTransactions` `fromDate` / `toDate`.
 - Sort by date or amount.
 - Compact / comfortable density toggle, persisted in `localStorage` under `sens.txn.density`.
+- **Schedules** opens the schedule list (add, edit, delete). The form has the Add Transaction fields for the kind, Tap to post or Auto, the first date, the repeat, the end, and the time while times are on.
 
 **List**
 
+- **Upcoming** sits above the date groups when a tap-to-post row is due. Post can change the amount. Skip leaves no transaction. A row that cannot post shows the reason and still allows Skip. The sidebar count on Transactions is the number of those rows, hidden at zero.
+- **While you were away** lists auto transactions a pass wrote. Dismiss closes it. Theme tokens only; kind color is paired with the sign and icon.
 - Date-grouped, with **sticky day headers showing the day's net subtotal**.
 - Aligned monospace amount column.
 - A category color dot on each glyph tile.

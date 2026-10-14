@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Recurring schedules.** A saved income, expense, transfer, or payment can repeat. A pass posts each due automatic date, including dates missed since the last pass, and leaves tap-to-post dates until they are posted or skipped. An archived account blocks the post and still allows a skip. Factory reset clears schedules.
+- **Schedules, Upcoming, and the away notice.** Transactions has a Schedules button to add, edit, and delete a repeat. Due tap-to-post rows sit above the list, with Post and Skip. The Transactions sidebar count is how many are waiting. A pass that posts on its own lists those transactions in While you were away until dismissed.
 - **Update Net Worth.** On a fixed deposit, investment, unit trust, or crypto account, enter what it is worth now. The difference is saved as income or expense, dated today, described "Value update", and counted in income, spending, and budgets. The account can remember an income category for a rise and an expense category for a drop. When it has no category for that side, the update asks once and does not save the choice. Correct balance is unchanged.
 
 ### Fixed
