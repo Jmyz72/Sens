@@ -93,7 +93,7 @@ into *Shipped* with its tag.
 | 1 | [Credit & debt behavior](#-credit--debt-behavior) | 🟢 (shipped, awaiting release) | credit limit ✅ · payments ✅ · reimbursements ✅ |
 | 2 | [Update Net Worth](#-update-net-worth) | ⚪ | `2026-10-14-update-net-worth-design.md` |
 | 3 | [Budgets & goals](#-budgets--goals) | ⚪ | `2026-10-14-budgets-and-goals-design.md` |
-| 4 | [Recurring & reminders](#-recurring--reminders) | ⚪ | TBD |
+| 4 | [Recurring & reminders](#-recurring--reminders) | ⚪ | `2026-10-15-recurring-and-reminders-design.md` |
 | 5 | [Advanced search, filter & tags](#-advanced-search-filter--tags) | ⚪ | TBD |
 | 6 | [Reports & insights](#-reports--insights) | ⚪ | TBD |
 | 7 | [Data integrity & ownership](#-data-integrity--ownership) | ⚪ | TBD |
@@ -140,7 +140,7 @@ Spec: `docs/superpowers/specs/2026-10-14-budgets-and-goals-design.md`
 - [ ] Upcoming list + one-tap post
 - [ ] Bill due-date reminders
 
-Spec: _TBD_
+Spec: `docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`
 
 ### ⚪ Advanced search, filter & tags
 
