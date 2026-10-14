@@ -6,6 +6,7 @@ mod commands;
 mod db;
 pub mod error;
 mod models;
+mod recurrence;
 mod repo;
 mod service;
 
