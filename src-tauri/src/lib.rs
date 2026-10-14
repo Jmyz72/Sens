@@ -8,6 +8,7 @@ pub mod error;
 mod models;
 mod recurrence;
 mod repo;
+mod schedules;
 mod service;
 
 use std::sync::Mutex;
@@ -81,6 +82,14 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::reset_app,
+            commands::create_schedule,
+            commands::update_schedule,
+            commands::delete_schedule,
+            commands::list_schedules,
+            commands::list_upcoming,
+            commands::post_occurrence,
+            commands::skip_occurrence,
+            commands::run_schedule_pass,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sens");
@@ -2906,5 +2915,542 @@ mod plan_tests {
             }).unwrap_err()),
             "The selected account is archived"
         );
+    }
+}
+
+#[cfg(test)]
+mod schedule_tests {
+    use chrono::{NaiveDate, NaiveDateTime};
+
+    use crate::db::open_in_memory;
+    use crate::error::AppError;
+    use crate::models::{Account, ScheduleWrite, TransactionFilters};
+    use crate::recurrence::{self, End, Freq, MonthMode, Ordinal, OrdinalDay, Rule};
+    use crate::repo;
+    use crate::schedules;
+    use crate::service;
+    use rusqlite::Connection;
+
+    fn acct(conn: &rusqlite::Connection, name: &str, opening: i64) -> Account {
+        service::create_account(conn, name, "savings", opening, None, None, None, None).unwrap()
+    }
+
+    fn income_cat(conn: &rusqlite::Connection) -> String {
+        service::list_categories(conn, Some("income"), false)
+            .unwrap()
+            .into_iter()
+            .find(|cat| !cat.is_system && cat.parent_id.is_none())
+            .unwrap()
+            .id
+    }
+
+    fn at(s: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M").unwrap()
+    }
+
+    fn test_db() -> Connection {
+        let c = open_in_memory().unwrap();
+        service::set_setting(&c, "transaction_time_enabled", "0").unwrap();
+        c
+    }
+
+    fn expense_cat(conn: &Connection) -> (String, String) {
+        let cat = service::list_categories(conn, Some("expense"), false)
+            .unwrap()
+            .into_iter()
+            .find(|cat| !cat.is_system && cat.parent_id.is_none())
+            .unwrap();
+        (cat.id, cat.name)
+    }
+
+    fn kinds(conn: &Connection, kind: &str) -> Vec<crate::models::Transaction> {
+        service::list_transactions(conn, TransactionFilters { kind: Some(kind.into()), ..Default::default() }).unwrap()
+    }
+
+    fn table_count(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0)).unwrap()
+    }
+
+    fn posting_count(conn: &Connection, id: &str) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM postings WHERE transaction_id = ?1", [id], |row| row.get(0)).unwrap()
+    }
+
+    fn posting_sum(conn: &Connection, id: &str) -> i64 {
+        conn.query_row(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM postings WHERE transaction_id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn salary_schedule(account_id: &str, category_id: &str) -> ScheduleWrite {
+        ScheduleWrite {
+            mode: "auto".into(),
+            kind: "income".into(),
+            amount_cents: 500_000,
+            account_id: account_id.into(),
+            to_account_id: None,
+            category_id: Some(category_id.into()),
+            description: Some("Salary".into()),
+            start_date: "2026-10-25".into(),
+            time: Some("09:00".into()),
+            frequency: "monthly".into(),
+            interval: 1,
+            weekdays: vec![],
+            month_mode: Some("each".into()),
+            month_days: vec![25],
+            ordinal: None,
+            ordinal_day: None,
+            months: vec![],
+            day_of_month: None,
+            end_mode: "never".into(),
+            end_count: None,
+            end_date: None,
+        }
+    }
+
+    #[test]
+    fn auto_posts_at_the_schedule_time() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let input = salary_schedule(&a.id, &cat);
+        let early = NaiveDateTime::parse_from_str("2026-10-25T08:00", "%Y-%m-%dT%H:%M").unwrap();
+        schedules::create_schedule(&c, input.clone(), early).unwrap();
+        assert!(schedules::run_pass(&c, early).unwrap().posted.is_empty());
+        assert!(schedules::list_upcoming(&c, early).unwrap().is_empty());
+        let due = NaiveDateTime::parse_from_str("2026-10-25T09:00", "%Y-%m-%dT%H:%M").unwrap();
+        let pass = schedules::run_pass(&c, due).unwrap();
+        assert_eq!(pass.posted.len(), 1);
+        assert_eq!(pass.posted[0].transaction_date, "2026-10-25");
+        assert_eq!(pass.posted[0].transaction_time.as_deref(), Some("09:00"));
+        assert_eq!(pass.posted[0].amount_cents, 500_000);
+        assert!(schedules::run_pass(&c, due).unwrap().posted.is_empty());
+    }
+
+    #[test]
+    fn tap_posts_a_chosen_amount_and_stays_settled_after_delete() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.mode = "tap".into();
+        let due = at("2026-10-25T09:00");
+        let saved = schedules::create_schedule(&c, input, due).unwrap();
+        assert!(schedules::run_pass(&c, due).unwrap().posted.is_empty());
+        let upcoming = schedules::list_upcoming(&c, due).unwrap();
+        assert_eq!(upcoming.len(), 1);
+        assert_eq!(upcoming[0].occurrence_date, "2026-10-25");
+        assert_eq!(upcoming[0].label, "Salary");
+        assert_eq!(upcoming[0].account_name, "Salary");
+        assert_eq!(upcoming[0].amount_cents, 500_000);
+
+        let posted = schedules::post_occurrence(&c, &saved.id, "2026-10-25", 125_000, due).unwrap();
+        assert_eq!(posted.amount_cents, 125_000);
+        assert_eq!(posted.kind, "income");
+        assert_eq!(schedules::list_schedules(&c, due).unwrap()[0].amount_cents, 500_000);
+
+        service::delete_transaction(&c, &posted.id).unwrap();
+        assert!(schedules::list_upcoming(&c, due).unwrap().is_empty());
+        assert!(schedules::run_pass(&c, due).unwrap().posted.is_empty());
+        let row = repo::occurrence_status(&c, &saved.id, "2026-10-25").unwrap().unwrap();
+        assert_eq!(row.status, "posted");
+        assert!(row.transaction_id.is_none());
+    }
+
+    #[test]
+    fn missed_months_post_for_auto_and_list_oldest_first_for_tap() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.start_date = "2026-01-01".into();
+        input.month_days = vec![1];
+        input.description = Some("Pay".into());
+        let before = at("2025-12-01T12:00");
+        schedules::create_schedule(&c, input.clone(), before).unwrap();
+        let now = at("2026-03-15T12:00");
+        let pass = schedules::run_pass(&c, now).unwrap();
+        assert_eq!(
+            pass.posted.iter().map(|t| t.transaction_date.as_str()).collect::<Vec<_>>(),
+            vec!["2026-01-01", "2026-02-01", "2026-03-01"]
+        );
+        assert!(schedules::run_pass(&c, now).unwrap().posted.is_empty());
+
+        input.mode = "tap".into();
+        input.description = Some("Rent".into());
+        schedules::create_schedule(&c, input.clone(), before).unwrap();
+        for label in ["Alpha", "Beta"] {
+            let mut one = input.clone();
+            one.description = Some(label.into());
+            one.start_date = "2026-03-01".into();
+            one.frequency = "daily".into();
+            one.month_mode = None;
+            one.month_days = vec![];
+            one.end_mode = "after".into();
+            one.end_count = Some(1);
+            schedules::create_schedule(&c, one, before).unwrap();
+        }
+        let upcoming = schedules::list_upcoming(&c, now).unwrap();
+        assert_eq!(
+            upcoming.iter().map(|row| row.occurrence_date.as_str()).collect::<Vec<_>>(),
+            vec!["2026-01-01", "2026-02-01", "2026-03-01", "2026-03-01", "2026-03-01"]
+        );
+        assert_eq!(
+            upcoming.iter().map(|row| row.label.as_str()).collect::<Vec<_>>(),
+            vec!["Rent", "Rent", "Alpha", "Beta", "Rent"]
+        );
+    }
+
+    #[test]
+    fn clock_jump_posts_the_missed_day_once() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let early = at("2026-10-24T22:00");
+        schedules::create_schedule(&c, salary_schedule(&a.id, &cat), early).unwrap();
+        assert_eq!(
+            schedules::run_pass(&c, early).unwrap().next_wake_at.as_deref(),
+            Some("2026-10-25T09:00")
+        );
+        let jumped = at("2026-10-28T08:00");
+        let pass = schedules::run_pass(&c, jumped).unwrap();
+        assert_eq!(pass.posted.len(), 1);
+        assert_eq!(pass.posted[0].transaction_date, "2026-10-25");
+        assert_eq!(pass.posted[0].transaction_time.as_deref(), Some("09:00"));
+        assert_eq!(pass.next_wake_at.as_deref(), Some("2026-11-25T09:00"));
+        assert!(schedules::run_pass(&c, jumped).unwrap().posted.is_empty());
+    }
+
+    #[test]
+    fn skip_then_edit_keeps_the_skipped_date_and_moves_waiting_days() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Checking", 0);
+        let (cat, _) = expense_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.mode = "tap".into();
+        input.kind = "expense".into();
+        input.amount_cents = 80_000;
+        input.description = Some("Rent".into());
+        input.start_date = "2026-03-01".into();
+        input.month_days = vec![1];
+        let created = at("2026-02-01T12:00");
+        let saved = schedules::create_schedule(&c, input.clone(), created).unwrap();
+        let april = at("2026-04-15T12:00");
+        schedules::skip_occurrence(&c, &saved.id, "2026-03-01", april).unwrap();
+        input.amount_cents = 90_000;
+        schedules::update_schedule(&c, &saved.id, input.clone(), april).unwrap();
+        let upcoming = schedules::list_upcoming(&c, april)
+            .unwrap()
+            .into_iter()
+            .filter(|row| row.schedule_id == saved.id)
+            .collect::<Vec<_>>();
+        assert!(upcoming.iter().all(|row| row.occurrence_date != "2026-03-01"));
+        assert_eq!(
+            upcoming.iter().find(|row| row.occurrence_date == "2026-04-01").unwrap().amount_cents,
+            90_000
+        );
+        let skipped = repo::occurrence_status(&c, &saved.id, "2026-03-01").unwrap().unwrap();
+        assert_eq!(skipped.status, "skipped");
+        assert!(kinds(&c, "expense").iter().all(|t| t.transaction_date != "2026-03-01"));
+
+        let mut waiting = input.clone();
+        waiting.amount_cents = 80_000;
+        waiting.description = Some("Waiting".into());
+        let waiting_id = schedules::create_schedule(&c, waiting.clone(), created).unwrap().id;
+        waiting.month_days = vec![5];
+        schedules::update_schedule(&c, &waiting_id, waiting, april).unwrap();
+        let moved = schedules::list_upcoming(&c, april)
+            .unwrap()
+            .into_iter()
+            .filter(|row| row.schedule_id == waiting_id)
+            .map(|row| row.occurrence_date)
+            .collect::<Vec<_>>();
+        assert_eq!(moved, vec!["2026-03-05".to_string(), "2026-04-05".to_string()]);
+
+        let mut posted_input = input.clone();
+        posted_input.amount_cents = 80_000;
+        posted_input.description = Some("Posted".into());
+        let posted_id = schedules::create_schedule(&c, posted_input.clone(), created).unwrap().id;
+        let posted = schedules::post_occurrence(&c, &posted_id, "2026-03-01", 80_000, april).unwrap();
+        posted_input.month_days = vec![5];
+        schedules::update_schedule(&c, &posted_id, posted_input, april).unwrap();
+        let still = kinds(&c, "expense").into_iter().find(|t| t.id == posted.id).unwrap();
+        assert_eq!(still.transaction_date, "2026-03-01");
+        assert_eq!(still.amount_cents, 80_000);
+        let added = schedules::list_upcoming(&c, april)
+            .unwrap()
+            .into_iter()
+            .filter(|row| row.schedule_id == posted_id)
+            .map(|row| row.occurrence_date)
+            .collect::<Vec<_>>();
+        assert_eq!(added, vec!["2026-03-05".to_string(), "2026-04-05".to_string()]);
+    }
+
+    #[test]
+    fn ten_daily_dates_with_two_skips_do_not_add_an_eleventh() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Cash", 0);
+        let (cat, _) = expense_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.mode = "tap".into();
+        input.kind = "expense".into();
+        input.frequency = "daily".into();
+        input.start_date = "2026-10-01".into();
+        input.month_mode = None;
+        input.month_days = vec![];
+        input.end_mode = "after".into();
+        input.end_count = Some(10);
+        let saved = schedules::create_schedule(&c, input, at("2026-09-01T12:00")).unwrap();
+        let now = at("2026-10-11T12:00");
+        schedules::skip_occurrence(&c, &saved.id, "2026-10-02", now).unwrap();
+        schedules::skip_occurrence(&c, &saved.id, "2026-10-03", now).unwrap();
+
+        let rule = Rule {
+            start: NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            frequency: Freq::Daily,
+            interval: 1,
+            weekdays: vec![],
+            month_mode: MonthMode::Each,
+            month_days: vec![],
+            ordinal: Ordinal::First,
+            ordinal_day: OrdinalDay::Weekday,
+            months: vec![],
+            day_of_month: 1,
+            end: End::After(10),
+        };
+        let produced = recurrence::dates_through(&rule, NaiveDate::from_ymd_opt(2026, 10, 20).unwrap());
+        assert_eq!(produced.len(), 10);
+        assert!(!produced.iter().any(|date| date == &NaiveDate::from_ymd_opt(2026, 10, 11).unwrap()));
+
+        let upcoming = schedules::list_upcoming(&c, now).unwrap();
+        let rows = repo::list_occurrences(&c, &saved.id).unwrap();
+        let posted = rows.iter().filter(|row| row.status == "posted").count();
+        let skipped = rows.iter().filter(|row| row.status == "skipped").count();
+        assert_eq!(upcoming.len() + posted + skipped, 10);
+        assert_eq!((upcoming.len(), posted, skipped), (8, 0, 2));
+        assert!(!upcoming.iter().any(|row| row.occurrence_date == "2026-10-11"));
+    }
+
+    #[test]
+    fn archived_account_blocks_post_and_still_allows_skip() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.mode = "tap".into();
+        let due = at("2026-10-25T10:00");
+        let saved = schedules::create_schedule(&c, input, due).unwrap();
+        service::archive_account(&c, &a.id).unwrap();
+        let pass = schedules::run_pass(&c, due).unwrap();
+        assert!(pass.posted.is_empty());
+        assert_eq!(pass.next_wake_at.as_deref(), Some("2026-11-25T09:00"));
+        let upcoming = schedules::list_upcoming(&c, due).unwrap();
+        assert_eq!(upcoming.len(), 1);
+        let err = schedules::post_occurrence(&c, &saved.id, "2026-10-25", 500_000, due).unwrap_err();
+        assert!(matches!(err, AppError::Conflict(_)));
+        let message = err.to_string();
+        assert_eq!(message, "The selected account is archived");
+        assert_eq!(
+            schedules::list_schedules(&c, due).unwrap()[0].block_reason.as_deref(),
+            Some(message.as_str())
+        );
+        assert_eq!(
+            schedules::list_upcoming(&c, due).unwrap()[0].block_reason.as_deref(),
+            Some(message.as_str())
+        );
+        schedules::skip_occurrence(&c, &saved.id, "2026-10-25", due).unwrap();
+        assert!(schedules::list_upcoming(&c, due).unwrap().is_empty());
+    }
+
+    #[test]
+    fn time_is_required_when_on_and_stored_null_when_off() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.time = None;
+        let err = schedules::create_schedule(&c, input.clone(), at("2026-10-25T08:00")).unwrap_err();
+        assert_eq!(err.to_string(), "A time is required");
+        input.time = Some("09:00".into());
+        let saved = schedules::create_schedule(&c, input, at("2026-10-24T12:00")).unwrap();
+        assert_eq!(saved.time.as_deref(), Some("09:00"));
+
+        let c = test_db();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.time = Some("09:00".into());
+        let saved = schedules::create_schedule(&c, input, at("2026-10-25T08:00")).unwrap();
+        assert_eq!(saved.time, None);
+        let income = kinds(&c, "income");
+        assert_eq!(income.len(), 1);
+        assert_eq!(income[0].transaction_date, "2026-10-25");
+        assert_eq!(income[0].transaction_time, None);
+    }
+
+    #[test]
+    fn delete_schedule_keeps_the_posted_transaction() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.mode = "tap".into();
+        input.start_date = "2026-01-01".into();
+        input.month_days = vec![1];
+        let saved = schedules::create_schedule(&c, input, at("2025-12-01T12:00")).unwrap();
+        let now = at("2026-03-15T12:00");
+        let posted = schedules::post_occurrence(&c, &saved.id, "2026-01-01", 500_000, now).unwrap();
+        assert_eq!(schedules::list_upcoming(&c, now).unwrap().len(), 2);
+        schedules::delete_schedule(&c, &saved.id).unwrap();
+        assert!(kinds(&c, "income").iter().any(|t| t.id == posted.id));
+        assert!(schedules::list_upcoming(&c, now).unwrap().is_empty());
+        assert_eq!(table_count(&c, "schedules"), 0);
+        assert_eq!(table_count(&c, "schedule_occurrences"), 0);
+    }
+
+    #[test]
+    fn transfer_and_payment_balance_and_expense_lands_in_its_month() {
+        let c = test_db();
+        let from = acct(&c, "Checking", 0);
+        let to = acct(&c, "Savings", 0);
+        let card = service::create_account(&c, "Visa", "credit-card", -80_000, None, Some(1_000_000), None, None).unwrap();
+        let (cat, cat_name) = expense_cat(&c);
+        let now = at("2026-01-15T12:00");
+
+        let mut transfer = salary_schedule(&from.id, &cat);
+        transfer.kind = "transfer".into();
+        transfer.category_id = None;
+        transfer.to_account_id = Some(to.id.clone());
+        transfer.amount_cents = 4_000;
+        transfer.description = None;
+        transfer.start_date = "2026-01-15".into();
+        transfer.frequency = "daily".into();
+        transfer.month_mode = None;
+        transfer.month_days = vec![];
+        transfer.end_mode = "after".into();
+        transfer.end_count = Some(1);
+        schedules::create_schedule(&c, transfer.clone(), now).unwrap();
+
+        let mut payment = transfer.clone();
+        payment.kind = "payment".into();
+        payment.account_id = from.id.clone();
+        payment.to_account_id = Some(card.id.clone());
+        payment.amount_cents = 7_000;
+        schedules::create_schedule(&c, payment.clone(), now).unwrap();
+
+        let mut expense = salary_schedule(&from.id, &cat);
+        expense.kind = "expense".into();
+        expense.amount_cents = 12_345;
+        expense.description = Some("Groceries".into());
+        expense.start_date = "2026-01-15".into();
+        expense.frequency = "daily".into();
+        expense.month_mode = None;
+        expense.month_days = vec![];
+        expense.end_mode = "after".into();
+        expense.end_count = Some(1);
+        schedules::create_schedule(&c, expense, now).unwrap();
+
+        let posted = kinds(&c, "transfer");
+        assert_eq!(posted.len(), 1);
+        assert_eq!(posting_count(&c, &posted[0].id), 2);
+        assert_eq!(posting_sum(&c, &posted[0].id), 0);
+        let paid = kinds(&c, "payment");
+        assert_eq!(paid.len(), 1);
+        assert_eq!(posting_count(&c, &paid[0].id), 2);
+        assert_eq!(posting_sum(&c, &paid[0].id), 0);
+        assert_eq!(service::get_dashboard_summary(&c, "2026-01").unwrap().expense_cents, 12_345);
+        assert_eq!(service::get_dashboard_summary(&c, "2026-02").unwrap().expense_cents, 0);
+
+        transfer.mode = "tap".into();
+        payment.mode = "tap".into();
+        schedules::create_schedule(&c, transfer, now).unwrap();
+        schedules::create_schedule(&c, payment, now).unwrap();
+        let mut named = salary_schedule(&from.id, &cat);
+        named.mode = "tap".into();
+        named.kind = "expense".into();
+        named.description = None;
+        named.start_date = "2026-01-15".into();
+        named.frequency = "daily".into();
+        named.month_mode = None;
+        named.month_days = vec![];
+        named.end_mode = "after".into();
+        named.end_count = Some(1);
+        schedules::create_schedule(&c, named, now).unwrap();
+        let upcoming = schedules::list_upcoming(&c, now).unwrap();
+        assert!(upcoming.iter().any(|row| row.kind == "transfer" && row.label == "Transfer"));
+        assert!(upcoming.iter().any(|row| row.kind == "payment" && row.label == "Payment"));
+        assert!(upcoming.iter().any(|row| row.kind == "expense" && row.label == cat_name));
+    }
+
+    #[test]
+    fn factory_reset_leaves_schedule_tables_empty() {
+        let c = test_db();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.start_date = "2026-01-01".into();
+        input.month_days = vec![1];
+        schedules::create_schedule(&c, input, at("2026-01-15T12:00")).unwrap();
+        assert!(table_count(&c, "schedules") > 0);
+        assert!(table_count(&c, "schedule_occurrences") > 0);
+        service::reset_app(&c).unwrap();
+        assert_eq!(table_count(&c, "schedules"), 0);
+        assert_eq!(table_count(&c, "schedule_occurrences"), 0);
+    }
+
+    #[test]
+    fn post_and_skip_reject_future_off_rule_and_settled_dates() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.mode = "tap".into();
+        input.start_date = "2026-01-01".into();
+        input.month_days = vec![1];
+        let saved = schedules::create_schedule(&c, input, at("2025-12-01T12:00")).unwrap();
+        let now = at("2026-03-15T12:00");
+        let not_due = "That date is not due.";
+        let not_on = "That date is not on this schedule.";
+        let settled = "That date was already posted or skipped.";
+        assert_eq!(schedules::post_occurrence(&c, &saved.id, "2026-04-01", 100, now).unwrap_err().to_string(), not_due);
+        assert_eq!(schedules::skip_occurrence(&c, &saved.id, "2026-04-01", now).unwrap_err().to_string(), not_due);
+        assert_eq!(schedules::post_occurrence(&c, &saved.id, "2026-03-02", 100, now).unwrap_err().to_string(), not_on);
+        assert_eq!(schedules::skip_occurrence(&c, &saved.id, "2026-03-02", now).unwrap_err().to_string(), not_on);
+        schedules::skip_occurrence(&c, &saved.id, "2026-03-01", now).unwrap();
+        assert_eq!(schedules::post_occurrence(&c, &saved.id, "2026-03-01", 100, now).unwrap_err().to_string(), settled);
+        assert_eq!(schedules::skip_occurrence(&c, &saved.id, "2026-03-01", now).unwrap_err().to_string(), settled);
+        schedules::post_occurrence(&c, &saved.id, "2026-02-01", 100, now).unwrap();
+        assert_eq!(schedules::post_occurrence(&c, &saved.id, "2026-02-01", 100, now).unwrap_err().to_string(), settled);
+        assert_eq!(schedules::skip_occurrence(&c, &saved.id, "2026-02-01", now).unwrap_err().to_string(), settled);
+    }
+
+    #[test]
+    fn switching_to_auto_posts_waiting_dates_and_switching_back_keeps_them() {
+        let c = open_in_memory().unwrap();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.mode = "tap".into();
+        input.amount_cents = 10_000;
+        input.start_date = "2026-01-01".into();
+        input.month_days = vec![1];
+        input.description = Some("Pay".into());
+        let saved = schedules::create_schedule(&c, input.clone(), at("2025-12-01T08:00")).unwrap();
+        let now = at("2026-02-15T12:00");
+        assert_eq!(schedules::list_upcoming(&c, now).unwrap().len(), 2);
+        input.mode = "auto".into();
+        input.amount_cents = 25_000;
+        schedules::update_schedule(&c, &saved.id, input.clone(), now).unwrap();
+        let mut dates = kinds(&c, "income").into_iter().map(|t| (t.transaction_date, t.amount_cents)).collect::<Vec<_>>();
+        dates.sort();
+        assert_eq!(dates, vec![("2026-01-01".into(), 25_000), ("2026-02-01".into(), 25_000)]);
+
+        input.mode = "tap".into();
+        schedules::update_schedule(&c, &saved.id, input, now).unwrap();
+        assert_eq!(kinds(&c, "income").len(), 2);
+        assert!(schedules::run_pass(&c, now).unwrap().posted.is_empty());
+        assert!(schedules::list_upcoming(&c, now).unwrap().is_empty());
     }
 }
