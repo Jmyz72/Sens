@@ -18,9 +18,10 @@ import { useAppData } from "../store";
 import { SetBalance } from "../modals/SetBalance";
 import { EditAccount } from "../modals/EditAccount";
 import { AddAccount } from "../modals/AddAccount";
+import { UpdateNetWorth } from "../modals/UpdateNetWorth";
 import { AddTransaction } from "../modals/AddTransaction";
 import { ProviderLogo } from "../components/ProviderLogo";
-import { balanceDisplay, creditReadout, lentLabel, toneColor, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
+import { balanceDisplay, creditReadout, lentLabel, toneColor, subtypeHasValueUpdate, TYPE_LABEL, TYPE_ORDER } from "../lib/accounts";
 import { useToast } from "../components/Toast";
 import { computeRunningBalances, txnSortKey } from "../lib/kinds";
 import { fmtDate, fmtMoney, todayISO } from "../lib/format";
@@ -53,6 +54,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
   const [open, setOpen] = useState<string | null>(null);
   const [period, setPeriod] = useState<ChartPeriod>("3M");
   const [correcting, setCorrecting] = useState<Account | null>(null);
+  const [updating, setUpdating] = useState<Account | null>(null);
   const [editing, setEditing] = useState<Account | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [payAccount, setPayAccount] = useState<Account | null>(null);
@@ -247,6 +249,9 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
                           {/* actions */}
                           <div style={{ display: "flex", gap: 8, padding: "0 0 12px" }}>
                             <Btn variant="outline" size="sm" icon="scale" onClick={() => setCorrecting(a)}>Correct balance</Btn>
+                            {subtypeHasValueUpdate(a.subtype) && !a.isArchived && (
+                              <Btn variant="outline" size="sm" onClick={() => setUpdating(a)}>Update Net Worth</Btn>
+                            )}
                             <Btn variant="outline" size="sm" icon="pencil" onClick={() => setEditing(a)}>Edit</Btn>
                             {a.isArchived
                               ? <Btn variant="outline" size="sm" icon="restore" onClick={() => client.restoreAccount(a.id).then(afterMutation).catch((e: unknown) => notify((e as { message?: string })?.message ?? "Failed to restore account", "error"))}>Restore</Btn>
@@ -276,6 +281,7 @@ export function Accounts({ go }: { go: (id: string, opts?: { accountId?: string 
       })}
 
       {correcting && <SetBalance account={correcting} hasTransactions={(txnsByAccount.get(correcting.id)?.some((t) => t.kind !== "opening") ?? false) || correcting.balanceCents !== correcting.openingBalanceCents} onClose={() => setCorrecting(null)} onDone={() => { setCorrecting(null); afterMutation(); }} />}
+      {updating && <UpdateNetWorth account={updating} onClose={() => setUpdating(null)} onDone={() => { setUpdating(null); afterMutation(); }} />}
       {editing && <EditAccount account={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); afterMutation(); }} />}
       {showAdd && <AddAccount onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); afterMutation(); }} />}
       {payAccount && (
