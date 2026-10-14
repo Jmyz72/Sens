@@ -440,7 +440,11 @@ pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
     if repo::count_transactions_for_category(conn, id)? > 0 {
         return Err(AppError::Conflict("In use by transactions — archive it instead".into()));
     }
-    repo::delete_category(conn, id)
+    let tx = conn.unchecked_transaction()?;
+    repo::clear_value_category(&tx, id, &now())?;
+    repo::delete_category(&tx, id)?;
+    tx.commit()?;
+    Ok(())
 }
 
 /// Reparent a category: move a leaf to another top-level parent, promote a

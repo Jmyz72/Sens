@@ -807,6 +807,16 @@ mod tests {
     }
 
     #[test]
+    fn deleting_an_unused_saved_category_clears_the_account() {
+        let c = open_in_memory().unwrap();
+        let gain = service::create_category(&c, "Growth", "income", "📈", None, None).unwrap();
+        let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, Some(&gain.id), None).unwrap();
+        service::delete_category(&c, &gain.id).unwrap();
+        let after = service::get_account(&c, &acc.id).unwrap();
+        assert_eq!(after.gain_category_id, None);
+    }
+
+    #[test]
     fn reorder_categories_sets_sort_order() {
         let c = open_in_memory().unwrap();
         let a = service::create_category(&c, "AA", "expense", "🅰️", None, None).unwrap();
