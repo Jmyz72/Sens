@@ -69,6 +69,19 @@ pub fn set_account_balance(state: State<'_, DbState>, account_id: String, real_b
     with_conn!(state, c => service::set_account_balance(&c, &account_id, real_balance_cents, record_as_income_expense))
 }
 
+#[tauri::command]
+pub fn update_net_worth(
+    state: State<'_, DbState>,
+    account_id: String,
+    balance_cents: i64,
+    category_id: Option<String>,
+    time: Option<String>,
+) -> AppResult<Account> {
+    with_conn!(state, c => service::update_net_worth(
+        &c, &account_id, balance_cents, category_id.as_deref(), time.as_deref()
+    ))
+}
+
 // ── Categories ───────────────────────────────────────────────────────────────
 
 #[tauri::command]

@@ -342,6 +342,55 @@ pub fn set_account_balance(
     repo::get_account(conn, account_id)
 }
 
+pub fn update_net_worth(
+    conn: &Connection,
+    account_id: &str,
+    balance_cents: i64,
+    category_id: Option<&str>,
+    time: Option<&str>,
+) -> AppResult<Account> {
+    let acc = repo::get_account(conn, account_id)?;
+    if acc.is_archived {
+        return Err(AppError::Conflict("Cannot update an archived account".into()));
+    }
+    if !is_value_subtype(&acc.subtype) {
+        return Err(AppError::Validation(
+            "Update Net Worth only applies to fixed deposits, investments, unit trusts, and crypto.".into(),
+        ));
+    }
+    if balance_cents < 0 {
+        return Err(AppError::Validation("Balance must be zero or more.".into()));
+    }
+    let diff = balance_cents - acc.balance_cents;
+    if diff == 0 {
+        return Ok(acc);
+    }
+    let kind = if diff > 0 { KIND_INCOME } else { KIND_EXPENSE };
+    let saved = if diff > 0 { acc.gain_category_id.clone() } else { acc.loss_category_id.clone() };
+    let cat = match saved {
+        Some(id) => id,
+        None => category_id
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| AppError::Validation("Pick a category for this update.".into()))?,
+    };
+    if repo::get_category(conn, &cat)?.is_system {
+        return Err(AppError::Validation("That category can't be selected.".into()));
+    }
+    validate_category_for(conn, &cat, kind)?;
+    let time = resolve_time(conn, time, None)?;
+    let today = crate::today();
+    let tx = conn.unchecked_transaction()?;
+    let txn = repo::insert_transaction(
+        &tx, &new_id(), kind, account_id, None, Some(&cat), diff.abs(),
+        Some("Value update"), &today, time.as_deref(), false, &now(),
+    )?;
+    materialize_postings(&tx, &txn)?;
+    tx.commit()?;
+    repo::get_account(conn, account_id)
+}
+
 // ── Categories ───────────────────────────────────────────────────────────────
 
 pub fn list_categories(conn: &Connection, kind: Option<&str>, include_archived: bool) -> AppResult<Vec<Category>> {

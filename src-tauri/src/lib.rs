@@ -48,6 +48,7 @@ pub fn run() {
             commands::archive_account,
             commands::restore_account,
             commands::set_account_balance,
+            commands::update_net_worth,
             commands::list_categories,
             commands::create_category,
             commands::update_category,
@@ -1425,6 +1426,159 @@ mod tests {
         let after = service::list_accounts(&c, true).unwrap().into_iter().find(|a| a.id == card.id).unwrap();
         assert_eq!(after.balance_cents, -1_300_000);
         assert_eq!(after.credit_limit_cents, Some(1_000_000));
+    }
+
+    fn value_rows(c: &rusqlite::Connection, account_id: &str) -> Vec<Transaction> {
+        service::list_transactions(c, TransactionFilters {
+            account_id: Some(account_id.to_string()),
+            ..TransactionFilters::default()
+        }).unwrap().into_iter().filter(|t| t.description.as_deref() == Some("Value update")).collect()
+    }
+
+    #[test]
+    fn update_net_worth_rise_uses_the_saved_gain_category() {
+        let c = open_in_memory().unwrap();
+        let gain = income_cat(&c);
+        let other = service::create_category(&c, "Other income", "income", "💵", None, None).unwrap();
+        let acc = service::create_account(&c, "Stash", "unit-trust", 10_000, None, None, Some(&gain), None).unwrap();
+        let opening = acc.opening_balance_cents;
+        let after = service::update_net_worth(&c, &acc.id, 10_500, Some(&other.id), None).unwrap();
+        assert_eq!(after.balance_cents, 10_500);
+        assert_eq!(after.opening_balance_cents, opening);
+        assert_eq!(after.gain_category_id.as_deref(), Some(gain.as_str()));
+        let rows = value_rows(&c, &acc.id);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].kind, "income");
+        assert_eq!(rows[0].amount_cents, 500);
+        assert_eq!(rows[0].category_id.as_deref(), Some(gain.as_str()));
+        assert_eq!(rows[0].transaction_date, crate::today());
+        assert_eq!(rows[0].transaction_time, None);
+        assert!(!rows[0].excluded_from_reporting);
+        assert!(rows[0].splits.is_empty());
+        assert_books_balance(&c);
+    }
+
+    #[test]
+    fn update_net_worth_drop_uses_the_saved_loss_category() {
+        let c = open_in_memory().unwrap();
+        let loss = expense_cat(&c);
+        let acc = service::create_account(&c, "FD", "fixed-deposit", 8_000, None, None, None, Some(&loss)).unwrap();
+        let after = service::update_net_worth(&c, &acc.id, 7_250, None, None).unwrap();
+        assert_eq!(after.balance_cents, 7_250);
+        let rows = value_rows(&c, &acc.id);
+        assert_eq!(rows[0].kind, "expense");
+        assert_eq!(rows[0].amount_cents, 750);
+        assert_eq!(rows[0].category_id.as_deref(), Some(loss.as_str()));
+        assert_books_balance(&c);
+    }
+
+    #[test]
+    fn update_net_worth_with_only_an_opening_does_not_rewrite_it() {
+        let c = open_in_memory().unwrap();
+        let gain = income_cat(&c);
+        let acc = service::create_account(&c, "Luno", "crypto", 2_000, None, None, Some(&gain), None).unwrap();
+        service::update_net_worth(&c, &acc.id, 2_100, None, None).unwrap();
+        let opening = service::list_transactions(&c, TransactionFilters {
+            account_id: Some(acc.id.clone()),
+            ..TransactionFilters::default()
+        }).unwrap().into_iter().find(|t| t.kind == "opening").unwrap();
+        assert_eq!(opening.amount_cents, 2_000);
+    }
+
+    #[test]
+    fn update_net_worth_zero_diff_writes_nothing() {
+        let c = open_in_memory().unwrap();
+        let acc = service::create_account(&c, "Stash", "investment", 5_000, None, None, None, None).unwrap();
+        let after = service::update_net_worth(&c, &acc.id, 5_000, None, None).unwrap();
+        assert_eq!(after.balance_cents, 5_000);
+        assert!(value_rows(&c, &acc.id).is_empty());
+    }
+
+    #[test]
+    fn update_net_worth_without_a_saved_category_uses_the_passed_one_once() {
+        let c = open_in_memory().unwrap();
+        let gain = income_cat(&c);
+        let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, None, None).unwrap();
+        let after = service::update_net_worth(&c, &acc.id, 1_200, Some(&gain), None).unwrap();
+        assert_eq!(after.gain_category_id, None);
+        assert_eq!(value_rows(&c, &acc.id)[0].category_id.as_deref(), Some(gain.as_str()));
+    }
+
+    #[test]
+    fn update_net_worth_requires_a_category_when_none_is_saved() {
+        let c = open_in_memory().unwrap();
+        let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, None, None).unwrap();
+        let err = service::update_net_worth(&c, &acc.id, 1_100, None, None).unwrap_err();
+        assert_eq!(validation_message(err), "Pick a category for this update.");
+    }
+
+    #[test]
+    fn update_net_worth_rejects_the_wrong_kind_and_a_system_category() {
+        let c = open_in_memory().unwrap();
+        let expense = expense_cat(&c);
+        let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, None, None).unwrap();
+        let err = service::update_net_worth(&c, &acc.id, 1_100, Some(&expense), None).unwrap_err();
+        assert_eq!(validation_message(err), "Category kind 'expense' does not match transaction kind 'income'");
+        let system = service::list_categories(&c, Some("income"), true).unwrap().into_iter().find(|cat| cat.is_system).unwrap();
+        let err = service::update_net_worth(&c, &acc.id, 1_100, Some(&system.id), None).unwrap_err();
+        assert_eq!(validation_message(err), "That category can't be selected.");
+    }
+
+    #[test]
+    fn update_net_worth_rejects_bad_targets_and_accounts() {
+        let c = open_in_memory().unwrap();
+        let missing = service::update_net_worth(&c, "nope", 1, None, None).unwrap_err();
+        assert!(matches!(missing, AppError::NotFound(m) if m == "Account not found"));
+        let cash = service::create_account(&c, "Cash", "savings", 1_000, None, None, None, None).unwrap();
+        let err = service::update_net_worth(&c, &cash.id, 1_100, None, None).unwrap_err();
+        assert_eq!(validation_message(err), "Update Net Worth only applies to fixed deposits, investments, unit trusts, and crypto.");
+        let acc = service::create_account(&c, "FD", "fixed-deposit", 1_000, None, None, None, None).unwrap();
+        let err = service::update_net_worth(&c, &acc.id, -1, None, None).unwrap_err();
+        assert_eq!(validation_message(err), "Balance must be zero or more.");
+        service::archive_account(&c, &acc.id).unwrap();
+        let err = service::update_net_worth(&c, &acc.id, 1_000, None, None).unwrap_err();
+        assert!(matches!(err, AppError::Conflict(m) if m == "Cannot update an archived account"));
+    }
+
+    #[test]
+    fn update_net_worth_requires_time_only_when_the_setting_is_on() {
+        let c = open_in_memory().unwrap();
+        let gain = income_cat(&c);
+        let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, Some(&gain), None).unwrap();
+        service::update_net_worth(&c, &acc.id, 1_100, None, None).unwrap();
+        assert_eq!(value_rows(&c, &acc.id)[0].transaction_time, None);
+        service::set_setting(&c, "transaction_time_enabled", "1").unwrap();
+        let err = service::update_net_worth(&c, &acc.id, 1_250, None, None).unwrap_err();
+        assert_eq!(validation_message(err), "A time is required");
+        service::update_net_worth(&c, &acc.id, 1_250, None, Some("09:30")).unwrap();
+        let timed = value_rows(&c, &acc.id).into_iter().find(|t| t.amount_cents == 150).unwrap();
+        assert_eq!(timed.transaction_time.as_deref(), Some("09:30"));
+        service::set_setting(&c, "transaction_time_enabled", "0").unwrap();
+        service::update_net_worth(&c, &acc.id, 1_300, None, Some("11:00")).unwrap();
+        let ignored = value_rows(&c, &acc.id).into_iter().find(|t| t.amount_cents == 50).unwrap();
+        assert_eq!(ignored.transaction_time, None);
+    }
+
+    #[test]
+    fn correct_balance_still_rewrites_an_opening_only_investment() {
+        let c = open_in_memory().unwrap();
+        let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, None, None).unwrap();
+        service::set_account_balance(&c, &acc.id, 4_000, true).unwrap();
+        let after = service::get_account(&c, &acc.id).unwrap();
+        assert_eq!(after.opening_balance_cents, 4_000);
+        assert_eq!(after.balance_cents, 4_000);
+        assert!(value_rows(&c, &acc.id).is_empty());
+    }
+
+    #[test]
+    fn deleting_a_category_used_by_a_value_update_keeps_the_column() {
+        let c = open_in_memory().unwrap();
+        let gain = service::create_category(&c, "Growth", "income", "📈", None, None).unwrap();
+        let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, Some(&gain.id), None).unwrap();
+        service::update_net_worth(&c, &acc.id, 1_500, None, None).unwrap();
+        let err = service::delete_category(&c, &gain.id).unwrap_err();
+        assert!(matches!(err, AppError::Conflict(m) if m == "In use by transactions — archive it instead"));
+        assert_eq!(service::get_account(&c, &acc.id).unwrap().gain_category_id.as_deref(), Some(gain.id.as_str()));
     }
 }
 
