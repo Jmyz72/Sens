@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 - Specified Update Net Worth for fixed deposit, investment, unit trust, and crypto accounts (`docs/superpowers/specs/2026-10-14-update-net-worth-design.md`).
+- Planned Update Net Worth (`docs/superpowers/plans/2026-10-14-update-net-worth.md`).
 
 ## [0.10.0] — 2026-10-14
 
