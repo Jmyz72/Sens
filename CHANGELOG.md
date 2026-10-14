@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-14
+
 ### Added
 - **Reimbursements and claims.** Record money that came back for expenses you already booked (an employer claim, a friend's share of a bill, a shop refund) as a Reimbursement allocated to one or more expenses. It is never income, and the original expense is reported at its true cost in its own month and category. Flag an expense as "Expecting reimbursement" to see what is still owed (badge, "Awaiting reimbursement" filter, dashboard tile). The "Awaiting reimbursement" filter looks at all dates (matching the dashboard tile, whose View link opens it), and a reimbursement names every expense it repays even when they fall outside the loaded range. A reimbursed expense can't be deleted or cut below what was repaid until the reimbursement is edited. A refund can land on the credit card that was charged. Lent-money accounts now read "Owes you".
 - **Pay a credit card or BNPL from cash, an e-wallet, savings, or a current account.** The Pay button opens Add Transaction as a payment, prefilled with the amount owed. A payment reduces what you owe and stays out of income and spending. Sending a transfer to a card or BNPL saves it as a payment.
