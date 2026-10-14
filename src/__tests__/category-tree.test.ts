@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { categoryTree, categoryPickerItems, reorderIds, moveTargets } from "../lib/categories";
+import { categoryTree, categoryPickerItems, appendMissingSelection, reorderIds, moveTargets } from "../lib/categories";
 import type { Category } from "../types";
 
 function cat(p: Partial<Category> & { id: string; name: string }): Category {
@@ -47,6 +47,25 @@ describe("categoryPickerItems", () => {
 function mkCat(partial: Partial<Category> & { id: string }): Category {
   return { id: partial.id, name: partial.name ?? partial.id, kind: partial.kind ?? "expense", emoji: "x", color: null, parentId: partial.parentId ?? null, sortOrder: partial.sortOrder ?? 0, isArchived: partial.isArchived ?? false, isSystem: partial.isSystem ?? false, createdAt: "", updatedAt: "" };
 }
+
+describe("appendMissingSelection", () => {
+  const items = categoryPickerItems(data, "expense");
+
+  it("appends an archived selected category labelled with (archived)", () => {
+    expect(appendMissingSelection(items, data, "old")).toEqual([
+      ...items,
+      { id: "old", label: "Old (archived)", emoji: "•", depth: 1 },
+    ]);
+  });
+
+  it("does not duplicate a selected id already in the picker", () => {
+    expect(appendMissingSelection(items, data, "food")).toEqual(items);
+  });
+
+  it("adds nothing for an empty selection", () => {
+    expect(appendMissingSelection(items, data, "")).toEqual(items);
+  });
+});
 
 describe("reorderIds", () => {
   it("moves an item from one index to another", () => {

@@ -4,7 +4,7 @@
 import type { Category } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { Field, inputStyle } from "./ui";
-import { categoryPickerItems, type PickerItem } from "../lib/categories";
+import { appendMissingSelection, categoryPickerItems, type PickerItem } from "../lib/categories";
 
 export function ValueCategoryFields({ categories, gainId, lossId, onGain, onLoss }: {
   categories: Category[];
@@ -15,8 +15,8 @@ export function ValueCategoryFields({ categories, gainId, lossId, onGain, onLoss
 }) {
   return (
     <>
-      <CategorySelect label="Gain category" value={gainId} items={categoryPickerItems(categories, "income")} onChange={onGain} />
-      <CategorySelect label="Loss category" value={lossId} items={categoryPickerItems(categories, "expense")} onChange={onLoss} />
+      <CategorySelect label="Gain category" value={gainId} items={appendMissingSelection(categoryPickerItems(categories, "income"), categories, gainId)} onChange={onGain} />
+      <CategorySelect label="Loss category" value={lossId} items={appendMissingSelection(categoryPickerItems(categories, "expense"), categories, lossId)} onChange={onLoss} />
     </>
   );
 }
