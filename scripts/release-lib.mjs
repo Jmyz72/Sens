@@ -71,3 +71,17 @@ export function rollChangelog(text, version, date) {
     (line) => `${line}\n## [${version}] — ${date}\n`,
   );
 }
+
+// Keeps the link references at the bottom of CHANGELOG.md in step with a release:
+// points `[Unreleased]` at `compare/vX.Y.Z...HEAD` and adds a `[X.Y.Z]` tag link
+// right below it. No-op for the new entry if it already exists.
+export function updateChangelogLinks(text, version, repoUrl) {
+  const unreleasedRe = /^\[Unreleased\]:[^\n]*$/m;
+  if (!unreleasedRe.test(text)) {
+    throw new Error("CHANGELOG.md has no '[Unreleased]:' link reference");
+  }
+  const versionLine = `[${version}]: ${repoUrl}/releases/tag/v${version}`;
+  const unreleasedLine = `[Unreleased]: ${repoUrl}/compare/v${version}...HEAD`;
+  const hasVersion = new RegExp(`^\\[${version.replace(/\./g, "\\.")}\\]:`, "m").test(text);
+  return text.replace(unreleasedRe, hasVersion ? unreleasedLine : `${unreleasedLine}\n${versionLine}`);
+}

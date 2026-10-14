@@ -4,9 +4,16 @@ on:
   push:
     tags:
       - "v*"
-  # Allow the Cut release workflow to build a freshly-tagged commit directly.
+  # Manual (re)build of an existing tag from the Actions tab.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and release (e.g. v0.10.0)"
+        required: true
+        type: string
+  # Allow the Tag release workflow to build a freshly-tagged commit directly.
   # A tag pushed by a workflow's GITHUB_TOKEN does NOT re-fire the push trigger
-  # above, so cut-release.yml calls this workflow instead of relying on the tag.
+  # above, so tag-release.yml calls this workflow instead of relying on the tag.
   workflow_call:
     inputs:
       tag:
@@ -29,7 +36,7 @@ jobs:
             target: ""
             args: ""
     runs-on: ${{ matrix.platform }}
-    # The tag to build: provided by workflow_call, else the pushed tag ref.
+    # The tag to build: provided by workflow_call/workflow_dispatch, else the pushed tag ref.
     env:
       REL_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
