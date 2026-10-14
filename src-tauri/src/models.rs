@@ -185,6 +185,60 @@ pub struct UpdateTransactionInput {
     pub splits: Option<Vec<SplitInput>>,
 }
 
+// ── Plan (budgets & goals) ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetWrite {
+    pub category_id: String,
+    pub amount_cents: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalWrite {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub name: String,
+    pub account_id: String,
+    pub target_cents: i64,
+    pub target_date: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanBudget {
+    pub category_id: String,
+    pub parent_id: Option<String>,
+    pub name: String,
+    pub emoji: String,
+    pub sort_order: i64,
+    pub is_archived: bool,
+    pub amount_cents: i64,
+    pub spent_cents: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanGoal {
+    pub id: String,
+    pub name: String,
+    pub account_id: String,
+    pub account_name: String,
+    pub balance_cents: i64,
+    pub target_cents: i64,
+    pub target_date: Option<String>,
+    pub monthly_cents: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Plan {
+    pub month: String,
+    pub budgets: Vec<PlanBudget>,
+    pub goals: Vec<PlanGoal>,
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]

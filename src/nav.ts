@@ -2,10 +2,11 @@
 
 import type { IconName } from "./components/Icon";
 
-export type ScreenId = "dashboard" | "accounts" | "transactions" | "categories" | "settings";
+export type ScreenId = "dashboard" | "plan" | "accounts" | "transactions" | "categories" | "settings";
 
 export const NAV: { id: ScreenId; label: string; icon: IconName; sub: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "home", sub: "Your money at a glance" },
+  { id: "plan", label: "Plan", icon: "plan", sub: "Budgets and savings goals" },
   { id: "accounts", label: "Accounts", icon: "wallet", sub: "All balances in one place" },
   { id: "transactions", label: "Transactions", icon: "list", sub: "Every ringgit in and out" },
   { id: "categories", label: "Categories", icon: "filter", sub: "Income, expense & transfer labels" },
@@ -13,7 +14,7 @@ export const NAV: { id: ScreenId; label: string; icon: IconName; sub: string }[]
 ];
 
 export const NAV_SECTIONS: { label: string; items: ScreenId[] }[] = [
-  { label: "Overview", items: ["dashboard"] },
+  { label: "Overview", items: ["dashboard", "plan"] },
   { label: "Money", items: ["accounts", "transactions", "categories"] },
   { label: "System", items: ["settings"] },
 ];

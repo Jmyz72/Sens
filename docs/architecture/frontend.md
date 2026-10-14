@@ -10,6 +10,7 @@ Read this before changing UI structure or adding a setting.
 
 - [Theming & UI conventions](#theming--ui-conventions)
 - [App shell](#app-shell)
+- [Dashboard & Plan](#dashboard--plan)
 - [AddAccount flow](#addaccount-flow)
 - [Transactions screen](#transactions-screen)
 - [Itemized Add-Transaction builder](#itemized-add-transaction-builder)
@@ -35,11 +36,19 @@ Composed in `src/App.tsx` from `Sidebar.tsx` and `TopBar.tsx`.
 | Piece | Behavior |
 |---|---|
 | `src/components/Sidebar.tsx` | Collapsible: full 220 px ↔ 56 px icon rail with hover tooltips. State persisted in `localStorage` under `sens.sidebar`. Net-worth card shows only when expanded. |
-| `src/components/TopBar.tsx` | Title/subtitle, dashboard month picker, and a **Transaction-only** Add button. |
-| `src/nav.ts` | Nav config. |
+| `src/components/TopBar.tsx` | Title/subtitle, the month control on **Dashboard and Plan**, and a **Transaction-only** Add button. |
+| `src/nav.ts` | Nav config. **Overview** groups Dashboard and Plan. |
 | `src/components/Brand.tsx` | Brand mark (Coin S). |
 
 **Account creation lives on the Accounts screen**, not the top bar: `src/screens/Accounts.tsx` owns the `AddAccount` modal.
+
+## Dashboard & Plan
+
+Both screens share the **`month` state** in `src/App.tsx` (TopBar chevrons; persisted via `remember_month` / `dashboard_month` like before).
+
+**Dashboard** (`src/screens/Dashboard.tsx`): below the spending breakdown, a **Plan** card summarizes budget overspend and open savings goals for the selected month when any exist. **View** navigates to Plan (`go("plan")`).
+
+**Plan** (`src/screens/Plan.tsx`): budgets and savings goals for the selected month. Data comes from `client.getPlan`; spent and goal pace are backend-computed (the UI does not recompute `monthlyCents`). Past months are read-only. Forms: `src/modals/BudgetForm.tsx`, `src/modals/GoalForm.tsx`. Pure helpers: `src/lib/plan.ts`.
 
 ## AddAccount flow
 

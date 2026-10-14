@@ -7,6 +7,7 @@ pub const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004),
     (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008),
     (9, MIGRATION_009), (10, MIGRATION_010), (11, MIGRATION_011), (12, MIGRATION_012),
+    (13, MIGRATION_013),
 ];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
@@ -447,4 +448,27 @@ CREATE TABLE reimbursement_allocations (
 );
 CREATE INDEX idx_alloc_reimbursement ON reimbursement_allocations(reimbursement_id);
 CREATE INDEX idx_alloc_expense ON reimbursement_allocations(expense_id);
+"#;
+
+const MIGRATION_013: &str = r#"
+CREATE TABLE category_budgets (
+  id TEXT PRIMARY KEY,
+  category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  effective_month TEXT NOT NULL,
+  amount_cents INTEGER,
+  created_at TEXT NOT NULL,
+  CHECK (amount_cents IS NULL OR amount_cents >= 0),
+  UNIQUE (category_id, effective_month)
+);
+CREATE INDEX idx_category_budgets_category ON category_budgets(category_id, effective_month);
+
+CREATE TABLE savings_goals (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  account_id TEXT NOT NULL UNIQUE REFERENCES accounts(id) ON DELETE CASCADE,
+  target_cents INTEGER NOT NULL CHECK (target_cents > 0),
+  target_date TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 "#;

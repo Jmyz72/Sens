@@ -147,6 +147,47 @@ export interface DashboardSummary {
   recentTransactions: Transaction[];
 }
 
+export interface BudgetWrite {
+  categoryId: string;
+  amountCents: number | null;
+}
+
+export interface GoalWrite {
+  id?: string | null;
+  name: string;
+  accountId: string;
+  targetCents: number;
+  targetDate: string | null;
+}
+
+export interface PlanBudget {
+  categoryId: string;
+  parentId: string | null;
+  name: string;
+  emoji: string;
+  sortOrder: number;
+  isArchived: boolean;
+  amountCents: number;
+  spentCents: number;
+}
+
+export interface PlanGoal {
+  id: string;
+  name: string;
+  accountId: string;
+  accountName: string;
+  balanceCents: number;
+  targetCents: number;
+  targetDate: string | null;
+  monthlyCents: number | null;
+}
+
+export interface Plan {
+  month: string;
+  budgets: PlanBudget[];
+  goals: PlanGoal[];
+}
+
 export interface AppError {
   code: "ValidationError" | "NotFound" | "Conflict" | "DatabaseError";
   message: string;

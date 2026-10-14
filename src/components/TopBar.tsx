@@ -1,5 +1,5 @@
-// Top bar: screen title/subtitle, the dashboard month picker, and the Add
-// button (Transaction only — account creation lives on the Accounts screen).
+// Top bar: screen title/subtitle, the month control (Dashboard and Plan), and
+// the Add button (Transaction only — account creation lives on the Accounts screen).
 
 import { useTheme } from "../theme/ThemeProvider";
 import { Icon } from "./Icon";

@@ -4,7 +4,7 @@
 // adjustments, opening, and non-cashflow rows (the backend enforces this).
 
 import { useEffect, useMemo, useState } from "react";
-import type { AwaitingReimbursement, DashboardSummary } from "../types";
+import type { AwaitingReimbursement, DashboardSummary, Plan } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { Card, Empty, GlyphTile, Money, SectionTitle } from "../components/ui";
 import { TxnRow } from "../components/TxnRow";
@@ -86,10 +86,44 @@ function DashboardSkeleton() {
   );
 }
 
+function PlanCard({ plan, onView }: { plan: Plan; onView: () => void }) {
+  const t = useTheme();
+  const over = plan.budgets.filter((row) => row.spentCents > row.amountCents);
+  const openGoals = plan.goals.filter((goal) => goal.balanceCents < goal.targetCents);
+  return (
+    <Card>
+      <SectionTitle right={<span className="sens-link" style={{ fontSize: 12.5, fontWeight: 600 }} onClick={onView}>View</span>}>Plan</SectionTitle>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {plan.budgets.length > 0 && over.length === 0 && (
+          <div style={{ fontSize: 12.5, color: t.dim }}>All budgets are within their amounts.</div>
+        )}
+        {over.map((row) => (
+          <div key={row.categoryId} style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <span style={{ fontSize: 15 }}>{row.emoji}</span>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.name}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: t.expense, whiteSpace: "nowrap" }}>Over</span>
+            <Money cents={row.spentCents - row.amountCents} size={12.5} color={t.expense} />
+          </div>
+        ))}
+        {openGoals.map((goal) => (
+          <div key={goal.id} style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{goal.name}</span>
+            {goal.monthlyCents != null && <Money cents={goal.monthlyCents} size={12.5} color={t.dim} />}
+            {goal.targetDate != null && goal.monthlyCents == null && (
+              <span style={{ fontSize: 12.5, color: t.expense, whiteSpace: "nowrap" }}>Date passed</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 export function Dashboard({ month, go }: { month: string; go: (screen: string, opts?: { awaiting?: boolean }) => void }) {
   const t = useTheme();
   const { accounts, categories, version } = useAppData();
   const [data, setData] = useState<DashboardSummary | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [awaiting, setAwaiting] = useState<AwaitingReimbursement | null>(null);
   const { notify } = useToast();
 
@@ -106,6 +140,16 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string, o
       notify((err instanceof Error ? err.message : null) ?? "Could not load dashboard", "error");
     });
   }, [month, version, notify]);
+
+  useEffect(() => {
+    let alive = true;
+    client.getPlan(month).then((next) => {
+      if (alive) setPlan(next);
+    }).catch(() => {
+      if (alive) setPlan(null);
+    });
+    return () => { alive = false; };
+  }, [month, version]);
 
   useEffect(() => {
     client.getAwaitingReimbursement().then(setAwaiting).catch(() => setAwaiting(null));
@@ -199,6 +243,10 @@ export function Dashboard({ month, go }: { month: string; go: (screen: string, o
           </div>
         )}
       </Card>
+
+      {plan?.month === month && (plan.budgets.length > 0 || plan.goals.length > 0) && (
+        <PlanCard plan={plan} onView={() => go("plan")} />
+      )}
 
       {/* Accounts — auto-fit tile grid */}
       <Card>

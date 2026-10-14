@@ -162,6 +162,10 @@ pub fn list_accounts(conn: &Connection, include_archived: bool) -> AppResult<Vec
     repo::list_accounts(conn, include_archived)
 }
 
+pub fn get_account(conn: &Connection, id: &str) -> AppResult<Account> {
+    repo::get_account(conn, id)
+}
+
 pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult<Account> {
     let existing = repo::get_account(conn, &input.id)?; // existence
     let name = match &input.name {
@@ -174,6 +178,9 @@ pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult
         }
     }
     let resulting_subtype = input.subtype.as_deref().unwrap_or(existing.subtype.as_str());
+    if !goal_subtype(resulting_subtype) && repo::goal_for_account(conn, &input.id)?.is_some() {
+        return Err(AppError::Conflict("Delete this account's goal before changing its type.".into()));
+    }
     let limit = resolve_credit_limit(resulting_subtype, input.credit_limit_cents, existing.credit_limit_cents)?;
     let tx = conn.unchecked_transaction()?;
     repo::update_account_fields(
@@ -374,7 +381,8 @@ pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {
 /// Reparent a category: move a leaf to another top-level parent, promote a
 /// subcategory to top-level (parent_id = None), or demote a childless top-level
 /// into a subcategory. Kind never changes; the new parent must be top-level and
-/// share the moved category's kind.
+/// share the moved category's kind. The parent write and the current-month
+/// envelope check commit together; a tree that no longer fits is left unchanged.
 pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
     ensure_not_system(conn, id)?;
@@ -397,7 +405,18 @@ pub fn set_category_parent(conn: &Connection, id: &str, parent_id: Option<&str>)
             return Err(AppError::Validation("Empty this category's subcategories before making it a subcategory".into()));
         }
     }
-    repo::set_category_parent(conn, id, parent_id, &now())
+    let tx = conn.unchecked_transaction()?;
+    repo::set_category_parent(&tx, id, parent_id, &now())?;
+    let today = crate::today();
+    // Any envelope failure becomes the one move Conflict. The original text
+    // (including "Set a budget on the parent category first.") must not leak.
+    if ensure_envelopes(&tx, &today[..7]).is_err() {
+        return Err(AppError::Conflict(
+            "This move would leave subcategory budgets that don't fit. Clear or lower them first.".into(),
+        ));
+    }
+    tx.commit()?;
+    repo::get_category(conn, id)
 }
 
 /// Bulk archive or restore. Reuses the per-id archive/restore so the top-level
@@ -987,4 +1006,276 @@ fn month_range(month: &str) -> AppResult<(String, String)> {
     let (ny, nm) = if mon == 12 { (year + 1, 1) } else { (year, mon + 1) };
     let to = format!("{ny:04}-{nm:02}-01");
     Ok((from, to))
+}
+
+// ── Budgets ──────────────────────────────────────────────────────────────────
+
+pub fn shift_month(month: &str, delta: i32) -> String {
+    let year: i32 = month[..4].parse().unwrap_or(0);
+    let mon: i32 = month[5..7].parse().unwrap_or(1);
+    let idx = year * 12 + (mon - 1) + delta;
+    let y = idx.div_euclid(12);
+    let m = idx.rem_euclid(12) + 1;
+    format!("{y:04}-{m:02}")
+}
+
+pub fn resolve_amount(versions: &[(String, Option<i64>)], month: &str) -> Option<i64> {
+    versions
+        .iter()
+        .filter(|(effective, _)| effective.as_str() <= month)
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .and_then(|(_, amount)| *amount)
+}
+
+pub fn set_budgets(conn: &Connection, items: &[BudgetWrite]) -> AppResult<()> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    let mut seen = std::collections::HashSet::new();
+    for item in items {
+        if !seen.insert(item.category_id.clone()) {
+            return Err(AppError::Validation("A category can only be listed once.".into()));
+        }
+        if let Some(amount) = item.amount_cents {
+            if amount < 0 {
+                return Err(AppError::Validation("A budget can't be negative.".into()));
+            }
+        }
+        let cat = repo::get_category(conn, &item.category_id)?;
+        if item.amount_cents.is_some() {
+            if cat.is_system {
+                return Err(AppError::Validation("The Adjustment category can't have a budget.".into()));
+            }
+            if cat.kind != "expense" {
+                return Err(AppError::Validation("Income categories can't have a budget.".into()));
+            }
+            if cat.is_archived {
+                let today = crate::today();
+                let month = &today[..7];
+                let versions = repo::list_budget_versions(conn)?;
+                let mine: Vec<_> = versions.into_iter().filter(|v| v.0 == cat.id).map(|v| (v.1, v.2)).collect();
+                if resolve_amount(&mine, month).is_none() {
+                    return Err(AppError::Conflict("Archived categories can't be given a new budget.".into()));
+                }
+            }
+        }
+    }
+    let today = crate::today();
+    let month = &today[..7];
+    let tx = conn.unchecked_transaction()?;
+    for item in items {
+        repo::upsert_budget(&tx, &new_id(), &item.category_id, month, item.amount_cents, &now())?;
+    }
+    ensure_envelopes(&tx, month)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// The current month's resolved tree must be a valid envelope: a subcategory
+/// amount requires a parent amount, and the slices cannot sum past the parent.
+fn ensure_envelopes(conn: &Connection, month: &str) -> AppResult<()> {
+    let categories = repo::list_categories(conn, None, true)?;
+    let versions = repo::list_budget_versions(conn)?;
+    let mut resolved: std::collections::HashMap<String, Option<i64>> = std::collections::HashMap::new();
+    for cat in &categories {
+        let mine: Vec<_> = versions
+            .iter()
+            .filter(|v| v.0 == cat.id)
+            .map(|v| (v.1.clone(), v.2))
+            .collect();
+        resolved.insert(cat.id.clone(), resolve_amount(&mine, month));
+    }
+
+    for cat in &categories {
+        let Some(parent_id) = cat.parent_id.as_deref() else {
+            continue;
+        };
+        let child_amount = resolved.get(&cat.id).copied().flatten();
+        let parent_amount = resolved.get(parent_id).copied().flatten();
+        if child_amount.is_some() && parent_amount.is_none() {
+            return Err(AppError::Conflict("Set a budget on the parent category first.".into()));
+        }
+    }
+
+    for parent in &categories {
+        let Some(parent_amount) = resolved.get(&parent.id).copied().flatten() else {
+            continue;
+        };
+        let child_sum: i64 = categories
+            .iter()
+            .filter(|c| c.parent_id.as_deref() == Some(parent.id.as_str()))
+            .filter_map(|c| resolved.get(&c.id).copied().flatten())
+            .sum();
+        if child_sum > parent_amount {
+            return Err(AppError::Conflict("Subcategory budgets add up to more than the parent.".into()));
+        }
+    }
+    Ok(())
+}
+
+/// Budgets for one `YYYY-MM` month. Spent uses the dashboard's category nets:
+/// a child is its own net, a parent is its own net plus its children's. Goals
+/// are every goal whose account is not archived.
+pub fn get_plan(conn: &Connection, month: &str) -> AppResult<Plan> {
+    let (from, to) = month_range(month)?;
+    let own: std::collections::HashMap<String, i64> =
+        repo::category_spend_nets(conn, &from, &to)?.into_iter().collect();
+    let categories = repo::list_categories(conn, None, true)?;
+    let versions = repo::list_budget_versions(conn)?;
+
+    let mut budgets = Vec::new();
+    for cat in &categories {
+        let mine: Vec<(String, Option<i64>)> = versions
+            .iter()
+            .filter(|v| v.0 == cat.id)
+            .map(|v| (v.1.clone(), v.2))
+            .collect();
+        let Some(amount_cents) = resolve_amount(&mine, month) else {
+            continue;
+        };
+        let spent_cents = if cat.parent_id.is_none() {
+            let mut spent = own.get(&cat.id).copied().unwrap_or(0);
+            for child in &categories {
+                if child.parent_id.as_deref() == Some(cat.id.as_str()) {
+                    spent += own.get(&child.id).copied().unwrap_or(0);
+                }
+            }
+            spent
+        } else {
+            own.get(&cat.id).copied().unwrap_or(0)
+        };
+        budgets.push(PlanBudget {
+            category_id: cat.id.clone(),
+            parent_id: cat.parent_id.clone(),
+            name: cat.name.clone(),
+            emoji: cat.emoji.clone(),
+            sort_order: cat.sort_order,
+            is_archived: cat.is_archived,
+            amount_cents,
+            spent_cents,
+        });
+    }
+    budgets.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then_with(|| a.name.cmp(&b.name)));
+    let mut goals = Vec::new();
+    for account in repo::list_accounts(conn, true)? {
+        if account.is_archived {
+            continue;
+        }
+        if let Some(row) = repo::goal_for_account(conn, &account.id)? {
+            goals.push(plan_goal(&account, &row));
+        }
+    }
+    Ok(Plan {
+        month: month.to_string(),
+        budgets,
+        goals,
+    })
+}
+
+pub fn monthly_required(today: &str, target_date: Option<&str>, balance_cents: i64, target_cents: i64) -> Option<i64> {
+    let date = target_date?;
+    let gap = target_cents - balance_cents;
+    if gap <= 0 || date < today {
+        return None;
+    }
+    let months = months_left(&today[..7], &date[..7]);
+    Some((gap + i64::from(months) - 1) / i64::from(months))
+}
+
+fn months_left(today_month: &str, target_month: &str) -> i32 {
+    let idx = |ym: &str| -> i32 {
+        let y: i32 = ym[..4].parse().unwrap_or(0);
+        let m: i32 = ym[5..7].parse().unwrap_or(1);
+        y * 12 + (m - 1)
+    };
+    let d = idx(target_month) - idx(today_month);
+    if d <= 0 { 1 } else { d }
+}
+
+fn goal_subtype(subtype: &str) -> bool {
+    matches!(subtype, "cash" | "ewallet" | "savings" | "current")
+}
+
+fn plan_goal(account: &Account, row: &repo::GoalRow) -> PlanGoal {
+    PlanGoal {
+        id: row.id.clone(),
+        name: row.name.clone(),
+        account_id: row.account_id.clone(),
+        account_name: account.name.clone(),
+        balance_cents: account.balance_cents,
+        target_cents: row.target_cents,
+        target_date: row.target_date.clone(),
+        monthly_cents: monthly_required(
+            &crate::today(),
+            row.target_date.as_deref(),
+            account.balance_cents,
+            row.target_cents,
+        ),
+    }
+}
+
+/// Shared checks for create and update. `current_id` is the goal being edited,
+/// so that goal may keep its account. Any other account must be free.
+fn prepare_goal(conn: &Connection, input: &GoalWrite, current_id: Option<&str>) -> AppResult<String> {
+    let name = require_nonempty("Goal name", &input.name)?;
+    if input.target_cents <= 0 {
+        return Err(AppError::Validation("Target must be greater than zero.".into()));
+    }
+    if let Some(date) = &input.target_date {
+        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .map_err(|_| AppError::Validation("Date must be a real YYYY-MM-DD.".into()))?;
+    }
+    ensure_active_account(conn, &input.account_id, "selected")?;
+    let account = repo::get_account(conn, &input.account_id)?;
+    if !goal_subtype(&account.subtype) {
+        return Err(AppError::Conflict(
+            "Goals can only sit on cash, an e-wallet, savings, or a current account.".into(),
+        ));
+    }
+    if let Some(existing) = repo::goal_for_account(conn, &input.account_id)? {
+        if current_id != Some(existing.id.as_str()) {
+            return Err(AppError::Conflict("This account already has a goal.".into()));
+        }
+    }
+    Ok(name)
+}
+
+pub fn create_goal(conn: &Connection, input: GoalWrite) -> AppResult<PlanGoal> {
+    let name = prepare_goal(conn, &input, None)?;
+    let id = new_id();
+    repo::insert_goal(
+        conn,
+        &id,
+        &name,
+        &input.account_id,
+        input.target_cents,
+        input.target_date.as_deref(),
+        &now(),
+    )?;
+    let account = repo::get_account(conn, &input.account_id)?;
+    let row = repo::get_goal(conn, &id)?;
+    Ok(plan_goal(&account, &row))
+}
+
+pub fn update_goal(conn: &Connection, input: GoalWrite) -> AppResult<PlanGoal> {
+    let id = input.id.clone().unwrap_or_default();
+    repo::get_goal(conn, &id)?;
+    let name = prepare_goal(conn, &input, Some(&id))?;
+    repo::update_goal(
+        conn,
+        &id,
+        &name,
+        &input.account_id,
+        input.target_cents,
+        input.target_date.as_deref(),
+        &now(),
+    )?;
+    let account = repo::get_account(conn, &input.account_id)?;
+    let row = repo::get_goal(conn, &id)?;
+    Ok(plan_goal(&account, &row))
+}
+
+pub fn delete_goal(conn: &Connection, id: &str) -> AppResult<()> {
+    repo::get_goal(conn, id)?;
+    repo::delete_goal(conn, id)
 }
