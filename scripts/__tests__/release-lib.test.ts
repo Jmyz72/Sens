@@ -6,6 +6,7 @@ import {
   setCargoTomlVersion,
   setTauriConfVersion,
   rollChangelog,
+  updateChangelogLinks,
 } from "../release-lib.mjs";
 
 describe("bumpVersion", () => {
@@ -73,4 +74,20 @@ describe("rollChangelog", () => {
     expect(out).toBe(`# Changelog\n\n## [Unreleased]\n\n## [1.2.0] — 2026-06-01\n\n## [1.1.1] — 2026-05-30\n`);
     expect(out).not.toContain("\n\n\n");
   });
+});
+
+describe("updateChangelogLinks", () => {
+  const repo = "https://github.com/o/r";
+  const base = `# Changelog\n\n[Unreleased]: ${repo}/compare/v0.1.0...HEAD\n[0.1.0]: ${repo}/releases/tag/v0.1.0\n`;
+  it("bumps the Unreleased compare link and adds the version link", () => {
+    expect(updateChangelogLinks(base, "0.2.0", repo)).toBe(
+      `# Changelog\n\n[Unreleased]: ${repo}/compare/v0.2.0...HEAD\n[0.2.0]: ${repo}/releases/tag/v0.2.0\n[0.1.0]: ${repo}/releases/tag/v0.1.0\n`,
+    );
+  });
+  it("does not duplicate an existing version link", () => {
+    const once = updateChangelogLinks(base, "0.2.0", repo);
+    expect(updateChangelogLinks(once, "0.2.0", repo)).toBe(once);
+  });
+  it("throws without an Unreleased link", () =>
+    expect(() => updateChangelogLinks("# Changelog\n", "0.2.0", repo)).toThrow());
 });

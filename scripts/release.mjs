@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // Bumps version across package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json,
-// refreshes Cargo.lock, rolls the CHANGELOG, commits, and tags. Never pushes.
-// Usage: npm run release -- <major|minor|patch|x.y.z>
+// refreshes Cargo.lock, rolls the CHANGELOG (+ link refs), and commits. Never pushes.
+// Usage: npm run release -- <major|minor|patch|x.y.z> [--branch]
+//   --branch  (recommended; main is protected) commit on a new `release/vX.Y.Z`
+//             branch and do NOT tag. Merge the PR; tag-release.yml tags + builds.
+//   default   commit on main and create the annotated tag (legacy flow).
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import {
@@ -11,6 +14,7 @@ import {
   setCargoTomlVersion,
   setTauriConfVersion,
   rollChangelog,
+  updateChangelogLinks,
 } from "./release-lib.mjs";
 
 function git(args) {
@@ -21,8 +25,10 @@ function fail(msg) {
   process.exit(1);
 }
 
-const level = process.argv[2];
-if (!level) fail("Usage: npm run release -- <major|minor|patch|x.y.z>");
+const args = process.argv.slice(2);
+const branchMode = args.includes("--branch");
+const level = args.find((a) => !a.startsWith("--"));
+if (!level) fail("Usage: npm run release -- <major|minor|patch|x.y.z> [--branch]");
 
 // --- Guards ---
 const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -39,13 +45,17 @@ const next = bumpVersion(current, level);
 if (!isGreater(next, current)) fail(`Next version ${next} is not greater than current ${current}.`);
 if (git(["tag", "--list", `v${next}`])) fail(`Tag v${next} already exists.`);
 
+const REPO_URL = "https://github.com/Jmyz72/Sens";
+const releaseBranch = `release/v${next}`;
+if (branchMode && git(["branch", "--list", releaseBranch])) fail(`Branch ${releaseBranch} already exists.`);
+
 const today = new Date().toISOString().slice(0, 10);
 
 // --- Rewrite files ---
 writeFileSync(PKG, setPackageJsonVersion(readFileSync(PKG, "utf8"), next));
 writeFileSync(CARGO, setCargoTomlVersion(readFileSync(CARGO, "utf8"), next));
 writeFileSync(CONF, setTauriConfVersion(readFileSync(CONF, "utf8"), next));
-writeFileSync(CHANGELOG, rollChangelog(readFileSync(CHANGELOG, "utf8"), next, today));
+writeFileSync(CHANGELOG, updateChangelogLinks(rollChangelog(readFileSync(CHANGELOG, "utf8"), next, today), next, REPO_URL));
 
 // --- Keep the committed Cargo.lock in sync with the bumped package version ---
 try {
@@ -54,9 +64,13 @@ try {
   fail('cargo update failed. Ensure cargo is on PATH: export PATH="$HOME/.cargo/bin:$PATH"');
 }
 
-// --- Commit + annotated tag (no push) ---
+// --- Commit (+ annotated tag in legacy mode). Never pushes. ---
+if (branchMode) execFileSync("git", ["switch", "-c", releaseBranch], { stdio: "inherit" });
 execFileSync("git", ["add", PKG, CARGO, CONF, CHANGELOG, "src-tauri/Cargo.lock"], { stdio: "inherit" });
 execFileSync("git", ["commit", "-m", `chore: release v${next}`], { stdio: "inherit" });
-execFileSync("git", ["tag", "-a", `v${next}`, "-m", `Release v${next}`], { stdio: "inherit" });
-
-console.log(`\n✔ Released v${next}. Review the commit, then push to trigger the release build:\n    git push --follow-tags\n`);
+if (branchMode) {
+  console.log(`\n✔ Prepared v${next} on ${releaseBranch} (not tagged). Push it and open a PR:\n    git push -u origin ${releaseBranch}\nMerging the PR tags v${next} and builds the release (tag-release.yml).\n`);
+} else {
+  execFileSync("git", ["tag", "-a", `v${next}`, "-m", `Release v${next}`], { stdio: "inherit" });
+  console.log(`\n✔ Released v${next}. Review the commit, then push to trigger the release build:\n    git push --follow-tags\n`);
+}

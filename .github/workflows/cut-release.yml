@@ -1,10 +1,13 @@
 name: Cut release
 
-# One-click release: pick a semver level and this bumps the version, rolls the
-# changelog, tags, pushes, and builds — the same end-to-end flow as the /release
-# skill, run from the Actions tab instead of your terminal. The version mechanics
-# live in scripts/release.mjs (shared with the skill); this workflow only adds the
-# CI plumbing around it. See RELEASING.md.
+# One-click release, protected-main edition. Pick a semver level and this:
+#   1. runs scripts/release.mjs --branch (bump the 3 version files + Cargo.lock,
+#      roll CHANGELOG + link refs, commit on release/vX.Y.Z — no tag),
+#   2. pushes that branch and opens a "chore(release): vX.Y.Z" PR,
+#   3. dispatches CI on the branch so the PR gets its required checks.
+# Merging the PR fires tag-release.yml, which tags the merge commit and builds.
+# Nothing is pushed to main directly, so branch protection is respected.
+# See RELEASING.md.
 
 on:
   workflow_dispatch:
@@ -19,12 +22,12 @@ on:
         default: patch
 
 jobs:
-  tag:
+  prepare:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-    outputs:
-      tag: ${{ steps.release.outputs.tag }}
+      contents: write       # push the release/* branch
+      pull-requests: write  # open the release PR
+      actions: write        # dispatch ci.yml on the branch
     steps:
       # ref: main + full history/tags so release.mjs's guards (must be on main,
       # tag-not-already-present) see the real branch state.
@@ -43,21 +46,41 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - name: Bump version, roll changelog, commit, tag
+      - name: Bump version, roll changelog, commit on release branch
         id: release
+        env:
+          LEVEL: ${{ inputs.level }}
         run: |
-          npm run release -- ${{ inputs.level }}
-          echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-      - name: Push commit + tag
-        run: git push --follow-tags
-
-  build:
-    needs: tag
-    permissions:
-      contents: write
-    # secrets: inherit passes the Tauri signing secrets through to the reusable
-    # release workflow (workflow_call does not inherit them automatically).
-    secrets: inherit
-    uses: ./.github/workflows/release.yml
-    with:
-      tag: ${{ needs.tag.outputs.tag }}
+          npm run release -- "$LEVEL" --branch
+          version="$(node -p "require('./package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "branch=release/v$version" >> "$GITHUB_OUTPUT"
+      - name: Push release branch
+        env:
+          BRANCH: ${{ steps.release.outputs.branch }}
+        run: git push -u origin "$BRANCH"
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.release.outputs.branch }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          {
+            echo "Release **v$VERSION** — bumps the version files and rolls \`CHANGELOG.md\`."
+            echo
+            echo "Merging this PR tags \`v$VERSION\` on the merge commit and builds the"
+            echo "macOS + Windows release (tag-release.yml). Use **squash** or **merge**; either works."
+            echo
+            echo "_Opened by the Cut release workflow. CI was dispatched on this branch because"
+            echo "PRs opened by \`GITHUB_TOKEN\` do not trigger \`pull_request\` workflows._"
+          } > pr-body.md
+          gh pr create --base main --head "$BRANCH" \
+            --title "chore(release): v$VERSION" --body-file pr-body.md
+      # PRs/pushes made with GITHUB_TOKEN don't trigger pull_request/push workflows,
+      # but workflow_dispatch is the documented exception. CI's check runs land on
+      # the branch head SHA (= the PR head), which satisfies the required checks.
+      - name: Run CI on the release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.release.outputs.branch }}
+        run: gh workflow run ci.yml --ref "$BRANCH"

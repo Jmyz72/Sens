@@ -2,6 +2,9 @@ name: CI
 
 on:
   pull_request:
+  # Lets Cut release run CI on the release/* branch it pushes (PRs opened with
+  # GITHUB_TOKEN don't fire pull_request); also handy for manual re-runs.
+  workflow_dispatch:
   push:
     branches: [main]
 

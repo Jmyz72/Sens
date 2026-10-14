@@ -1,0 +1,62 @@
+name: Tag release
+
+# Second half of the Cut release flow: when a release/vX.Y.Z PR is merged into
+# main, tag the merge commit vX.Y.Z and build/publish it. The build is invoked
+# directly via workflow_call because a tag pushed with GITHUB_TOKEN does NOT
+# re-fire release.yml's `push: tags` trigger. See RELEASING.md.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  tag:
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/v') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+      - name: Create and push tag on the merge commit
+        id: tag
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          tag="${HEAD_REF#release/}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$tag" ]; then
+            echo "::error::Branch $HEAD_REF but package.json at $SHA is $version"; exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::Tag $tag already exists"; exit 1
+          fi
+          git tag -a "$tag" -m "Release $tag" "$SHA"
+          git push origin "refs/tags/$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Delete release branch
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: git push origin --delete "$HEAD_REF" || true
+
+  build:
+    needs: tag
+    permissions:
+      contents: write
+    # secrets: inherit passes the Tauri signing secrets through to the reusable
+    # release workflow (workflow_call does not inherit them automatically).
+    secrets: inherit
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}

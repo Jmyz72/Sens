@@ -422,7 +422,8 @@ Design: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.m
   TypeScript + Vite, integer-MYR-cents money, dark/light theming, and the
   Tauri/in-memory-mock dispatch seam for browser-only dev.
 
-[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.10.0
 [0.9.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.8.0
