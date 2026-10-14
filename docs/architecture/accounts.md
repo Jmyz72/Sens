@@ -84,5 +84,7 @@ into it and are repaid by transferring out; neither is income or an expense. A p
 
 ## Still deferred
 
-Installment/payoff schedules, interest, and investment cost-vs-value. See
-[`ROADMAP.md`](../../ROADMAP.md) (phases are priority-ordered, not pinned to version numbers).
+Update Net Worth is specified and not built yet
+(`docs/superpowers/specs/2026-10-14-update-net-worth-design.md`).
+Fixed-deposit maturity, installment schedules, and interest stay unscheduled.
+See [`ROADMAP.md`](../../ROADMAP.md).
