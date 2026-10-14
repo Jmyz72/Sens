@@ -102,6 +102,50 @@ fn is_credit_limit_subtype(subtype: &str) -> bool {
     subtype == "credit-card" || subtype == "bnpl"
 }
 
+fn is_value_subtype(subtype: &str) -> bool {
+    matches!(subtype, "fixed-deposit" | "investment" | "unit-trust" | "crypto")
+}
+
+fn validate_saved_value_category(conn: &Connection, id: &str, expected_kind: &str, wrong_kind_message: &str) -> AppResult<()> {
+    let cat = repo::get_category(conn, id)?;
+    if cat.is_system {
+        return Err(AppError::Validation("That category can't be selected.".into()));
+    }
+    if cat.kind != expected_kind {
+        return Err(AppError::Validation(wrong_kind_message.into()));
+    }
+    Ok(())
+}
+
+fn resolve_value_categories(
+    conn: &Connection,
+    subtype: &str,
+    incoming: Option<&ValueCategories>,
+    existing_gain: Option<String>,
+    existing_loss: Option<String>,
+) -> AppResult<(Option<String>, Option<String>)> {
+    let qualifying = is_value_subtype(subtype);
+    match incoming {
+        Some(v) if !qualifying && (v.gain_category_id.is_some() || v.loss_category_id.is_some()) => {
+            Err(AppError::Validation(
+                "Gain and loss categories only apply to fixed deposits, investments, unit trusts, and crypto.".into(),
+            ))
+        }
+        Some(_) if !qualifying => Ok((None, None)),
+        Some(v) => {
+            if let Some(id) = &v.gain_category_id {
+                validate_saved_value_category(conn, id, "income", "Gain category must be an income category.")?;
+            }
+            if let Some(id) = &v.loss_category_id {
+                validate_saved_value_category(conn, id, "expense", "Loss category must be an expense category.")?;
+            }
+            Ok((v.gain_category_id.clone(), v.loss_category_id.clone()))
+        }
+        None if !qualifying => Ok((None, None)),
+        None => Ok((existing_gain, existing_loss)),
+    }
+}
+
 fn resolve_credit_limit(subtype: &str, incoming: Option<i64>, existing: Option<i64>) -> AppResult<Option<i64>> {
     if is_credit_limit_subtype(subtype) {
         match incoming {
@@ -126,6 +170,8 @@ pub fn create_account(
     opening_balance_cents: i64,
     template_key: Option<&str>,
     credit_limit_cents: Option<i64>,
+    gain_category_id: Option<&str>,
+    loss_category_id: Option<&str>,
 ) -> AppResult<Account> {
     let name = require_nonempty("Account name", name)?;
     let subtype = require_nonempty("Subtype", subtype)?;
@@ -136,9 +182,20 @@ pub fn create_account(
         repo::get_template(conn, key)?; // existence (NotFound if bogus)
     }
     let limit = resolve_credit_limit(&subtype, credit_limit_cents, None)?;
+    let (gain_id, loss_id) = resolve_value_categories(
+        conn,
+        &subtype,
+        Some(&ValueCategories {
+            gain_category_id: gain_category_id.map(str::to_string),
+            loss_category_id: loss_category_id.map(str::to_string),
+        }),
+        None,
+        None,
+    )?;
     let account_id = new_id();
     let tx = conn.unchecked_transaction()?;
     repo::insert_account(&tx, &account_id, template_key, &name, &subtype, limit, &now())?;
+    repo::set_value_categories(&tx, &account_id, gain_id.as_deref(), loss_id.as_deref(), &now())?;
     let opening = repo::insert_transaction(
         &tx,
         &new_id(),
@@ -182,6 +239,13 @@ pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult
         return Err(AppError::Conflict("Delete this account's goal before changing its type.".into()));
     }
     let limit = resolve_credit_limit(resulting_subtype, input.credit_limit_cents, existing.credit_limit_cents)?;
+    let (gain_id, loss_id) = resolve_value_categories(
+        conn,
+        resulting_subtype,
+        input.value_categories.as_ref(),
+        existing.gain_category_id.clone(),
+        existing.loss_category_id.clone(),
+    )?;
     let tx = conn.unchecked_transaction()?;
     repo::update_account_fields(
         &tx,
@@ -192,6 +256,7 @@ pub fn update_account(conn: &Connection, input: UpdateAccountInput) -> AppResult
         &now(),
     )?;
     repo::set_credit_limit(&tx, &input.id, limit, &now())?;
+    repo::set_value_categories(&tx, &input.id, gain_id.as_deref(), loss_id.as_deref(), &now())?;
     if input.opening_balance_cents.is_some() {
         let opening = repo::get_opening_transaction(&tx, &input.id)?;
         materialize_postings(&tx, &opening)?;

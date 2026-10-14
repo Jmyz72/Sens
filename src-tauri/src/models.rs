@@ -136,6 +136,13 @@ pub struct Transaction {
 
 // ── Command inputs ──────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueCategories {
+    pub gain_category_id: Option<String>,
+    pub loss_category_id: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAccountInput {
@@ -145,6 +152,8 @@ pub struct UpdateAccountInput {
     pub opening_balance_cents: Option<i64>,
     #[serde(default)]
     pub credit_limit_cents: Option<i64>,
+    #[serde(default)]
+    pub value_categories: Option<ValueCategories>,
 }
 
 #[derive(Debug, Deserialize)]
