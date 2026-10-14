@@ -76,26 +76,53 @@ pub fn dates_through(rule: &Rule, through: NaiveDate) -> Vec<NaiveDate> {
     }
 
     let mut out = Vec::new();
+    let mut series = Series {
+        out: &mut out,
+        after: None,
+        time: NaiveTime::MIN,
+        found: None,
+    };
     match rule.frequency {
-        Freq::Daily => push_daily(rule, through, &mut out),
-        Freq::Weekly => push_weekly(rule, through, &mut out),
-        Freq::Monthly => push_monthly(rule, through, &mut out),
-        Freq::Yearly => push_yearly(rule, through, &mut out),
+        Freq::Daily => push_daily(rule, through, &mut series),
+        Freq::Weekly => push_weekly(rule, through, &mut series),
+        Freq::Monthly => push_monthly(rule, through, &mut series),
+        Freq::Yearly => push_yearly(rule, through, &mut series),
     }
     out
 }
 
-/// The next date in the series whose `time` is strictly after `after`.
+/// The next datetime in the series strictly after `after`.
 ///
-/// The search window is one period past `after` (interval days, weeks, months,
-/// or years) plus 7 days. Returns `None` when that window and the end rule
-/// contain no later date.
+/// Walks occurrences until one is strictly after `after`. A period with no
+/// date, such as the 31st in February or a month with no fifth Friday, does
+/// not stop the walk. Returns `None` when the end rule has no later date.
 pub fn next_due(rule: &Rule, after: NaiveDateTime, time: NaiveTime) -> Option<NaiveDateTime> {
-    let bound = search_bound(rule, after.date())?;
-    dates_through(rule, bound).into_iter().find_map(|date| {
-        let due = date.and_time(time);
-        (due > after).then_some(due)
-    })
+    if rule.interval < 1 {
+        return None;
+    }
+    if let End::After(count) = rule.end {
+        if count < 1 {
+            return None;
+        }
+    }
+    let through = match rule.end {
+        End::On(end) => end,
+        End::Never | End::After(_) => NaiveDate::MAX,
+    };
+    let mut out = Vec::new();
+    let mut series = Series {
+        out: &mut out,
+        after: Some(after),
+        time,
+        found: None,
+    };
+    match rule.frequency {
+        Freq::Daily => push_daily(rule, through, &mut series),
+        Freq::Weekly => push_weekly(rule, through, &mut series),
+        Freq::Monthly => push_monthly(rule, through, &mut series),
+        Freq::Yearly => push_yearly(rule, through, &mut series),
+    }
+    series.found
 }
 
 /// Rejects an interval, end, or pattern the schedule form cannot store.
@@ -135,8 +162,16 @@ pub fn validate_rule(rule: &Rule) -> Result<(), String> {
     }
 }
 
-/// `true` means stop: this date is past the window, or the end count is full.
-fn record(out: &mut Vec<NaiveDate>, rule: &Rule, through: NaiveDate, date: NaiveDate) -> bool {
+struct Series<'a> {
+    out: &'a mut Vec<NaiveDate>,
+    after: Option<NaiveDateTime>,
+    time: NaiveTime,
+    found: Option<NaiveDateTime>,
+}
+
+/// `true` means stop: this date is past the window, the end count is full,
+/// or `after` already has its next datetime.
+fn record(series: &mut Series<'_>, rule: &Rule, through: NaiveDate, date: NaiveDate) -> bool {
     if date < rule.start {
         return false;
     }
@@ -148,15 +183,22 @@ fn record(out: &mut Vec<NaiveDate>, rule: &Rule, through: NaiveDate, date: Naive
             return true;
         }
     }
-    out.push(date);
-    matches!(rule.end, End::After(count) if out.len() >= count as usize)
+    if let Some(after) = series.after {
+        let due = date.and_time(series.time);
+        if due > after {
+            series.found = Some(due);
+            return true;
+        }
+    }
+    series.out.push(date);
+    matches!(rule.end, End::After(count) if series.out.len() >= count as usize)
 }
 
-fn push_daily(rule: &Rule, through: NaiveDate, out: &mut Vec<NaiveDate>) {
+fn push_daily(rule: &Rule, through: NaiveDate, series: &mut Series<'_>) {
     let step = Days::new(rule.interval as u64);
     let mut date = rule.start;
     loop {
-        if record(out, rule, through, date) {
+        if record(series, rule, through, date) {
             return;
         }
         let Some(next) = date.checked_add_days(step) else {
@@ -166,7 +208,7 @@ fn push_daily(rule: &Rule, through: NaiveDate, out: &mut Vec<NaiveDate>) {
     }
 }
 
-fn push_weekly(rule: &Rule, through: NaiveDate, out: &mut Vec<NaiveDate>) {
+fn push_weekly(rule: &Rule, through: NaiveDate, series: &mut Series<'_>) {
     let Some(mut monday) = week_monday(rule.start) else {
         return;
     };
@@ -185,7 +227,7 @@ fn push_weekly(rule: &Rule, through: NaiveDate, out: &mut Vec<NaiveDate>) {
             let Some(date) = monday.checked_add_days(Days::new(*offset)) else {
                 return;
             };
-            if record(out, rule, through, date) {
+            if record(series, rule, through, date) {
                 return;
             }
         }
@@ -196,7 +238,7 @@ fn push_weekly(rule: &Rule, through: NaiveDate, out: &mut Vec<NaiveDate>) {
     }
 }
 
-fn push_monthly(rule: &Rule, through: NaiveDate, out: &mut Vec<NaiveDate>) {
+fn push_monthly(rule: &Rule, through: NaiveDate, series: &mut Series<'_>) {
     let Some(mut month_start) = rule.start.with_day(1) else {
         return;
     };
@@ -211,7 +253,7 @@ fn push_monthly(rule: &Rule, through: NaiveDate, out: &mut Vec<NaiveDate>) {
             }
         }
         for date in month_dates(month_start, rule) {
-            if record(out, rule, through, date) {
+            if record(series, rule, through, date) {
                 return;
             }
         }
@@ -222,7 +264,7 @@ fn push_monthly(rule: &Rule, through: NaiveDate, out: &mut Vec<NaiveDate>) {
     }
 }
 
-fn push_yearly(rule: &Rule, through: NaiveDate, out: &mut Vec<NaiveDate>) {
+fn push_yearly(rule: &Rule, through: NaiveDate, series: &mut Series<'_>) {
     let mut year = rule.start.year();
     loop {
         let Some(jan1) = NaiveDate::from_ymd_opt(year, 1, 1) else {
@@ -237,7 +279,7 @@ fn push_yearly(rule: &Rule, through: NaiveDate, out: &mut Vec<NaiveDate>) {
             }
         }
         for date in year_dates(year, rule) {
-            if record(out, rule, through, date) {
+            if record(series, rule, through, date) {
                 return;
             }
         }
@@ -369,20 +411,6 @@ fn parse_weekday(name: &str) -> Option<Weekday> {
         "sun" => Some(Weekday::Sun),
         _ => None,
     }
-}
-
-fn search_bound(rule: &Rule, after: NaiveDate) -> Option<NaiveDate> {
-    if rule.interval < 1 {
-        return None;
-    }
-    let interval = rule.interval as u32;
-    let shifted = match rule.frequency {
-        Freq::Daily => after.checked_add_days(Days::new(interval as u64))?,
-        Freq::Weekly => after.checked_add_days(Days::new(interval as u64 * 7))?,
-        Freq::Monthly => after.checked_add_months(Months::new(interval))?,
-        Freq::Yearly => after.checked_add_months(Months::new(interval.checked_mul(12)?))?,
-    };
-    shifted.checked_add_days(Days::new(7))
 }
 
 fn validate_month_days(days: &[i32]) -> Result<(), String> {
@@ -606,6 +634,50 @@ mod tests {
         assert_eq!(
             next_due(&rule, at_nine, nine).unwrap(),
             NaiveDateTime::parse_from_str("2026-10-26T09:00", "%Y-%m-%dT%H:%M").unwrap()
+        );
+    }
+
+    #[test]
+    fn next_due_walks_past_empty_periods_until_a_real_date_or_the_end() {
+        let nine = NaiveTime::from_hms_opt(9, 0, 0).unwrap();
+
+        let mut month_end = rule_daily("2026-01-01", 1, End::Never);
+        month_end.frequency = Freq::Monthly;
+        month_end.month_mode = MonthMode::Each;
+        month_end.month_days = vec![31];
+        assert_eq!(
+            next_due(
+                &month_end,
+                NaiveDateTime::parse_from_str("2026-01-31T09:00", "%Y-%m-%dT%H:%M").unwrap(),
+                nine,
+            )
+            .unwrap(),
+            NaiveDateTime::parse_from_str("2026-03-31T09:00", "%Y-%m-%dT%H:%M").unwrap()
+        );
+
+        let mut fifth = rule_daily("2026-01-01", 1, End::Never);
+        fifth.frequency = Freq::Monthly;
+        fifth.month_mode = MonthMode::OnThe;
+        fifth.ordinal = Ordinal::Fifth;
+        fifth.ordinal_day = OrdinalDay::WeekdayName("fri".into());
+        assert_eq!(
+            next_due(
+                &fifth,
+                NaiveDateTime::parse_from_str("2026-01-30T09:00", "%Y-%m-%dT%H:%M").unwrap(),
+                nine,
+            )
+            .unwrap(),
+            NaiveDateTime::parse_from_str("2026-05-29T09:00", "%Y-%m-%dT%H:%M").unwrap()
+        );
+
+        let once = rule_daily("2026-10-01", 1, End::After(1));
+        assert_eq!(
+            next_due(
+                &once,
+                NaiveDateTime::parse_from_str("2026-10-01T09:00", "%Y-%m-%dT%H:%M").unwrap(),
+                nine,
+            ),
+            None
         );
     }
 }
