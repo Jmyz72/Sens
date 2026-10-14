@@ -101,6 +101,8 @@ fn map_account(r: &Row) -> rusqlite::Result<Account> {
         subtype: r.get("subtype")?,
         opening_balance_cents: r.get("opening_balance_cents")?,
         credit_limit_cents: r.get("credit_limit_cents")?,
+        gain_category_id: r.get("gain_category_id")?,
+        loss_category_id: r.get("loss_category_id")?,
         currency: r.get("currency")?,
         is_archived: r.get::<_, i64>("is_archived")? != 0,
         created_at: r.get("created_at")?,
@@ -202,6 +204,32 @@ pub fn set_credit_limit(conn: &Connection, id: &str, credit_limit_cents: Option<
     conn.execute(
         "UPDATE accounts SET credit_limit_cents = ?2, updated_at = ?3 WHERE id = ?1",
         params![id, credit_limit_cents, now],
+    )?;
+    Ok(())
+}
+
+pub fn set_value_categories(
+    conn: &Connection,
+    id: &str,
+    gain_category_id: Option<&str>,
+    loss_category_id: Option<&str>,
+    now: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "UPDATE accounts SET gain_category_id = ?2, loss_category_id = ?3, updated_at = ?4 WHERE id = ?1",
+        params![id, gain_category_id, loss_category_id, now],
+    )?;
+    Ok(())
+}
+
+pub fn clear_value_category(conn: &Connection, category_id: &str, now: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE accounts SET gain_category_id = NULL, updated_at = ?2 WHERE gain_category_id = ?1",
+        params![category_id, now],
+    )?;
+    conn.execute(
+        "UPDATE accounts SET loss_category_id = NULL, updated_at = ?2 WHERE loss_category_id = ?1",
+        params![category_id, now],
     )?;
     Ok(())
 }

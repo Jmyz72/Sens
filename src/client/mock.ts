@@ -252,7 +252,7 @@ function seedDemo() {
     const t = templates.find((x) => x.key === key)!;
     const s = subtypeOf(t.defaultSubtype)!;
     const id = uid();
-    accounts.push({ id, templateKey: key, name, accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: opening, creditLimitCents: null, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
+    accounts.push({ id, templateKey: key, name, accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: opening, creditLimitCents: null, gainCategoryId: null, lossCategoryId: null, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: opening });
     txns.push({ id: uid(), kind: "opening", accountId: id, toAccountId: null, categoryId: null, amountCents: opening, description: "Opening balance", transactionDate: "2026-01-01", transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() });
   };
   mk("maybank", "Maybank Savings", 842000);
@@ -475,7 +475,7 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       const s = subtypeOf(a.subtype) ?? fail("ValidationError", `Invalid subtype: ${a.subtype}`);
       if (a.templateKey != null && !templates.find((x) => x.key === a.templateKey)) fail("NotFound", "Account template not found");
       const creditLimitCents = resolveCreditLimit(s.key, a.creditLimitCents ?? null, null);
-      const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, creditLimitCents, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
+      const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, creditLimitCents, gainCategoryId: null, lossCategoryId: null, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
       accounts.push(acc);
       txns.push({ id: uid(), kind: "opening", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: a.openingBalanceCents, description: "Opening balance", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() });
       return hydrate(acc) as T;

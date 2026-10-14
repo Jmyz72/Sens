@@ -129,6 +129,22 @@ mod tests {
     }
 
     #[test]
+    fn migration_014_adds_value_category_columns() {
+        let c = open_in_memory().unwrap();
+        let n: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('accounts') WHERE name IN ('gain_category_id', 'loss_category_id')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 2);
+        let acc = service::create_account(&c, "Stash", "investment", 10_000, None, None).unwrap();
+        assert_eq!(acc.gain_category_id, None);
+        assert_eq!(acc.loss_category_id, None);
+    }
+
+    #[test]
     fn splits_insert_and_hydrate() {
         use crate::repo;
         let conn = open_in_memory().unwrap();

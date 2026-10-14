@@ -36,6 +36,8 @@ export interface Account {
   subtype: string;
   openingBalanceCents: number;
   creditLimitCents: number | null;
+  gainCategoryId: string | null;
+  lossCategoryId: string | null;
   currency: string;
   isArchived: boolean;
   createdAt: string;

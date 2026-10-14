@@ -52,6 +52,8 @@ pub struct Account {
     pub subtype: String,
     pub opening_balance_cents: i64,
     pub credit_limit_cents: Option<i64>,
+    pub gain_category_id: Option<String>,
+    pub loss_category_id: Option<String>,
     pub currency: String,
     pub is_archived: bool,
     pub created_at: String,
