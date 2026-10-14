@@ -4,15 +4,16 @@
 // For owe-group subtypes the balance field is "Amount owed" and is stored negative.
 
 import { useEffect, useMemo, useState } from "react";
-import type { AccountSubtype, AccountTemplate, AccountTypeName } from "../types";
+import type { AccountSubtype, AccountTemplate, AccountTypeName, Category } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { hexA } from "../theme/tokens";
 import { Btn, Field, Modal, inputStyle } from "../components/ui";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { Icon } from "../components/Icon";
+import { ValueCategoryFields } from "../components/ValueCategoryFields";
 import { client } from "../client";
 import { parseAmountToCents } from "../lib/format";
-import { TYPE_LABEL, TYPE_ORDER, subtypeHasCreditLimit } from "../lib/accounts";
+import { TYPE_LABEL, TYPE_ORDER, subtypeHasCreditLimit, subtypeHasValueUpdate } from "../lib/accounts";
 
 const TYPE_EMOJI: Record<AccountTypeName, string> = {
   fund: "💵", financial: "📈", receivable: "🤝", payable: "📄", credit: "💳",
@@ -30,11 +31,15 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
   const [subtype, setSubtype] = useState<string>("savings");
   const [opening, setOpening] = useState("");
   const [limit, setLimit] = useState("");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [gainId, setGainId] = useState("");
+  const [lossId, setLossId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { client.listAccountTemplates().then(setTemplates).catch(() => {}); }, []);
   useEffect(() => { client.listAccountSubtypes().then(setSubtypes).catch(() => {}); }, []);
+  useEffect(() => { client.listCategories(undefined, true).then(setCategories).catch(() => {}); }, []);
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -90,7 +95,16 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
         setError("Credit limit is required for this account.");
         return;
       }
-      await client.createAccount(name.trim(), subtype, signedOpening, provider?.key ?? null, limitCents);
+      const hasValue = subtypeHasValueUpdate(subtype);
+      await client.createAccount(
+        name.trim(),
+        subtype,
+        signedOpening,
+        provider?.key ?? null,
+        limitCents,
+        hasValue ? (gainId || null) : null,
+        hasValue ? (lossId || null) : null,
+      );
       onDone();
     } catch (e) {
       setError((e as { message?: string })?.message ?? "Could not create account");
@@ -196,6 +210,10 @@ export function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (
                 onChange={(e) => setLimit(e.target.value.replace(/[^0-9.]/g, ""))}
                 style={{ ...inputStyle(t), fontFamily: t.mono }} />
             </Field>
+          )}
+
+          {subtypeHasValueUpdate(subtype) && (
+            <ValueCategoryFields categories={categories} gainId={gainId} lossId={lossId} onGain={setGainId} onLoss={setLossId} />
           )}
 
           {error && <div style={{ fontSize: 12.5, color: t.expense, background: hexA(t.expense, 0.1), padding: "8px 12px", borderRadius: 8 }}>{error}</div>}

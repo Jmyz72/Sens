@@ -28,16 +28,18 @@ export const client = {
   // Accounts
   listAccountTemplates: () => dispatch<AccountTemplate[]>("list_account_templates"),
   listAccountSubtypes: () => dispatch<AccountSubtype[]>("list_account_subtypes"),
-  createAccount: (name: string, subtype: string, openingBalanceCents: number, templateKey: string | null, creditLimitCents: number | null = null) =>
-    dispatch<Account>("create_account", { name, subtype, openingBalanceCents, templateKey, creditLimitCents }),
+  createAccount: (name: string, subtype: string, openingBalanceCents: number, templateKey: string | null, creditLimitCents: number | null = null, gainCategoryId: string | null = null, lossCategoryId: string | null = null) =>
+    dispatch<Account>("create_account", { name, subtype, openingBalanceCents, templateKey, creditLimitCents, gainCategoryId, lossCategoryId }),
   listAccounts: (includeArchived = false) =>
     dispatch<Account[]>("list_accounts", { includeArchived }),
-  updateAccount: (input: { id: string; name?: string; subtype?: string; openingBalanceCents?: number; creditLimitCents?: number }) =>
+  updateAccount: (input: { id: string; name?: string; subtype?: string; openingBalanceCents?: number; creditLimitCents?: number; valueCategories?: { gainCategoryId: string | null; lossCategoryId: string | null } }) =>
     dispatch<Account>("update_account", { input }),
   archiveAccount: (id: string) => dispatch<Account>("archive_account", { id }),
   restoreAccount: (id: string) => dispatch<Account>("restore_account", { id }),
   setAccountBalance: (accountId: string, realBalanceCents: number, recordAsIncomeExpense = false) =>
     dispatch<Account>("set_account_balance", { accountId, realBalanceCents, recordAsIncomeExpense }),
+  updateNetWorth: (accountId: string, balanceCents: number, categoryId: string | null, time: string | null) =>
+    dispatch<Account>("update_net_worth", { accountId, balanceCents, categoryId, time }),
 
   // Categories
   listCategories: (kind?: CategoryKind, includeArchived = false) => dispatch<Category[]>("list_categories", { kind: kind ?? null, includeArchived }),

@@ -48,6 +48,28 @@ export function categoryPickerItems(cats: Category[], kind: CategoryKind): Picke
   return out;
 }
 
+/** Append a saved category the picker would otherwise hide, so an edit form
+ *  can show it and the empty choice can clear it. An archived one is labelled
+ *  `{name} (archived)`. */
+export function appendMissingSelection(
+  items: PickerItem[],
+  categories: Category[],
+  selectedId: string,
+): PickerItem[] {
+  if (!selectedId || items.some((item) => item.id === selectedId)) return items;
+  const category = categories.find((c) => c.id === selectedId);
+  if (!category) return items;
+  return [
+    ...items,
+    {
+      id: category.id,
+      label: category.isArchived ? `${category.name} (archived)` : category.name,
+      emoji: category.emoji,
+      depth: category.parentId == null ? 0 : 1,
+    },
+  ];
+}
+
 /** Return `ids` with the item at `from` moved to index `to`. */
 export function reorderIds(ids: string[], from: number, to: number): string[] {
   const next = ids.slice();

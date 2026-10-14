@@ -82,7 +82,15 @@ into it and are repaid by transferring out; neither is income or an expense. A p
 - The Accounts screen groups by type. AddAccount / EditAccount pick type → subtype.
 - AddAccount flow and provider logos: see [frontend.md](./frontend.md#addaccount-flow).
 
+## Update Net Worth
+
+Qualifying subtypes: `fixed-deposit`, `investment`, `unit-trust`, `crypto`. The account may store
+optional **`gain_category_id`** and **`loss_category_id`**. Command: **`update_net_worth`**. Separate from
+**Correct balance** (`set_account_balance`).
+
+Spec: `docs/superpowers/specs/2026-10-14-update-net-worth-design.md`.
+
 ## Still deferred
 
-Installment/payoff schedules, interest, and investment cost-vs-value. See
-[`ROADMAP.md`](../../ROADMAP.md) (phases are priority-ordered, not pinned to version numbers).
+Fixed-deposit maturity, installment schedules, and interest stay unscheduled.
+See [`ROADMAP.md`](../../ROADMAP.md).

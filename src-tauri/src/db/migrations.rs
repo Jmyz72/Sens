@@ -7,7 +7,7 @@ pub const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004),
     (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008),
     (9, MIGRATION_009), (10, MIGRATION_010), (11, MIGRATION_011), (12, MIGRATION_012),
-    (13, MIGRATION_013),
+    (13, MIGRATION_013), (14, MIGRATION_014),
 ];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
@@ -471,4 +471,9 @@ CREATE TABLE savings_goals (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+"#;
+
+const MIGRATION_014: &str = r#"
+ALTER TABLE accounts ADD COLUMN gain_category_id TEXT;
+ALTER TABLE accounts ADD COLUMN loss_category_id TEXT;
 "#;

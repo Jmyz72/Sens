@@ -17,6 +17,7 @@ Read this before changing balance math, transaction validation, or dashboard tot
 - [Excluded from reporting](#excluded-from-reporting)
 - [Transaction time](#transaction-time)
 - [Balance correction](#balance-correction)
+- [Update Net Worth](#update-net-worth)
 - [Category splits](#category-splits)
 - [Card and BNPL payments](#card-and-bnpl-payments)
 - [Reimbursements](#reimbursements)
@@ -138,6 +139,13 @@ Income/expense corrections:
 - The no-activity (opening-edit) path and the diff == 0 path ignore the flag.
 - A correction row in a system category **cannot be edited** via `update_transaction`
   ("Balance corrections can't be edited; delete it and reconcile again"). Deleting is allowed.
+
+## Update Net Worth
+
+`update_net_worth` writes **one ordinary income or expense** for the worth change. It does **not**
+rewrite the opening row. When **`diff == 0`**, nothing is written. A **saved category** on the account
+wins for that direction; otherwise the UI asks once and does not persist the pick. The row is **editable**
+because it is ordinary income or expense. Reporting and budgets already count it.
 
 ## Category splits
 

@@ -2,14 +2,15 @@
 // group). Opening-balance edits go through balance correction (SetBalance).
 
 import { useEffect, useMemo, useState } from "react";
-import type { Account, AccountSubtype } from "../types";
+import type { Account, AccountSubtype, Category } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { hexA } from "../theme/tokens";
 import { Btn, Field, Modal, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { ValueCategoryFields } from "../components/ValueCategoryFields";
 import { client } from "../client";
 import { parseAmountToCents } from "../lib/format";
-import { TYPE_LABEL, TYPE_ORDER, subtypeHasCreditLimit } from "../lib/accounts";
+import { TYPE_LABEL, TYPE_ORDER, subtypeHasCreditLimit, subtypeHasValueUpdate } from "../lib/accounts";
 
 export function EditAccount({ account, onClose, onDone }: { account: Account; onClose: () => void; onDone: () => void }) {
   const t = useTheme();
@@ -20,10 +21,14 @@ export function EditAccount({ account, onClose, onDone }: { account: Account; on
   const [limit, setLimit] = useState(
     account.creditLimitCents != null ? (account.creditLimitCents / 100).toFixed(2) : "",
   );
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [gainId, setGainId] = useState(account.gainCategoryId ?? "");
+  const [lossId, setLossId] = useState(account.lossCategoryId ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { client.listAccountSubtypes().then(setSubtypes).catch(() => {}); }, []);
+  useEffect(() => { client.listCategories(undefined, true).then(setCategories).catch(() => {}); }, []);
 
   const subtypesForType = useMemo(
     () => subtypes.filter((s) => s.type === type).sort((a, b) => a.sortOrder - b.sortOrder),
@@ -40,16 +45,20 @@ export function EditAccount({ account, onClose, onDone }: { account: Account; on
     setBusy(true); setError(null);
     try {
       const needsLimit = subtypeHasCreditLimit(subtype);
-      if (needsLimit) {
-        const limitCents = parseAmountToCents(limit);
-        if (limitCents == null) {
-          setError("Credit limit is required for this account.");
-          return;
-        }
-        await client.updateAccount({ id: account.id, name: name.trim(), subtype, creditLimitCents: limitCents });
-      } else {
-        await client.updateAccount({ id: account.id, name: name.trim(), subtype });
+      const limitCents = needsLimit ? parseAmountToCents(limit) : null;
+      if (needsLimit && limitCents == null) {
+        setError("Credit limit is required for this account.");
+        return;
       }
+      await client.updateAccount({
+        id: account.id,
+        name: name.trim(),
+        subtype,
+        ...(needsLimit && limitCents != null ? { creditLimitCents: limitCents } : {}),
+        ...(subtypeHasValueUpdate(subtype)
+          ? { valueCategories: { gainCategoryId: gainId || null, lossCategoryId: lossId || null } }
+          : {}),
+      });
       onDone();
     } catch (e) {
       setError((e as { message?: string })?.message ?? "Could not save");
@@ -82,6 +91,9 @@ export function EditAccount({ account, onClose, onDone }: { account: Account; on
               onChange={(e) => setLimit(e.target.value.replace(/[^0-9.]/g, ""))}
               style={{ ...inputStyle(t), fontFamily: t.mono }} />
           </Field>
+        )}
+        {subtypeHasValueUpdate(subtype) && (
+          <ValueCategoryFields categories={categories} gainId={gainId} lossId={lossId} onGain={setGainId} onLoss={setLossId} />
         )}
         {error && <div style={{ fontSize: 12.5, color: t.expense, background: hexA(t.expense, 0.1), padding: "8px 12px", borderRadius: 8 }}>{error}</div>}
         <div style={{ display: "flex", gap: 10 }}>

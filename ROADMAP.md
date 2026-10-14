@@ -3,7 +3,7 @@
 Sens is built one **phase** at a time. **One phase = one release.** This file is the index; specs and plans hold the detail.
 
 > **Last shipped:** `v0.9.1` (Rust↔mock seed drift guard; latest feature `v0.9.0`, category splits)
-> **Next up:** Investment value
+> **Next up:** Update Net Worth
 > Credit & debt behavior is complete and unreleased.
 > **Later:** the climb to `v1.0.0`
 
@@ -91,7 +91,7 @@ into *Shipped* with its tag.
 | # | Phase | Status | Spec |
 |---|---|---|---|
 | 1 | [Credit & debt behavior](#-credit--debt-behavior) | 🟢 (shipped, awaiting release) | credit limit ✅ · payments ✅ · reimbursements ✅ |
-| 2 | [Investment value](#-investment-value) | ⚪ | TBD |
+| 2 | [Update Net Worth](#-update-net-worth) | ⚪ | `2026-10-14-update-net-worth-design.md` |
 | 3 | [Budgets & goals](#-budgets--goals) | ⚪ | `2026-10-14-budgets-and-goals-design.md` |
 | 4 | [Recurring & reminders](#-recurring--reminders) | ⚪ | TBD |
 | 5 | [Advanced search, filter & tags](#-advanced-search-filter--tags) | ⚪ | TBD |
@@ -114,15 +114,17 @@ Loan schedules and interest are unscheduled; see [Later / unscheduled](#later--u
   beyond the v0.5.0 flag that already excludes it from income; also an "Owes you" reading for `lent` accounts
   — spec: `docs/superpowers/specs/2026-10-13-reimbursements-and-receivables-design.md`
 
-### ⚪ Investment value
+### ⚪ Update Net Worth
 
-Completes the deferred taxonomy work.
+Set what a fixed deposit, investment, unit trust, or crypto account is worth
+now. The difference is income or expense in a category saved on the account,
+or picked for that update. Correct balance stays as it is.
 
-- [ ] Cost basis vs current value
-- [ ] Unrealized gain/loss (investment, unit-trust, crypto)
-- [ ] Fixed-deposit maturity
+- [x] Update Net Worth on those four account kinds
+- [x] Optional gain and loss categories on the account
+- [x] A rise records income and a drop records expense, counted in reporting and budgets
 
-Spec: _TBD_
+Spec: `docs/superpowers/specs/2026-10-14-update-net-worth-design.md`
 
 ### ⚪ Budgets & goals
 
@@ -265,6 +267,14 @@ Spec: _TBD_
 Spec: _TBD_
 
 ## Later / unscheduled
+
+### Fixed-deposit maturity
+
+A maturity date and interest for a fixed deposit. Update Net Worth already
+covers recording what the deposit is worth now. This is not on the path to 1.0.
+
+- [ ] Maturity date
+- [ ] Interest
 
 ### Loan schedules and interest
 

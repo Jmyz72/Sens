@@ -38,8 +38,10 @@ pub fn create_account(
     opening_balance_cents: i64,
     template_key: Option<String>,
     credit_limit_cents: Option<i64>,
+    gain_category_id: Option<String>,
+    loss_category_id: Option<String>,
 ) -> AppResult<Account> {
-    with_conn!(state, c => service::create_account(&c, &name, &subtype, opening_balance_cents, template_key.as_deref(), credit_limit_cents))
+    with_conn!(state, c => service::create_account(&c, &name, &subtype, opening_balance_cents, template_key.as_deref(), credit_limit_cents, gain_category_id.as_deref(), loss_category_id.as_deref()))
 }
 
 #[tauri::command]
@@ -65,6 +67,19 @@ pub fn restore_account(state: State<'_, DbState>, id: String) -> AppResult<Accou
 #[tauri::command]
 pub fn set_account_balance(state: State<'_, DbState>, account_id: String, real_balance_cents: i64, record_as_income_expense: bool) -> AppResult<Account> {
     with_conn!(state, c => service::set_account_balance(&c, &account_id, real_balance_cents, record_as_income_expense))
+}
+
+#[tauri::command]
+pub fn update_net_worth(
+    state: State<'_, DbState>,
+    account_id: String,
+    balance_cents: i64,
+    category_id: Option<String>,
+    time: Option<String>,
+) -> AppResult<Account> {
+    with_conn!(state, c => service::update_net_worth(
+        &c, &account_id, balance_cents, category_id.as_deref(), time.as_deref()
+    ))
 }
 
 // ── Categories ───────────────────────────────────────────────────────────────

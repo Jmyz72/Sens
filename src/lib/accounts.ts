@@ -70,6 +70,11 @@ export function subtypeHasCreditLimit(subtype: string): boolean {
   return subtype === "credit-card" || subtype === "bnpl";
 }
 
+/** Subtypes whose worth is updated as income or expense, not by Correct balance. */
+export function subtypeHasValueUpdate(subtype: string): boolean {
+  return subtype === "fixed-deposit" || subtype === "investment" || subtype === "unit-trust" || subtype === "crypto";
+}
+
 export interface CreditReadout {
   availableCents: number;
   usedPercent: number;
