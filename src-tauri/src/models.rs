@@ -272,6 +272,82 @@ pub struct AccountBalance {
     pub balance_cents: i64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleWrite {
+    pub mode: String,
+    pub kind: String,
+    pub amount_cents: i64,
+    pub account_id: String,
+    pub to_account_id: Option<String>,
+    pub category_id: Option<String>,
+    pub description: Option<String>,
+    pub start_date: String,
+    pub time: Option<String>,
+    pub frequency: String,
+    pub interval: i64,
+    pub weekdays: Vec<String>,
+    pub month_mode: Option<String>,
+    pub month_days: Vec<i64>,
+    pub ordinal: Option<String>,
+    pub ordinal_day: Option<String>,
+    pub months: Vec<i64>,
+    pub day_of_month: Option<i64>,
+    pub end_mode: String,
+    pub end_count: Option<i64>,
+    pub end_date: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Schedule {
+    pub id: String,
+    pub mode: String,
+    pub kind: String,
+    pub amount_cents: i64,
+    pub account_id: String,
+    pub to_account_id: Option<String>,
+    pub category_id: Option<String>,
+    pub description: Option<String>,
+    pub start_date: String,
+    pub time: Option<String>,
+    pub frequency: String,
+    pub interval: i64,
+    pub weekdays: Vec<String>,
+    pub month_mode: Option<String>,
+    pub month_days: Vec<i64>,
+    pub ordinal: Option<String>,
+    pub ordinal_day: Option<String>,
+    pub months: Vec<i64>,
+    pub day_of_month: Option<i64>,
+    pub end_mode: String,
+    pub end_count: Option<i64>,
+    pub end_date: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub block_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpcomingOccurrence {
+    pub schedule_id: String,
+    pub occurrence_date: String,
+    pub kind: String,
+    pub label: String,
+    pub amount_cents: i64,
+    pub time: Option<String>,
+    pub account_name: String,
+    pub block_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulePass {
+    pub posted: Vec<Transaction>,
+    pub next_wake_at: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardSummary {

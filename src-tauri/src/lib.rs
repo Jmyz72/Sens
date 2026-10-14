@@ -157,6 +157,19 @@ mod tests {
         assert_eq!(acc.loss_category_id, None);
     }
 
+    #[test]
+    fn migration_015_creates_schedule_tables() {
+        let c = test_db();
+        let n: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('schedules', 'schedule_occurrences')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 2);
+    }
+
     fn value_pair(gain: Option<&str>, loss: Option<&str>) -> ValueCategories {
         ValueCategories {
             gain_category_id: gain.map(str::to_string),

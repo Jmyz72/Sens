@@ -977,6 +977,245 @@ pub fn goal_for_account(conn: &Connection, account_id: &str) -> AppResult<Option
     }
 }
 
+// ── Schedules ────────────────────────────────────────────────────────────────
+
+fn join_strings(items: &[String]) -> String {
+    items.join(",")
+}
+
+fn split_strings(raw: &str) -> Vec<String> {
+    if raw.is_empty() {
+        Vec::new()
+    } else {
+        raw.split(',').map(str::to_string).collect()
+    }
+}
+
+fn join_ints(items: &[i64]) -> String {
+    items
+        .iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn split_ints(raw: &str) -> Vec<i64> {
+    if raw.is_empty() {
+        Vec::new()
+    } else {
+        raw.split(',')
+            .filter_map(|part| part.parse().ok())
+            .collect()
+    }
+}
+
+fn map_schedule(r: &Row) -> rusqlite::Result<Schedule> {
+    Ok(Schedule {
+        id: r.get("id")?,
+        mode: r.get("mode")?,
+        kind: r.get("kind")?,
+        amount_cents: r.get("amount_cents")?,
+        account_id: r.get("account_id")?,
+        to_account_id: r.get("to_account_id")?,
+        category_id: r.get("category_id")?,
+        description: r.get("description")?,
+        start_date: r.get("start_date")?,
+        time: r.get("time")?,
+        frequency: r.get("frequency")?,
+        interval: r.get("interval")?,
+        weekdays: split_strings(&r.get::<_, String>("weekdays")?),
+        month_mode: r.get("month_mode")?,
+        month_days: split_ints(&r.get::<_, String>("month_days")?),
+        ordinal: r.get("ordinal")?,
+        ordinal_day: r.get("ordinal_day")?,
+        months: split_ints(&r.get::<_, String>("months")?),
+        day_of_month: r.get("day_of_month")?,
+        end_mode: r.get("end_mode")?,
+        end_count: r.get("end_count")?,
+        end_date: r.get("end_date")?,
+        created_at: r.get("created_at")?,
+        updated_at: r.get("updated_at")?,
+        block_reason: None,
+    })
+}
+
+const SCHEDULE_COLS: &str = "id, mode, kind, amount_cents, account_id, to_account_id, category_id, description, \
+    start_date, time, frequency, interval, weekdays, month_mode, month_days, ordinal, ordinal_day, months, \
+    day_of_month, end_mode, end_count, end_date, created_at, updated_at";
+
+pub fn insert_schedule(
+    conn: &Connection,
+    id: &str,
+    write: &ScheduleWrite,
+    now: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO schedules (id, mode, kind, amount_cents, account_id, to_account_id, category_id, description,
+         start_date, time, frequency, interval, weekdays, month_mode, month_days, ordinal, ordinal_day, months,
+         day_of_month, end_mode, end_count, end_date, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?23)",
+        params![
+            id,
+            write.mode,
+            write.kind,
+            write.amount_cents,
+            write.account_id,
+            write.to_account_id,
+            write.category_id,
+            write.description,
+            write.start_date,
+            write.time,
+            write.frequency,
+            write.interval,
+            join_strings(&write.weekdays),
+            write.month_mode,
+            join_ints(&write.month_days),
+            write.ordinal,
+            write.ordinal_day,
+            join_ints(&write.months),
+            write.day_of_month,
+            write.end_mode,
+            write.end_count,
+            write.end_date,
+            now,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn update_schedule(
+    conn: &Connection,
+    id: &str,
+    write: &ScheduleWrite,
+    now: &str,
+) -> AppResult<()> {
+    let n = conn.execute(
+        "UPDATE schedules SET mode = ?2, kind = ?3, amount_cents = ?4, account_id = ?5, to_account_id = ?6,
+         category_id = ?7, description = ?8, start_date = ?9, time = ?10, frequency = ?11, interval = ?12,
+         weekdays = ?13, month_mode = ?14, month_days = ?15, ordinal = ?16, ordinal_day = ?17, months = ?18,
+         day_of_month = ?19, end_mode = ?20, end_count = ?21, end_date = ?22, updated_at = ?23
+         WHERE id = ?1",
+        params![
+            id,
+            write.mode,
+            write.kind,
+            write.amount_cents,
+            write.account_id,
+            write.to_account_id,
+            write.category_id,
+            write.description,
+            write.start_date,
+            write.time,
+            write.frequency,
+            write.interval,
+            join_strings(&write.weekdays),
+            write.month_mode,
+            join_ints(&write.month_days),
+            write.ordinal,
+            write.ordinal_day,
+            join_ints(&write.months),
+            write.day_of_month,
+            write.end_mode,
+            write.end_count,
+            write.end_date,
+            now,
+        ],
+    )?;
+    if n == 0 {
+        return Err(AppError::NotFound("Schedule not found".into()));
+    }
+    Ok(())
+}
+
+pub fn delete_schedule(conn: &Connection, id: &str) -> AppResult<()> {
+    let n = conn.execute("DELETE FROM schedules WHERE id = ?1", [id])?;
+    if n == 0 {
+        return Err(AppError::NotFound("Schedule not found".into()));
+    }
+    Ok(())
+}
+
+pub fn list_schedules(conn: &Connection) -> AppResult<Vec<Schedule>> {
+    let sql = format!("SELECT {SCHEDULE_COLS} FROM schedules ORDER BY created_at, id");
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map([], map_schedule)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn get_schedule(conn: &Connection, id: &str) -> AppResult<Schedule> {
+    let sql = format!("SELECT {SCHEDULE_COLS} FROM schedules WHERE id = ?1");
+    conn.query_row(&sql, [id], map_schedule)
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Schedule not found".into()),
+            other => other.into(),
+        })
+}
+
+#[derive(Debug, Clone)]
+pub struct ScheduleOccurrenceRow {
+    pub occurrence_date: String,
+    pub status: String,
+    pub transaction_id: Option<String>,
+}
+
+pub fn list_occurrences(conn: &Connection, schedule_id: &str) -> AppResult<Vec<ScheduleOccurrenceRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT occurrence_date, status, transaction_id FROM schedule_occurrences
+         WHERE schedule_id = ?1 ORDER BY occurrence_date",
+    )?;
+    let rows = stmt
+        .query_map([schedule_id], |r| {
+            Ok(ScheduleOccurrenceRow {
+                occurrence_date: r.get(0)?,
+                status: r.get(1)?,
+                transaction_id: r.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn insert_occurrence(
+    conn: &Connection,
+    schedule_id: &str,
+    occurrence_date: &str,
+    status: &str,
+    transaction_id: Option<&str>,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO schedule_occurrences (schedule_id, occurrence_date, status, transaction_id)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![schedule_id, occurrence_date, status, transaction_id],
+    )?;
+    Ok(())
+}
+
+pub fn occurrence_status(
+    conn: &Connection,
+    schedule_id: &str,
+    occurrence_date: &str,
+) -> AppResult<Option<ScheduleOccurrenceRow>> {
+    let result = conn.query_row(
+        "SELECT occurrence_date, status, transaction_id FROM schedule_occurrences
+         WHERE schedule_id = ?1 AND occurrence_date = ?2",
+        params![schedule_id, occurrence_date],
+        |r| {
+            Ok(ScheduleOccurrenceRow {
+                occurrence_date: r.get(0)?,
+                status: r.get(1)?,
+                transaction_id: r.get(2)?,
+            })
+        },
+    );
+    match result {
+        Ok(row) => Ok(Some(row)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
 // ── App Settings ─────────────────────────────────────────────────────────────
 
 pub fn get_setting(conn: &Connection, key: &str) -> AppResult<Option<String>> {
