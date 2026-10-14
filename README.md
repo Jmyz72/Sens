@@ -21,7 +21,7 @@ Sens is a **manual** personal-finance tracker. You enter your accounts and trans
 - **Local-first** — your data lives in a single SQLite file on your machine. Your financial data is never sent anywhere (the only network call is the optional update check against GitHub Releases).
 - **MYR only** — all money is Malaysian Ringgit, stored as integer cents end-to-end (no floating-point rounding bugs).
 - **Manual entry only** — no bank connections, no sync, no imports. You are in control of every number.
-- **Desktop-native** — built with Tauri for a fast, lightweight macOS / Windows app.
+- **Desktop-native** — built with Tauri for a fast, lightweight macOS / Windows / Linux app.
 
 > Looking for an **investment portfolio** tracker with market prices, multi-currency, and performance analytics? That's a different problem — Sens focuses on day-to-day cashflow and net worth.
 
@@ -79,8 +79,15 @@ Grab the latest build for your platform from the [**Releases**](https://github.c
 | -------- | -------- |
 | macOS (Apple Silicon) | `Sens_<version>_aarch64.dmg` |
 | Windows (64-bit) | `Sens_<version>_x64-setup.exe` (or the `.msi`) |
+| Linux (x64) | `Sens_<version>_amd64.AppImage` or `Sens_<version>_amd64.deb` |
 
 The other release files (`.sig`, `latest.json`, `Sens_aarch64.app.tar.gz`) are update metadata used by the in-app updater — you don't need them. There is no Intel-Mac build yet.
+
+### Linux
+
+- **AppImage:** `chmod +x Sens_<version>_amd64.AppImage && ./Sens_<version>_amd64.AppImage`. In-app updates work for the AppImage.
+- **.deb (Debian/Ubuntu):** `sudo apt install ./Sens_<version>_amd64.deb`. The .deb is not updated in-app; install new releases manually.
+- Builds target Ubuntu 22.04+ (needs WebKitGTK 4.1).
 
 ### macOS
 

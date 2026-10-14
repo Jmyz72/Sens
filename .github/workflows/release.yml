@@ -35,6 +35,9 @@ jobs:
           - platform: windows-latest
             target: ""
             args: ""
+          - platform: ubuntu-22.04
+            target: ""
+            args: "--bundles appimage,deb"
     runs-on: ${{ matrix.platform }}
     # The tag to build: provided by workflow_call/workflow_dispatch, else the pushed tag ref.
     env:
@@ -53,6 +56,11 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: src-tauri
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - run: npm ci
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
@@ -77,6 +85,8 @@ jobs:
               xattr -dr com.apple.quarantine /Applications/Sens.app
               ```
               then open it normally.
+
+            **Linux (x64)** — download `Sens_<version>_amd64.AppImage` (`chmod +x` it, then run) or install `Sens_<version>_amd64.deb` with `sudo apt install ./Sens_<version>_amd64.deb`.
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true

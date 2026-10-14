@@ -23,7 +23,7 @@ them by hand.**
 ## Cutting a release
 
 There are two equivalent paths; both end with the **Release** workflow building and
-publishing the macOS + Windows bundles. Pick whichever fits the moment:
+publishing the macOS + Windows + Linux bundles. Pick whichever fits the moment:
 
 - **One-click (Actions tab):** the **Cut release** workflow — quickest when you
   already know the level. See [One-click release](#one-click-release-cut-release).
@@ -61,7 +61,7 @@ updates.
 4. When the PR is green, merge it (squash or merge commit).
 5. **Tag release** tags the merge commit `vX.Y.Z`, deletes the branch, and calls
    **Release** directly (a tag pushed with `GITHUB_TOKEN` does not re-fire the tag
-   trigger). Confirm the GitHub Release has the macOS, Windows, and `latest.json`
+   trigger). Confirm the GitHub Release has the macOS, Windows, Linux, and `latest.json`
    artifacts.
 
 Requires the repo setting **Settings → Actions → General → Workflow permissions →
@@ -103,8 +103,9 @@ with the existing tag (e.g. `v0.10.0`), or `gh workflow run release.yml -f tag=v
   **Open** works; clearing the quarantine flag (`xattr -dr com.apple.quarantine
   /Applications/Sens.app`) works everywhere. See the README's *Download & install*.
   (The GitHub release body in `release.yml` still only mentions right-click → Open.)
-- **Platforms:** releases ship **macOS Apple Silicon (aarch64)** and **Windows x64** only —
-  there is no Intel-Mac build.
+- **Platforms:** releases ship **macOS Apple Silicon (aarch64)**, **Windows x64** and
+  **Linux x64** (AppImage + .deb, built on ubuntu-22.04) — there is no Intel-Mac or ARM
+  Linux build. Only the AppImage is covered by the in-app updater; .deb users update manually.
 - **Changelog links:** `npm run release` now also adds the `[x.y.z]: …/releases/tag/vx.y.z`
   link and bumps the `[Unreleased]` compare link — no manual step.
 - **Updater bootstrap:** users must install one updater-enabled release manually; later
