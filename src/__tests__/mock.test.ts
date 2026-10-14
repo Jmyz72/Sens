@@ -8,10 +8,14 @@
  * - Balance/count assertions use deltas or work on the test's own accounts.
  * - Tests do NOT assume a specific total account count from list_accounts.
  */
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import { mockInvoke } from "../client/mock";
 import { client } from "../client";
 import type { Account, AccountBalance, DashboardSummary, Transaction } from "../types";
+
+beforeEach(async () => {
+  await mockInvoke("set_setting", { key: "transaction_time_enabled", value: "0" });
+});
 
 // Helper to create a fresh custom account with zero opening balance
 async function freshAccount(name = "Test Account", opening = 0): Promise<Account> {

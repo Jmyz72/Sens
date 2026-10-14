@@ -623,7 +623,7 @@ fn validate_positive(amount_cents: i64) -> AppResult<()> {
 const SETTING_TIME_ENABLED: &str = "transaction_time_enabled";
 
 fn time_enabled(conn: &Connection) -> AppResult<bool> {
-    Ok(repo::get_setting(conn, SETTING_TIME_ENABLED)?.as_deref() == Some("1"))
+    Ok(repo::get_setting(conn, SETTING_TIME_ENABLED)?.as_deref() != Some("0"))
 }
 
 fn validate_hhmm(s: &str) -> AppResult<()> {

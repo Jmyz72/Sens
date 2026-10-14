@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import { mockInvoke } from "../client/mock";
 import type { Account, Category, Transaction } from "../types";
 
@@ -52,6 +52,10 @@ function createAccount(input: {
 }
 
 describe("mock update net worth", () => {
+  beforeEach(async () => {
+    await mockInvoke("set_setting", { key: "transaction_time_enabled", value: "0" });
+  });
+
   it("saves gain and loss categories on an investment", async () => {
     const gain = await userCategory("income");
     const loss = await userCategory("expense");

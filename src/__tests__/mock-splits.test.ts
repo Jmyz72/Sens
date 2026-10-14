@@ -17,6 +17,7 @@ async function freshAccount() {
 describe("mock splits", () => {
   it("creates a split expense, attributes breakdown per category, leaves balance whole", async () => {
     await mockInvoke("reset_app", {});
+    await mockInvoke("set_setting", { key: "transaction_time_enabled", value: "0" });
     const acc = await freshAccount();
     const cats = await expenseCats();
     const before = await mockInvoke<number>("get_account_balance", { accountId: acc.id });
@@ -40,6 +41,7 @@ describe("mock splits", () => {
 
   it("rejects a split whose lines don't sum to the total", async () => {
     await mockInvoke("reset_app", {});
+    await mockInvoke("set_setting", { key: "transaction_time_enabled", value: "0" });
     const acc = await freshAccount();
     const cats = await expenseCats();
     await expect(mockInvoke("create_expense_transaction", {

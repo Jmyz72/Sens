@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { mockInvoke } from "../client/mock";
 import type { Account, DashboardSummary, Transaction } from "../types";
 
@@ -13,6 +13,10 @@ async function pair() {
 }
 
 describe("mock payments", () => {
+  beforeEach(async () => {
+    await mockInvoke("set_setting", { key: "transaction_time_enabled", value: "0" });
+  });
+
   it("moves both balances and stays out of the dashboard", async () => {
     const { savings, card } = await pair();
     const before = await mockInvoke<DashboardSummary>("get_dashboard_summary", { month: "2026-06" });

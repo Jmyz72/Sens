@@ -92,6 +92,12 @@ mod tests {
     use crate::models::*;
     use crate::service;
 
+    fn test_db() -> rusqlite::Connection {
+        let c = open_in_memory().unwrap();
+        service::set_setting(&c, "transaction_time_enabled", "0").unwrap();
+        c
+    }
+
     fn acct(conn: &rusqlite::Connection, name: &str, opening: i64) -> Account {
         service::create_account(conn, name, "savings", opening, None, None, None, None).unwrap()
     }
@@ -136,7 +142,7 @@ mod tests {
 
     #[test]
     fn migration_014_adds_value_category_columns() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let n: i64 = c
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('accounts') WHERE name IN ('gain_category_id', 'loss_category_id')",
@@ -159,7 +165,7 @@ mod tests {
 
     #[test]
     fn create_investment_saves_gain_and_loss_categories() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let gain = income_cat(&c);
         let loss = expense_cat(&c);
         let acc = service::create_account(&c, "Stash", "investment", 10_000, None, None, Some(&gain), Some(&loss)).unwrap();
@@ -169,7 +175,7 @@ mod tests {
 
     #[test]
     fn create_savings_rejects_a_value_category() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let gain = income_cat(&c);
         let err = service::create_account(&c, "Cash", "savings", 0, None, None, Some(&gain), None).unwrap_err();
         assert_eq!(
@@ -180,7 +186,7 @@ mod tests {
 
     #[test]
     fn gain_category_must_be_income_and_not_system() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let expense = expense_cat(&c);
         let err = service::create_account(&c, "FD", "fixed-deposit", 0, None, None, Some(&expense), None).unwrap_err();
         assert_eq!(validation_message(err), "Gain category must be an income category.");
@@ -192,7 +198,7 @@ mod tests {
 
     #[test]
     fn loss_category_must_be_expense() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let income = income_cat(&c);
         let err = service::create_account(&c, "UT", "unit-trust", 0, None, None, None, Some(&income)).unwrap_err();
         assert_eq!(validation_message(err), "Loss category must be an expense category.");
@@ -200,7 +206,7 @@ mod tests {
 
     #[test]
     fn edit_can_set_clear_and_keep_value_categories() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let gain = income_cat(&c);
         let loss = expense_cat(&c);
         let acc = service::create_account(&c, "Luno", "crypto", 0, None, None, None, None).unwrap();
@@ -225,7 +231,7 @@ mod tests {
 
     #[test]
     fn leaving_the_four_subtypes_clears_value_categories() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let gain = income_cat(&c);
         let acc = service::create_account(&c, "FD", "fixed-deposit", 0, None, None, Some(&gain), None).unwrap();
         let cleared = service::update_account(&c, UpdateAccountInput {
@@ -238,7 +244,7 @@ mod tests {
 
     #[test]
     fn subcategory_and_archived_category_can_be_saved() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let parent = income_cat(&c);
         let child = service::create_category(&c, "Dividends", "income", "💸", None, Some(&parent)).unwrap();
         let archived = service::create_category(&c, "Old loss", "expense", "📉", None, None).unwrap();
@@ -269,7 +275,7 @@ mod tests {
 
     #[test]
     fn create_split_expense_sums_and_attributes() {
-        let conn = open_in_memory().unwrap();
+        let conn = test_db();
         let acc = service::create_account(&conn, "Cash", "cash", 0, None, None, None, None).unwrap();
         let a = nth_expense_category_id(&conn, 0);
         let b = nth_expense_category_id(&conn, 1);
@@ -287,7 +293,7 @@ mod tests {
 
     #[test]
     fn create_split_rejects_sum_mismatch() {
-        let conn = open_in_memory().unwrap();
+        let conn = test_db();
         let acc = service::create_account(&conn, "Cash", "cash", 0, None, None, None, None).unwrap();
         let a = nth_expense_category_id(&conn, 0);
         let b = nth_expense_category_id(&conn, 1);
@@ -301,7 +307,7 @@ mod tests {
 
     #[test]
     fn create_split_rejects_single_line() {
-        let conn = open_in_memory().unwrap();
+        let conn = test_db();
         let acc = service::create_account(&conn, "Cash", "cash", 0, None, None, None, None).unwrap();
         let a = nth_expense_category_id(&conn, 0);
         let splits = vec![SplitInput { category_id: a, amount_cents: 15000 }];
@@ -311,7 +317,7 @@ mod tests {
 
     #[test]
     fn update_single_to_split_and_back() {
-        let conn = open_in_memory().unwrap();
+        let conn = test_db();
         let acc = service::create_account(&conn, "Cash", "cash", 0, None, None, None, None).unwrap();
         let a = nth_expense_category_id(&conn, 0);
         let b = nth_expense_category_id(&conn, 1);
@@ -343,7 +349,7 @@ mod tests {
     #[test]
     fn breakdown_attributes_split_lines() {
         use crate::repo;
-        let conn = open_in_memory().unwrap();
+        let conn = test_db();
         let acc = service::create_account(&conn, "Cash", "cash", 0, None, None, None, None).unwrap();
         let a = nth_expense_category_id(&conn, 0);
         let b = nth_expense_category_id(&conn, 1);
@@ -362,7 +368,7 @@ mod tests {
     #[test]
     fn category_count_includes_split_refs() {
         use crate::repo;
-        let conn = open_in_memory().unwrap();
+        let conn = test_db();
         let acc = service::create_account(&conn, "Cash", "cash", 0, None, None, None, None).unwrap();
         let a = nth_expense_category_id(&conn, 0);
         let b = nth_expense_category_id(&conn, 1);
@@ -377,14 +383,14 @@ mod tests {
 
     #[test]
     fn seeds_templates_and_categories() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         assert_eq!(service::list_account_templates(&c).unwrap().len(), 51); // +Luno, +Cash
         assert!(!service::list_categories(&c, Some("expense"), false).unwrap().is_empty());
     }
 
     #[test]
     fn create_account_derives_type_and_group() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = service::create_account(&c, "My Maybank", "savings", 10000, Some("maybank"), None, None, None).unwrap();
         assert_eq!(a.account_type, "fund");
         assert_eq!(a.group, "own");
@@ -393,7 +399,7 @@ mod tests {
 
     #[test]
     fn income_and_expense_affect_balance() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         service::create_income(&c, &a.id, Some(&income_cat(&c)), 5000, None, "2026-05-10", None, false, None).unwrap();
         service::create_expense(&c, &a.id, Some(&expense_cat(&c)), 2000, None, "2026-05-11", None, false, None).unwrap();
@@ -402,7 +408,7 @@ mod tests {
 
     #[test]
     fn transfer_moves_between_accounts() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 10000);
         let b = acct(&c, "Savings", 0);
         service::create_transfer(&c, &a.id, &b.id, 4000, None, "2026-05-10", None).unwrap();
@@ -412,14 +418,14 @@ mod tests {
 
     #[test]
     fn rejects_same_account_transfer() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 10000);
         assert!(service::create_transfer(&c, &a.id, &a.id, 1000, None, "2026-05-10", None).is_err());
     }
 
     #[test]
     fn rejects_archived_account_usage() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 1000);
         service::archive_account(&c, &a.id).unwrap();
         assert!(service::create_expense(&c, &a.id, Some(&expense_cat(&c)), 100, None, "2026-05-10", None, false, None).is_err());
@@ -427,7 +433,7 @@ mod tests {
 
     #[test]
     fn category_kind_must_match() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         // expense category used for income → rejected
         assert!(service::create_income(&c, &a.id, Some(&expense_cat(&c)), 100, None, "2026-05-10", None, false, None).is_err());
@@ -435,7 +441,7 @@ mod tests {
 
     #[test]
     fn balance_correction_no_txns_edits_opening() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 1000);
         let updated = service::set_account_balance(&c, &a.id, 5000, false).unwrap();
         assert_eq!(updated.opening_balance_cents, 5000);
@@ -444,7 +450,7 @@ mod tests {
 
     #[test]
     fn balance_correction_with_txns_inserts_adjustment() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         service::create_income(&c, &a.id, Some(&income_cat(&c)), 3350_00, None, "2026-05-10", None, false, None).unwrap();
         let updated = service::set_account_balance(&c, &a.id, 3400_00, false).unwrap();
@@ -454,7 +460,7 @@ mod tests {
 
     #[test]
     fn create_account_inserts_one_opening_transaction() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 10000);
         let txns = service::list_transactions(&c, TransactionFilters { account_id: Some(a.id.clone()), ..Default::default() }).unwrap();
         let openings: Vec<_> = txns.iter().filter(|t| t.kind == "opening").collect();
@@ -466,7 +472,7 @@ mod tests {
 
     #[test]
     fn owe_account_opening_is_negative() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = service::create_account(&c, "Visa", "credit-card", -50000, None, Some(1_000_000), None, None).unwrap();
         assert_eq!(a.group, "owe");
         assert_eq!(a.balance_cents, -50000);
@@ -475,7 +481,7 @@ mod tests {
 
     #[test]
     fn excluded_income_and_expense_skip_the_dashboard() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         service::create_income(&c, &a.id, Some(&income_cat(&c)), 5000, None, "2026-05-10", None, false, None).unwrap();
         service::create_income(&c, &a.id, Some(&income_cat(&c)), 1200, None, "2026-05-11", None, true, None).unwrap();
@@ -489,7 +495,7 @@ mod tests {
 
     #[test]
     fn toggling_excluded_from_reporting_reclassifies_in_dashboard() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         let tx = service::create_expense(&c, &a.id, Some(&expense_cat(&c)), 800, None, "2026-05-12", None, false, None).unwrap();
         assert_eq!(service::get_dashboard_summary(&c, "2026-05").unwrap().expense_cents, 800);
@@ -508,7 +514,7 @@ mod tests {
 
     #[test]
     fn check_rejects_flag_on_non_income_expense() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         let b = acct(&c, "Savings", 0);
         let res = c.execute(
@@ -521,7 +527,7 @@ mod tests {
 
     #[test]
     fn editing_opening_balance_moves_the_balance_without_new_rows() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 1000);
         let updated = service::update_account(&c, UpdateAccountInput {
             id: a.id.clone(), name: None, subtype: None, opening_balance_cents: Some(7500), credit_limit_cents: None,
@@ -536,7 +542,7 @@ mod tests {
 
     #[test]
     fn opening_transaction_cannot_be_edited_or_deleted() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 1000);
         let opening = service::list_transactions(&c, TransactionFilters { account_id: Some(a.id.clone()), ..Default::default() })
             .unwrap().into_iter().find(|t| t.kind == "opening").unwrap();
@@ -556,7 +562,7 @@ mod tests {
 
     #[test]
     fn migration_007_adds_nullable_time_column() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         // Column exists and defaults to NULL for rows created without a time.
         let a = acct(&c, "Checking", 1000);
         let txns = service::list_transactions(
@@ -577,8 +583,22 @@ mod tests {
     }
 
     #[test]
-    fn time_required_when_setting_on() {
+    fn missing_time_setting_requires_a_time() {
         let c = open_in_memory().unwrap();
+        let a = acct(&c, "Checking", 0);
+        let err = service::create_expense(
+            &c, &a.id, Some(&expense_cat(&c)), 100, None, "2026-05-10", None, false, None,
+        ).unwrap_err();
+        assert_eq!(validation_message(err), "A time is required");
+        let t = service::create_expense(
+            &c, &a.id, Some(&expense_cat(&c)), 100, None, "2026-05-10", Some("09:00"), false, None,
+        ).unwrap();
+        assert_eq!(t.transaction_time.as_deref(), Some("09:00"));
+    }
+
+    #[test]
+    fn time_required_when_setting_on() {
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         enable_time(&c);
         assert!(service::create_expense(&c, &a.id, Some(&expense_cat(&c)), 100, None, "2026-05-10", None, false, None).is_err());
@@ -590,7 +610,7 @@ mod tests {
 
     #[test]
     fn time_ignored_when_setting_off() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         let t = service::create_expense(&c, &a.id, Some(&expense_cat(&c)), 100, None, "2026-05-10", Some("08:15"), false, None).unwrap();
         assert_eq!(t.transaction_time, None);
@@ -598,7 +618,7 @@ mod tests {
 
     #[test]
     fn update_preserves_time_when_setting_off() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         enable_time(&c);
         let t = service::create_expense(&c, &a.id, Some(&expense_cat(&c)), 100, None, "2026-05-10", Some("08:15"), false, None).unwrap();
@@ -613,7 +633,7 @@ mod tests {
 
     #[test]
     fn adjustments_excluded_from_dashboard_income_expense() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         service::create_income(&c, &a.id, Some(&income_cat(&c)), 1000, None, "2026-05-10", None, false, None).unwrap();
         service::set_account_balance(&c, &a.id, 99999, false).unwrap(); // big adjustment this month
@@ -625,7 +645,7 @@ mod tests {
 
     #[test]
     fn dashboard_month_range_filters() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         let ec = expense_cat(&c);
         service::create_expense(&c, &a.id, Some(&ec), 500, None, "2026-05-15", None, false, None).unwrap();
@@ -636,7 +656,7 @@ mod tests {
 
     #[test]
     fn settings_roundtrip() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         service::set_setting(&c, "dashboard_month", "2026-05").unwrap();
         let v = service::get_setting(&c, "dashboard_month").unwrap();
         assert_eq!(v, Some("2026-05".to_string()));
@@ -644,7 +664,7 @@ mod tests {
 
     #[test]
     fn settings_overwrite_updates_value() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         service::set_setting(&c, "dashboard_month", "2026-04").unwrap();
         service::set_setting(&c, "dashboard_month", "2026-05").unwrap();
         let v = service::get_setting(&c, "dashboard_month").unwrap();
@@ -653,21 +673,21 @@ mod tests {
 
     #[test]
     fn settings_unknown_key_returns_none() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let v = service::get_setting(&c, "nonexistent_key").unwrap();
         assert_eq!(v, None);
     }
 
     #[test]
     fn settings_key_is_trimmed() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         service::set_setting(&c, " theme ", "dark").unwrap();
         assert_eq!(service::get_setting(&c, "theme").unwrap(), Some("dark".to_string()));
     }
 
     #[test]
     fn seeded_categories_can_be_archived() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         // After dropping is_system, every seeded category is archivable.
         let cat = service::list_categories(&c, None, false).unwrap().into_iter().next().unwrap();
         let updated = service::archive_category(&c, &cat.id).unwrap();
@@ -676,7 +696,7 @@ mod tests {
 
     #[test]
     fn list_categories_can_include_archived() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         // Create a custom expense category and immediately archive it.
         let cat = service::create_category(&c, "Old Food", "expense", "🍔", None, None).unwrap();
         service::archive_category(&c, &cat.id).unwrap();
@@ -696,7 +716,7 @@ mod tests {
 
     #[test]
     fn subcategory_inherits_parent_kind() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let food = service::create_category(&c, "Food P2", "expense", "🍔", None, None).unwrap();
         let coffee = service::create_category(&c, "Coffee", "income", "☕", None, Some(&food.id)).unwrap();
         // kind is derived from the parent, not the passed-in "income"
@@ -706,7 +726,7 @@ mod tests {
 
     #[test]
     fn cannot_nest_subcategory_under_a_subcategory() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let food = service::create_category(&c, "Food P3", "expense", "🍔", None, None).unwrap();
         let coffee = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
         let nested = service::create_category(&c, "Latte", "expense", "🥛", None, Some(&coffee.id));
@@ -715,7 +735,7 @@ mod tests {
 
     #[test]
     fn subcategory_names_unique_within_parent_only() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let food = service::create_category(&c, "Food P4", "expense", "🍔", None, None).unwrap();
         let work = service::create_category(&c, "Work P4", "expense", "💼", None, None).unwrap();
         service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
@@ -728,20 +748,20 @@ mod tests {
 
     #[test]
     fn lists_sixteen_subtypes() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         assert_eq!(service::list_account_subtypes(&c).unwrap().len(), 16);
     }
 
     #[test]
     fn rejects_invalid_subtype() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let err = service::create_account(&c, "Bad", "not-a-subtype", 0, None, None, None, None).unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
     }
 
     #[test]
     fn owe_account_stores_signed_and_nets_worth() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         service::create_account(&c, "Cash", "cash", 30_000_00, None, None, None, None).unwrap();
         let card = service::create_account(&c, "CIMB Card", "credit-card", -5_000_00, None, Some(1_000_000), None, None).unwrap();
         assert_eq!(card.group, "owe");
@@ -753,7 +773,7 @@ mod tests {
 
     #[test]
     fn archiving_parent_cascades_to_children_and_restores_them() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let food = service::create_category(&c, "Food P5", "expense", "🍔", None, None).unwrap();
         let coffee = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
 
@@ -770,7 +790,7 @@ mod tests {
 
     #[test]
     fn spending_breakdown_rolls_subcategories_into_parent() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = acct(&c, "Checking", 0);
         let food = service::create_category(&c, "Food P6", "expense", "🍔", None, None).unwrap();
         let coffee = service::create_category(&c, "Coffee", "expense", "☕", None, Some(&food.id)).unwrap();
@@ -789,7 +809,7 @@ mod tests {
 
     #[test]
     fn delete_category_rules() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         // Unused leaf category: deletes fine.
         let unused = service::create_category(&c, "Throwaway", "expense", "🗑️", None, None).unwrap();
         service::delete_category(&c, &unused.id).unwrap();
@@ -809,7 +829,7 @@ mod tests {
 
     #[test]
     fn deleting_an_unused_saved_category_clears_the_account() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let gain = service::create_category(&c, "Growth", "income", "📈", None, None).unwrap();
         let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, Some(&gain.id), None).unwrap();
         service::delete_category(&c, &gain.id).unwrap();
@@ -819,7 +839,7 @@ mod tests {
 
     #[test]
     fn reorder_categories_sets_sort_order() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let a = service::create_category(&c, "AA", "expense", "🅰️", None, None).unwrap();
         let b = service::create_category(&c, "BB", "expense", "🅱️", None, None).unwrap();
         // Put b before a.
@@ -832,7 +852,7 @@ mod tests {
 
     #[test]
     fn set_category_parent_move_promote_demote() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let food = service::create_category(&c, "Food MP", "expense", "🍔", None, None).unwrap();
         let fun = service::create_category(&c, "Fun MP", "expense", "🎮", None, None).unwrap();
         let coffee = service::create_category(&c, "Coffee MP", "expense", "☕", None, Some(&food.id)).unwrap();
@@ -853,7 +873,7 @@ mod tests {
 
     #[test]
     fn set_category_parent_rejects_invalid() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let food = service::create_category(&c, "Food R", "expense", "🍔", None, None).unwrap();
         let salary = service::create_category(&c, "Salary R", "income", "💰", None, None).unwrap();
         let coffee = service::create_category(&c, "Coffee R", "expense", "☕", None, Some(&food.id)).unwrap();
@@ -873,7 +893,7 @@ mod tests {
 
     #[test]
     fn cannot_reparent_under_system_category() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let sys_id: String = c
             .query_row(
                 "SELECT id FROM categories WHERE is_system=1 AND kind='expense' LIMIT 1",
@@ -892,7 +912,7 @@ mod tests {
 
     #[test]
     fn set_categories_archived_bulk_with_cascade() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let food = service::create_category(&c, "Food B", "expense", "🍔", None, None).unwrap();
         let coffee = service::create_category(&c, "Coffee B", "expense", "☕", None, Some(&food.id)).unwrap();
         let fun = service::create_category(&c, "Fun B", "expense", "🎮", None, None).unwrap();
@@ -911,7 +931,7 @@ mod tests {
 
     #[test]
     fn seeds_subcategories_under_food() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let all = service::list_categories(&c, Some("expense"), false).unwrap();
         let food = all.iter().find(|x| x.name == "Food" && x.parent_id.is_none()).unwrap();
         let coffee = all.iter().find(|x| x.name == "Coffee" && x.parent_id.as_deref() == Some(food.id.as_str()));
@@ -923,7 +943,7 @@ mod tests {
 
     #[test]
     fn other_income_sorts_last() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let income = service::list_categories(&c, Some("income"), false).unwrap();
         let pos = |name: &str| income.iter().position(|x| x.name == name).unwrap();
         assert!(
@@ -954,7 +974,7 @@ mod tests {
         // An account whose subtype isn't in the taxonomy (e.g. a future rename or
         // a direct DB edit) must stay visible via the LEFT JOIN + COALESCE fallback,
         // not silently vanish. Insert one directly to bypass service validation.
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         c.execute(
             "INSERT INTO accounts (id, template_key, name, subtype, currency, is_archived, created_at, updated_at)
              VALUES ('orphan', NULL, 'Mystery', 'gone-subtype', 'MYR', 0, 't', 't')",
@@ -1050,7 +1070,7 @@ mod tests {
 
     #[test]
     fn create_income_expense_transfer_write_balanced_postings() {
-        let c = crate::db::open_in_memory().unwrap();
+        let c = test_db();
         let acc = crate::service::create_account(&c, "Cash", "cash", 10_000, None, None, None, None).unwrap();
         let bank = crate::service::create_account(&c, "Bank", "savings", 0, None, None, None, None).unwrap();
         let cats = crate::service::list_categories(&c, Some("income"), false).unwrap();
@@ -1075,7 +1095,7 @@ mod tests {
 
     #[test]
     fn update_and_delete_keep_postings_consistent() {
-        let c = crate::db::open_in_memory().unwrap();
+        let c = test_db();
         let acc = crate::service::create_account(&c, "Cash", "cash", 0, None, None, None, None).unwrap();
         let xcats = crate::service::list_categories(&c, Some("expense"), false).unwrap();
         let exp_cat = xcats.first().expect("seeded expense categories expected").id.clone();
@@ -1107,7 +1127,7 @@ mod tests {
 
     #[test]
     fn set_account_balance_keeps_postings_consistent() {
-        let c = crate::db::open_in_memory().unwrap();
+        let c = test_db();
         // Fresh account, only the opening row exists → reconcile edits opening.
         let acc = crate::service::create_account(&c, "Cash", "cash", 1_000, None, None, None, None).unwrap();
         crate::service::set_account_balance(&c, &acc.id, 4_000, false).unwrap();
@@ -1129,7 +1149,7 @@ mod tests {
 
     #[test]
     fn reset_app_wipes_data_and_reseeds_defaults() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         // Arrange: an account, a transaction, and a custom category.
         let a = acct(&c, "Wallet", 10_000);
         let cat = expense_cat(&c);
@@ -1242,7 +1262,7 @@ mod tests {
 
     #[test]
     fn correction_as_income_books_income_with_system_category() {
-        let c = crate::db::open_in_memory().unwrap();
+        let c = test_db();
         let a = crate::service::create_account(&c, "Cash", "cash", 1_000_00, None, None, None, None).unwrap();
         // Real activity so the income/expense path (not opening edit) is used.
         let cat: String = c.query_row("SELECT id FROM categories WHERE kind='expense' AND is_system=0 LIMIT 1", [], |r| r.get(0)).unwrap();
@@ -1265,7 +1285,7 @@ mod tests {
 
     #[test]
     fn correction_as_income_books_expense_when_diff_negative() {
-        let c = crate::db::open_in_memory().unwrap();
+        let c = test_db();
         let a = crate::service::create_account(&c, "Cash", "cash", 1_000_00, None, None, None, None).unwrap();
         let cat: String = c.query_row("SELECT id FROM categories WHERE kind='expense' AND is_system=0 LIMIT 1", [], |r| r.get(0)).unwrap();
         crate::service::create_expense(&c, &a.id, Some(&cat), 100_00, None, "2026-06-01", None, false, None).unwrap();
@@ -1298,7 +1318,7 @@ mod tests {
 
     #[test]
     fn correction_income_expense_cannot_be_edited() {
-        let c = crate::db::open_in_memory().unwrap();
+        let c = test_db();
         let a = crate::service::create_account(&c, "Cash", "cash", 1_000_00, None, None, None, None).unwrap();
         let cat: String = c.query_row("SELECT id FROM categories WHERE kind='expense' AND is_system=0 LIMIT 1", [], |r| r.get(0)).unwrap();
         crate::service::create_expense(&c, &a.id, Some(&cat), 100_00, None, "2026-06-01", None, false, None).unwrap();
@@ -1345,7 +1365,7 @@ mod tests {
 
     #[test]
     fn credit_card_and_bnpl_roundtrip_a_positive_limit() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let card = service::create_account(&c, "Visa", "credit-card", -200_000, None, Some(1_000_000), None, None).unwrap();
         let bnpl = service::create_account(&c, "Atome", "bnpl", -50_000, None, Some(300_000), None, None).unwrap();
         assert_eq!(card.credit_limit_cents, Some(1_000_000));
@@ -1357,7 +1377,7 @@ mod tests {
 
     #[test]
     fn limit_subtype_rejects_a_missing_zero_or_negative_limit() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let missing = service::create_account(&c, "Visa", "credit-card", 0, None, None, None, None).unwrap_err();
         assert_eq!(validation_message(missing), "Credit limit is required for this account.");
         let zero = service::create_account(&c, "Visa", "bnpl", 0, None, Some(0), None, None).unwrap_err();
@@ -1368,7 +1388,7 @@ mod tests {
 
     #[test]
     fn non_limit_subtype_rejects_a_limit_and_stores_null_without_one() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let rejected = service::create_account(&c, "Cash", "savings", 100, None, Some(500), None, None).unwrap_err();
         assert_eq!(validation_message(rejected), "Credit limit only applies to credit cards and BNPL.");
         let savings = service::create_account(&c, "Cash", "savings", 100, None, None, None, None).unwrap();
@@ -1377,7 +1397,7 @@ mod tests {
 
     #[test]
     fn update_replaces_keeps_clears_or_requires_the_limit() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let card = service::create_account(&c, "Visa", "credit-card", -100, None, Some(1_000_000), None, None).unwrap();
         let replaced = service::update_account(&c, UpdateAccountInput {
             id: card.id.clone(), name: None, subtype: None, opening_balance_cents: None, credit_limit_cents: Some(2_000_000),
@@ -1420,7 +1440,7 @@ mod tests {
 
     #[test]
     fn expense_past_the_limit_still_posts_and_keeps_the_limit() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let card = service::create_account(&c, "Visa", "credit-card", -800_000, None, Some(1_000_000), None, None).unwrap();
         service::create_expense(&c, &card.id, Some(&expense_cat(&c)), 500_000, None, "2026-10-12", None, false, None).unwrap();
         let after = service::list_accounts(&c, true).unwrap().into_iter().find(|a| a.id == card.id).unwrap();
@@ -1437,7 +1457,7 @@ mod tests {
 
     #[test]
     fn update_net_worth_rise_uses_the_saved_gain_category() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let gain = income_cat(&c);
         let other = service::create_category(&c, "Other income", "income", "💵", None, None).unwrap();
         let acc = service::create_account(&c, "Stash", "unit-trust", 10_000, None, None, Some(&gain), None).unwrap();
@@ -1460,7 +1480,7 @@ mod tests {
 
     #[test]
     fn update_net_worth_drop_uses_the_saved_loss_category() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let loss = expense_cat(&c);
         let acc = service::create_account(&c, "FD", "fixed-deposit", 8_000, None, None, None, Some(&loss)).unwrap();
         let after = service::update_net_worth(&c, &acc.id, 7_250, None, None).unwrap();
@@ -1474,7 +1494,7 @@ mod tests {
 
     #[test]
     fn update_net_worth_with_only_an_opening_does_not_rewrite_it() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let gain = income_cat(&c);
         let acc = service::create_account(&c, "Luno", "crypto", 2_000, None, None, Some(&gain), None).unwrap();
         service::update_net_worth(&c, &acc.id, 2_100, None, None).unwrap();
@@ -1487,7 +1507,7 @@ mod tests {
 
     #[test]
     fn update_net_worth_zero_diff_writes_nothing() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let acc = service::create_account(&c, "Stash", "investment", 5_000, None, None, None, None).unwrap();
         let after = service::update_net_worth(&c, &acc.id, 5_000, None, None).unwrap();
         assert_eq!(after.balance_cents, 5_000);
@@ -1496,7 +1516,7 @@ mod tests {
 
     #[test]
     fn update_net_worth_without_a_saved_category_uses_the_passed_one_once() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let gain = income_cat(&c);
         let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, None, None).unwrap();
         let after = service::update_net_worth(&c, &acc.id, 1_200, Some(&gain), None).unwrap();
@@ -1506,7 +1526,7 @@ mod tests {
 
     #[test]
     fn update_net_worth_requires_a_category_when_none_is_saved() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, None, None).unwrap();
         let err = service::update_net_worth(&c, &acc.id, 1_100, None, None).unwrap_err();
         assert_eq!(validation_message(err), "Pick a category for this update.");
@@ -1514,7 +1534,7 @@ mod tests {
 
     #[test]
     fn update_net_worth_rejects_the_wrong_kind_and_a_system_category() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let expense = expense_cat(&c);
         let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, None, None).unwrap();
         let err = service::update_net_worth(&c, &acc.id, 1_100, Some(&expense), None).unwrap_err();
@@ -1526,7 +1546,7 @@ mod tests {
 
     #[test]
     fn update_net_worth_rejects_bad_targets_and_accounts() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let missing = service::update_net_worth(&c, "nope", 1, None, None).unwrap_err();
         assert!(matches!(missing, AppError::NotFound(m) if m == "Account not found"));
         let cash = service::create_account(&c, "Cash", "savings", 1_000, None, None, None, None).unwrap();
@@ -1542,7 +1562,7 @@ mod tests {
 
     #[test]
     fn update_net_worth_requires_time_only_when_the_setting_is_on() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let gain = income_cat(&c);
         let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, Some(&gain), None).unwrap();
         service::update_net_worth(&c, &acc.id, 1_100, None, None).unwrap();
@@ -1561,7 +1581,7 @@ mod tests {
 
     #[test]
     fn correct_balance_still_rewrites_an_opening_only_investment() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, None, None).unwrap();
         service::set_account_balance(&c, &acc.id, 4_000, true).unwrap();
         let after = service::get_account(&c, &acc.id).unwrap();
@@ -1572,7 +1592,7 @@ mod tests {
 
     #[test]
     fn deleting_a_category_used_by_a_value_update_keeps_the_column() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let gain = service::create_category(&c, "Growth", "income", "📈", None, None).unwrap();
         let acc = service::create_account(&c, "Stash", "investment", 1_000, None, None, Some(&gain.id), None).unwrap();
         service::update_net_worth(&c, &acc.id, 1_500, None, None).unwrap();
@@ -1771,6 +1791,12 @@ mod payment_tests {
     use crate::repo;
     use crate::service;
 
+    fn test_db() -> rusqlite::Connection {
+        let c = open_in_memory().unwrap();
+        service::set_setting(&c, "transaction_time_enabled", "0").unwrap();
+        c
+    }
+
     fn validation_message(err: AppError) -> String {
         match err {
             AppError::Validation(m) => m,
@@ -1786,7 +1812,7 @@ mod payment_tests {
 
     #[test]
     fn payment_moves_savings_down_and_card_debt_down() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, card) = pay_pair(&c);
         let pay = service::create_payment(&c, &savings.id, &card.id, 30_000, Some("Card payment"), "2026-06-01", None).unwrap();
         assert_eq!(pay.kind, "payment");
@@ -1800,7 +1826,7 @@ mod payment_tests {
 
     #[test]
     fn payment_allows_partial_and_overpay() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, card) = pay_pair(&c);
         service::create_payment(&c, &savings.id, &card.id, 100_000, None, "2026-06-02", None).unwrap();
         let card = repo::get_account(&c, &card.id).unwrap();
@@ -1809,7 +1835,7 @@ mod payment_tests {
 
     #[test]
     fn payment_accepts_each_allowed_source() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let card = service::create_account(&c, "Visa", "credit-card", -10_000, None, Some(100_000), None, None).unwrap();
         for subtype in ["cash", "ewallet", "savings", "current"] {
             let src = service::create_account(&c, subtype, subtype, 50_000, None, None, None, None).unwrap();
@@ -1823,7 +1849,7 @@ mod payment_tests {
 
     #[test]
     fn payment_rejects_bad_shape() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, card) = pay_pair(&c);
         let invest = service::create_account(&c, "Stash", "investment", 0, None, None, None, None).unwrap();
         let loan = service::create_account(&c, "Loan", "personal-loan", 0, None, None, None, None).unwrap();
@@ -1851,7 +1877,7 @@ mod payment_tests {
 
     #[test]
     fn transfer_onto_a_card_is_rejected() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, card) = pay_pair(&c);
         let err = service::create_transfer(&c, &savings.id, &card.id, 1_000, None, "2026-06-01", None).unwrap_err();
         assert_eq!(validation_message(err), "Pay a credit card or BNPL as a payment.");
@@ -1861,7 +1887,7 @@ mod payment_tests {
 
     #[test]
     fn payment_does_not_change_dashboard_income_or_expense() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, card) = pay_pair(&c);
         let before = service::get_dashboard_summary(&c, "2026-06").unwrap();
         service::create_payment(&c, &savings.id, &card.id, 10_000, None, "2026-06-15", None).unwrap();
@@ -1888,7 +1914,7 @@ mod payment_tests {
 
     #[test]
     fn editing_a_payment_updates_both_balances() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, card) = pay_pair(&c);
         let cash = service::create_account(&c, "Cash", "cash", 40_000, None, None, None, None).unwrap();
         let pay = service::create_payment(&c, &savings.id, &card.id, 10_000, None, "2026-06-01", None).unwrap();
@@ -1900,7 +1926,7 @@ mod payment_tests {
 
     #[test]
     fn editing_the_destination_flips_kind() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, card) = pay_pair(&c);
         let wallet = service::create_account(&c, "TNG", "ewallet", 0, None, None, None, None).unwrap();
         let pay = service::create_payment(&c, &savings.id, &card.id, 5_000, None, "2026-06-01", None).unwrap();
@@ -1912,7 +1938,7 @@ mod payment_tests {
 
     #[test]
     fn editing_a_payment_rejects_an_investment_source_without_writing() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, card) = pay_pair(&c);
         let invest = service::create_account(&c, "Stash", "investment", 0, None, None, None, None).unwrap();
         let pay = service::create_payment(&c, &savings.id, &card.id, 5_000, None, "2026-06-01", None).unwrap();
@@ -1928,7 +1954,7 @@ mod payment_tests {
 
     #[test]
     fn updating_a_transfer_onto_a_card_is_rejected() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, card) = pay_pair(&c);
         let wallet = service::create_account(&c, "TNG", "ewallet", 0, None, None, None, None).unwrap();
         let xfer = service::create_transfer(&c, &savings.id, &wallet.id, 2_000, None, "2026-06-01", None).unwrap();
@@ -1939,7 +1965,7 @@ mod payment_tests {
 
     #[test]
     fn payment_rejects_splits_and_can_be_deleted() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, card) = pay_pair(&c);
         let pay = service::create_payment(&c, &savings.id, &card.id, 5_000, None, "2026-06-01", None).unwrap();
         let mut input = payment_update(&pay.id, "payment", &savings.id, &card.id, 5_000);
@@ -1967,6 +1993,12 @@ mod reimbursement_tests {
     use crate::repo;
     use crate::service;
     use rusqlite::Connection;
+
+    fn test_db() -> rusqlite::Connection {
+        let c = open_in_memory().unwrap();
+        service::set_setting(&c, "transaction_time_enabled", "0").unwrap();
+        c
+    }
 
     fn expense_cat(c: &Connection, n: i64) -> String {
         c.query_row(
@@ -2041,7 +2073,7 @@ mod reimbursement_tests {
 
     #[test]
     fn expectation_can_be_set_changed_and_cleared() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 10_000, "2026-06-01");
         let t = service::set_expected_reimbursement(&c, &e.id, Some(7_000)).unwrap();
@@ -2066,7 +2098,7 @@ mod reimbursement_tests {
 
     #[test]
     fn update_reimbursement_rewrites_amount_account_and_allocations() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let cash = service::create_account(&c, "Wallet", "cash", 0, None, None, None, None).unwrap();
         let e1 = spend(&c, &savings.id, 20_000, "2026-06-01");
@@ -2092,7 +2124,7 @@ mod reimbursement_tests {
 
     #[test]
     fn update_reimbursement_ignores_its_own_links_when_checking_what_is_left() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 10_000, "2026-06-01");
         let r = reimburse(&c, &savings.id, 10_000, "2026-06-05", vec![alloc(&e, 10_000)]);
@@ -2103,7 +2135,7 @@ mod reimbursement_tests {
 
     #[test]
     fn a_failed_update_reimbursement_changes_nothing() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 10_000, "2026-06-01");
         let r = reimburse(&c, &savings.id, 4_000, "2026-06-05", vec![alloc(&e, 4_000)]);
@@ -2118,7 +2150,7 @@ mod reimbursement_tests {
 
     #[test]
     fn update_reimbursement_rolls_back_when_a_write_fails_midway() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let cash = service::create_account(&c, "Wallet", "cash", 0, None, None, None, None).unwrap();
         let e1 = spend(&c, &savings.id, 20_000, "2026-06-01");
@@ -2167,7 +2199,7 @@ mod reimbursement_tests {
 
     #[test]
     fn update_reimbursement_only_accepts_reimbursements() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 10_000, "2026-06-01");
         let err = service::update_reimbursement(&c, &e.id, &savings.id, 100, None, "2026-06-06", None, vec![alloc(&e, 100)])
@@ -2177,7 +2209,7 @@ mod reimbursement_tests {
 
     #[test]
     fn update_transaction_refuses_reimbursements() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 10_000, "2026-06-01");
         let r = reimburse(&c, &savings.id, 4_000, "2026-06-05", vec![alloc(&e, 4_000)]);
@@ -2199,7 +2231,7 @@ mod reimbursement_tests {
 
     #[test]
     fn a_reimbursed_expense_cannot_be_deleted_shrunk_or_retyped() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 10_000, "2026-06-01");
         let r = reimburse(&c, &savings.id, 6_000, "2026-06-05", vec![alloc(&e, 6_000)]);
@@ -2225,7 +2257,7 @@ mod reimbursement_tests {
 
     #[test]
     fn editing_an_expense_clamps_or_clears_the_expectation() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 10_000, "2026-06-01");
         service::set_expected_reimbursement(&c, &e.id, Some(10_000)).unwrap();
@@ -2243,7 +2275,7 @@ mod reimbursement_tests {
 
     #[test]
     fn reimbursement_raises_the_balance_and_offsets_the_expense_bucket() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 20_000, "2026-06-01");
         assert_eq!(balance(&c, &savings.id), 480_000);
@@ -2273,7 +2305,7 @@ mod reimbursement_tests {
 
     #[test]
     fn a_refund_can_land_on_the_card_that_was_charged() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (_savings, card) = pair(&c);
         let e = spend(&c, &card.id, 8_000, "2026-06-01");
         assert_eq!(balance(&c, &card.id), -88_000);
@@ -2283,7 +2315,7 @@ mod reimbursement_tests {
 
     #[test]
     fn one_reimbursement_covers_many_and_one_expense_takes_parts() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e1 = spend(&c, &savings.id, 10_000, "2026-06-01");
         let e2 = spend(&c, &savings.id, 5_000, "2026-06-02");
@@ -2303,7 +2335,7 @@ mod reimbursement_tests {
 
     #[test]
     fn create_rejects_each_bad_shape_without_writing() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 10_000, "2026-06-01");
         let e2 = spend(&c, &savings.id, 4_000, "2026-06-02");
@@ -2336,7 +2368,7 @@ mod reimbursement_tests {
 
     #[test]
     fn create_rejects_balance_corrections_and_archived_accounts() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 10_000, "2026-06-01");
         // A shortfall booked as an expense lands in the protected "Adjustment" category.
@@ -2361,7 +2393,7 @@ mod reimbursement_tests {
 
     #[test]
     fn allocations_hydrate_on_both_sides() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 20_000, "2026-06-01");
         let r = repo::insert_transaction(
@@ -2386,7 +2418,7 @@ mod reimbursement_tests {
 
     #[test]
     fn factory_reset_clears_allocations() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 20_000, "2026-06-01");
         let r = repo::insert_transaction(
@@ -2406,7 +2438,7 @@ mod reimbursement_tests {
 
     #[test]
     fn dashboard_uses_the_effective_expense_in_its_original_month() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 20_000, "2026-06-10");
         let before = service::get_dashboard_summary(&c, "2026-06").unwrap();
@@ -2428,7 +2460,7 @@ mod reimbursement_tests {
 
     #[test]
     fn a_split_expense_is_offset_in_proportion_across_its_lines() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let a = expense_cat(&c, 0);
         let b = expense_cat(&c, 1);
@@ -2451,7 +2483,7 @@ mod reimbursement_tests {
 
     #[test]
     fn fully_reimbursed_and_excluded_expenses_report_correctly() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let full = spend(&c, &savings.id, 10_000, "2026-06-02");
         reimburse(&c, &savings.id, 10_000, "2026-06-03", vec![alloc(&full, 10_000)]);
@@ -2468,7 +2500,7 @@ mod reimbursement_tests {
 
     #[test]
     fn a_reimbursement_never_counts_as_income() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e = spend(&c, &savings.id, 10_000, "2026-06-02");
         let before = service::get_dashboard_summary(&c, "2026-06").unwrap();
@@ -2480,7 +2512,7 @@ mod reimbursement_tests {
 
     #[test]
     fn awaiting_summary_counts_outstanding_expectations_only() {
-        let c = open_in_memory().unwrap();
+        let c = test_db();
         let (savings, _card) = pair(&c);
         let e1 = spend(&c, &savings.id, 10_000, "2026-06-01");
         let e2 = spend(&c, &savings.id, 5_000, "2026-06-02");
@@ -2511,6 +2543,12 @@ mod plan_tests {
     use crate::error::AppError;
     use crate::models::*;
     use crate::service::{self, resolve_amount, shift_month};
+
+    fn test_db() -> rusqlite::Connection {
+        let c = open_in_memory().unwrap();
+        service::set_setting(&c, "transaction_time_enabled", "0").unwrap();
+        c
+    }
 
     fn msg(err: AppError) -> String {
         err.to_string()
@@ -2635,7 +2673,7 @@ mod plan_tests {
 
     #[test]
     fn plan_spent_matches_the_dashboard_and_keeps_the_child() {
-        let conn = open_in_memory().unwrap();
+        let conn = test_db();
         let (food, dining) = parent_and_child(&conn);
         let groceries = service::create_category(&conn, "Groceries", "expense", "🛒", None, Some(&food)).unwrap();
         let acc = service::create_account(&conn, "Cash", "cash", 0, None, None, None, None).unwrap();

@@ -100,7 +100,7 @@ An `income` / `expense` row can be flagged **`excludedFromReporting`**.
 Optional. A nullable `transaction_time TEXT` column holds 24-hour `"HH:MM"` or NULL.
 
 - Added by **migration 007** as a plain `ALTER TABLE … ADD COLUMN` (not a rebuild; see the ledger warning above).
-- Gated by the **`transaction_time_enabled`** setting (default **off**; `"1"` = on).
+- Gated by the **`transaction_time_enabled`** setting (default **on**; a missing key means on, `"0"` means off).
 
 | Setting | Add/Edit modal | Create | Update |
 |---|---|---|---|

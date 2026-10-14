@@ -241,7 +241,7 @@ function validateAllocations(amountCents: number, list: TxnAllocation[], exceptR
 const settings = new Map<string, string>();
 
 function timeEnabled(): boolean {
-  return settings.get("transaction_time_enabled") === "1";
+  return settings.get("transaction_time_enabled") !== "0";
 }
 function isHHMM(s: string): boolean {
   const m = /^(\d{2}):(\d{2})$/.exec(s);

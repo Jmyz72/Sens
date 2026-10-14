@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import { mockInvoke } from "../client/mock";
 import type { Category, DashboardSummary } from "../types";
 
@@ -7,6 +7,10 @@ async function expenseParent(name: string): Promise<Category> {
 }
 
 describe("mock subcategories", () => {
+  beforeEach(async () => {
+    await mockInvoke("set_setting", { key: "transaction_time_enabled", value: "0" });
+  });
+
   it("a subcategory inherits its parent's kind", async () => {
     const food = await expenseParent(`Food-${Math.random()}`);
     const sub = await mockInvoke<Category>("create_category", { name: "Coffee", kind: "income", emoji: "☕", color: null, parentId: food.id });

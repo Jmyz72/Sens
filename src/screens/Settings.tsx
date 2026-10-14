@@ -228,15 +228,15 @@ export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }
     client.setSetting("bulk_action_preview", val ? "1" : "0").catch(() => {});
   }
 
-  // transaction_time_enabled preference — default off (unset = off)
-  const [timeEnabled, setTimeEnabled] = useState(false);
+  // transaction_time_enabled preference — default on (unset = on)
+  const [timeEnabled, setTimeEnabled] = useState(true);
   const [timeLoaded, setTimeLoaded] = useState(false);
 
   useEffect(() => {
     client
       .getSetting("transaction_time_enabled")
       .then((v) => {
-        setTimeEnabled(v === "1");
+        setTimeEnabled(v !== "0");
         setTimeLoaded(true);
       })
       .catch(() => setTimeLoaded(true));

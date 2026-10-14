@@ -184,7 +184,7 @@ Preferences are key/value rows, read and written through `client.getSetting` / `
 |---|---|
 | `remember_month` + `dashboard_month` | Restore the last Dashboard month (`src/App.tsx`) |
 | `bulk_action_preview` | "Preview bulk actions" toggle (default on) |
-| `transaction_time_enabled` | "Record transaction times" toggle (default off) |
+| `transaction_time_enabled` | "Record transaction times" toggle (default on; a missing key means on) |
 | `owe_notice_shown` | One-time post-migration debt-reclassification notice |
 
 Settings also hosts the theme toggle, the About/updater panel, and the type-`RESET` factory-reset "Danger zone".
