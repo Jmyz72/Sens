@@ -120,6 +120,43 @@ function seedCategories() {
 }
 seedCategories();
 
+function isValueSubtype(subtype: string): boolean {
+  return subtype === "fixed-deposit" || subtype === "investment" || subtype === "unit-trust" || subtype === "crypto";
+}
+
+function validateSavedValueCategory(id: string, expectedKind: string, wrongKindMessage: string): void {
+  const cat = categories.find((c) => c.id === id) ?? fail("NotFound", "Category not found");
+  if (cat.isSystem) fail("ValidationError", "That category can't be selected.");
+  if (cat.kind !== expectedKind) fail("ValidationError", wrongKindMessage);
+}
+
+// Mirrors Rust service::resolve_value_categories. `incoming` null means the
+// caller omitted the pair; a present pair is applied, and a non-qualifying
+// subtype clears both.
+function resolveValueCategories(
+  subtype: string,
+  incoming: { gainCategoryId: string | null; lossCategoryId: string | null } | null,
+  existingGain: string | null,
+  existingLoss: string | null,
+): { gainCategoryId: string | null; lossCategoryId: string | null } {
+  const qualifying = isValueSubtype(subtype);
+  if (incoming != null) {
+    if (!qualifying && (incoming.gainCategoryId != null || incoming.lossCategoryId != null)) {
+      fail("ValidationError", "Gain and loss categories only apply to fixed deposits, investments, unit trusts, and crypto.");
+    }
+    if (!qualifying) return { gainCategoryId: null, lossCategoryId: null };
+    if (incoming.gainCategoryId != null) {
+      validateSavedValueCategory(incoming.gainCategoryId, "income", "Gain category must be an income category.");
+    }
+    if (incoming.lossCategoryId != null) {
+      validateSavedValueCategory(incoming.lossCategoryId, "expense", "Loss category must be an expense category.");
+    }
+    return { gainCategoryId: incoming.gainCategoryId, lossCategoryId: incoming.lossCategoryId };
+  }
+  if (!qualifying) return { gainCategoryId: null, lossCategoryId: null };
+  return { gainCategoryId: existingGain, lossCategoryId: existingLoss };
+}
+
 // Mirrors Rust service::validate_splits: at least two positive lines, each in a
 // non-system category matching the transaction kind, summing to the total.
 function validateSplits(kind: string, splits: { categoryId: string; amountCents: number }[], total: number) {
@@ -475,7 +512,8 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       const s = subtypeOf(a.subtype) ?? fail("ValidationError", `Invalid subtype: ${a.subtype}`);
       if (a.templateKey != null && !templates.find((x) => x.key === a.templateKey)) fail("NotFound", "Account template not found");
       const creditLimitCents = resolveCreditLimit(s.key, a.creditLimitCents ?? null, null);
-      const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, creditLimitCents, gainCategoryId: null, lossCategoryId: null, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
+      const value = resolveValueCategories(s.key, { gainCategoryId: a.gainCategoryId ?? null, lossCategoryId: a.lossCategoryId ?? null }, null, null);
+      const acc: Account = { id: uid(), templateKey: a.templateKey ?? null, name: String(a.name).trim(), accountType: s.type, group: s.group, subtype: s.key, openingBalanceCents: a.openingBalanceCents, creditLimitCents, gainCategoryId: value.gainCategoryId, lossCategoryId: value.lossCategoryId, currency: "MYR", isArchived: false, createdAt: now(), updatedAt: now(), balanceCents: a.openingBalanceCents };
       accounts.push(acc);
       txns.push({ id: uid(), kind: "opening", accountId: acc.id, toAccountId: null, categoryId: null, amountCents: a.openingBalanceCents, description: "Opening balance", transactionDate: today(), transactionTime: null, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() });
       return hydrate(acc) as T;
@@ -494,6 +532,11 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       }
       const sent = Object.prototype.hasOwnProperty.call(a.input, "creditLimitCents") ? a.input.creditLimitCents : null;
       const nextLimit = resolveCreditLimit(resultingSubtype, sent ?? null, acc.creditLimitCents);
+      const rawCategories = Object.prototype.hasOwnProperty.call(a.input, "valueCategories") ? a.input.valueCategories : null;
+      const incoming = rawCategories != null
+        ? { gainCategoryId: rawCategories.gainCategoryId ?? null, lossCategoryId: rawCategories.lossCategoryId ?? null }
+        : null;
+      const value = resolveValueCategories(resultingSubtype, incoming, acc.gainCategoryId, acc.lossCategoryId);
       if (a.input.name != null) acc.name = String(a.input.name).trim();
       if (nextSub) {
         acc.subtype = nextSub.key;
@@ -501,6 +544,8 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
         acc.group = nextSub.group;
       }
       acc.creditLimitCents = nextLimit;
+      acc.gainCategoryId = value.gainCategoryId;
+      acc.lossCategoryId = value.lossCategoryId;
       if (a.input.openingBalanceCents != null) {
         const op = txns.find((t) => t.kind === "opening" && t.accountId === acc.id);
         if (op) op.amountCents = a.input.openingBalanceCents;
@@ -532,6 +577,24 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
           }
         }
       }
+      return hydrate(acc) as T;
+    }
+    case "update_net_worth": {
+      const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
+      if (acc.isArchived) fail("Conflict", "Cannot update an archived account");
+      if (!isValueSubtype(acc.subtype)) fail("ValidationError", "Update Net Worth only applies to fixed deposits, investments, unit trusts, and crypto.");
+      if (a.balanceCents < 0) fail("ValidationError", "Balance must be zero or more.");
+      const diff = a.balanceCents - balanceOf(acc);
+      if (diff === 0) return hydrate(acc) as T;
+      const kind = diff > 0 ? "income" : "expense";
+      const saved = diff > 0 ? acc.gainCategoryId : acc.lossCategoryId;
+      const passed = typeof a.categoryId === "string" ? a.categoryId.trim() : "";
+      const catId = saved != null ? saved : passed || fail("ValidationError", "Pick a category for this update.");
+      const cat = categories.find((c) => c.id === catId) ?? fail("NotFound", "Category not found");
+      if (cat.isSystem) fail("ValidationError", "That category can't be selected.");
+      if (cat.kind !== kind) fail("ValidationError", `Category kind '${cat.kind}' does not match transaction kind '${kind}'`);
+      const transactionTime = resolveTime(a.time, null);
+      txns.unshift({ id: uid(), kind, accountId: acc.id, toAccountId: null, categoryId: catId, amountCents: Math.abs(diff), description: "Value update", transactionDate: today(), transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() });
       return hydrate(acc) as T;
     }
     case "list_categories":
@@ -581,6 +644,10 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       if (c.isSystem) fail("Conflict", "This is a system category and can't be changed");
       if (categories.some((x) => x.parentId === c.id)) fail("Conflict", "Remove or move its subcategories first");
       if (txns.some((t) => t.categoryId === c.id || t.splits.some((s) => s.categoryId === c.id))) fail("Conflict", "In use by transactions — archive it instead");
+      for (const acc of accounts) {
+        if (acc.gainCategoryId === c.id) acc.gainCategoryId = null;
+        if (acc.lossCategoryId === c.id) acc.lossCategoryId = null;
+      }
       categories.splice(categories.indexOf(c), 1);
       for (let k = budgetVersions.length - 1; k >= 0; k--) {
         if (budgetVersions[k].categoryId === c.id) budgetVersions.splice(k, 1);
