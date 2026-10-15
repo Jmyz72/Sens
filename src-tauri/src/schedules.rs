@@ -142,10 +142,8 @@ fn settle_post(
     let tx = match create_posted(conn, schedule, amount_cents, date, times_on) {
         Ok(tx) => tx,
         Err(error) => {
-            let error = match repo::delete_occurrence(conn, &schedule.id, date) {
-                Ok(()) => error,
-                Err(cleanup) => cleanup,
-            };
+            // Best effort: the original failure is what the caller needs to see.
+            let _ = repo::delete_occurrence(conn, &schedule.id, date);
             return Err(PostFailure { tx: None, error });
         }
     };
@@ -170,7 +168,13 @@ pub fn run_pass(conn: &Connection, now: NaiveDateTime) -> AppResult<SchedulePass
     let mut wakes = Vec::new();
     let mut first_error: Option<AppError> = None;
     for schedule in &schedules {
-        let rule = rule_from(schedule)?;
+        let rule = match rule_from(schedule) {
+            Ok(rule) => rule,
+            Err(error) => {
+                first_error.get_or_insert(error);
+                continue;
+            }
+        };
         if let Some(wake) = recurrence::next_due(&rule, now, due_clock(schedule, times_on)) {
             if wake > now {
                 wakes.push(wake);
@@ -179,9 +183,23 @@ pub fn run_pass(conn: &Connection, now: NaiveDateTime) -> AppResult<SchedulePass
         if schedule.mode != "auto" {
             continue;
         }
-        let due = due_dates(conn, schedule, &rule, now, times_on)?;
-        if due.is_empty() || posting_block(conn, schedule)?.is_some() {
+        let due = match due_dates(conn, schedule, &rule, now, times_on) {
+            Ok(due) => due,
+            Err(error) => {
+                first_error.get_or_insert(error);
+                continue;
+            }
+        };
+        if due.is_empty() {
             continue;
+        }
+        match posting_block(conn, schedule) {
+            Ok(None) => {}
+            Ok(Some(_)) => continue,
+            Err(error) => {
+                first_error.get_or_insert(error);
+                continue;
+            }
         }
         for date in due {
             let ymd = ymd(date);

@@ -3503,6 +3503,31 @@ mod schedule_tests {
     }
 
     #[test]
+    fn run_pass_keeps_posted_rows_when_a_later_schedule_cannot_be_read() {
+        let c = test_db();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let due = at("2026-10-25T09:00");
+        let good = schedules::create_schedule(&c, salary_schedule(&a.id, &cat), due).unwrap();
+        let mut other = salary_schedule(&a.id, &cat);
+        other.description = Some("Broken".into());
+        let bad = schedules::create_schedule(&c, other, due).unwrap();
+        c.execute("UPDATE schedules SET created_at = '2026-01-01T00:00:00' WHERE id = ?1", [&good.id]).unwrap();
+        c.execute(
+            "UPDATE schedules SET created_at = '2026-01-02T00:00:00', month_mode = 'bogus' WHERE id = ?1",
+            [&bad.id],
+        )
+        .unwrap();
+        let pass = schedules::run_pass(&c, due).unwrap();
+        assert_eq!(pass.posted.len(), 1);
+        assert_eq!(kinds(&c, "income").len(), 1);
+
+        // With nothing posted, the read error is surfaced.
+        c.execute("DELETE FROM schedules WHERE id = ?1", [&good.id]).unwrap();
+        assert!(schedules::run_pass(&c, due).is_err());
+    }
+
+    #[test]
     fn schedules_saved_with_times_off_post_at_midnight_once_times_are_on() {
         let c = test_db();
         let a = acct(&c, "Salary", 0);
