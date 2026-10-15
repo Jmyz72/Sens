@@ -190,6 +190,66 @@ export interface Plan {
   goals: PlanGoal[];
 }
 
+export type ScheduleMode = "auto" | "tap";
+export type ScheduleKind = "income" | "expense" | "transfer" | "payment";
+export type ScheduleFrequency = "daily" | "weekly" | "monthly" | "yearly";
+export type ScheduleEndMode = "never" | "after" | "on";
+export type ScheduleMonthMode = "each" | "onThe";
+export type ScheduleOrdinal =
+  | "first"
+  | "second"
+  | "third"
+  | "fourth"
+  | "fifth"
+  | "last";
+
+export interface ScheduleWrite {
+  mode: ScheduleMode;
+  kind: ScheduleKind;
+  amountCents: number;
+  accountId: string;
+  toAccountId: string | null;
+  categoryId: string | null;
+  description: string | null;
+  startDate: string;
+  time: string | null;
+  frequency: ScheduleFrequency;
+  interval: number;
+  weekdays: string[];
+  monthMode: ScheduleMonthMode | null;
+  monthDays: number[];
+  ordinal: ScheduleOrdinal | null;
+  ordinalDay: string | null;
+  months: number[];
+  dayOfMonth: number | null;
+  endMode: ScheduleEndMode;
+  endCount: number | null;
+  endDate: string | null;
+}
+
+export interface Schedule extends ScheduleWrite {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  blockReason: string | null;
+}
+
+export interface UpcomingOccurrence {
+  scheduleId: string;
+  occurrenceDate: string;
+  kind: ScheduleKind;
+  label: string;
+  amountCents: number;
+  time: string | null;
+  accountName: string;
+  blockReason: string | null;
+}
+
+export interface SchedulePass {
+  posted: Transaction[];
+  nextWakeAt: string | null;
+}
+
 export interface AppError {
   code: "ValidationError" | "NotFound" | "Conflict" | "DatabaseError";
   message: string;

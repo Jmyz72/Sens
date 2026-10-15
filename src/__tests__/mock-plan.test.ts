@@ -15,6 +15,7 @@ async function cats() {
 describe("mock plan", () => {
   it("keeps the envelope and the goal rules", async () => {
     await mockInvoke("reset_app", {});
+    await mockInvoke("set_setting", { key: "transaction_time_enabled", value: "0" });
     const { food, dining } = await cats();
     const sav = await mockInvoke<{ id: string }>("create_account", {
       name: "Plan Savings", subtype: "savings", openingBalanceCents: 420_000, templateKey: null, creditLimitCents: null,

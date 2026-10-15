@@ -67,7 +67,7 @@ The UI never touches SQL.
   the migration in `BEGIN…COMMIT`.
 - First-run seeding and the `seeded` flag commit atomically.
 - The runner applies migrations **cumulatively**, so a DB at any earlier version is carried forward.
-  Fresh installs run **001 → 013** and reach the same end schema.
+  Fresh installs run **001 → 015** and reach the same end schema.
 - There are no existing users, so don't add backfill or conversion for a prior user base. Keep
   migrations append-only so a local dev DB and a fresh install match.
 
@@ -85,8 +85,27 @@ The UI never touches SQL.
 | 011 | **Rebuilds `transactions`** to add the `payment` kind to the CHECK, copying `postings` and `transaction_splits` first | Safe because the cascading child tables are copied before the swap |
 | 012 | **Rebuilds `transactions`** to add the `reimbursement` kind and the nullable `expected_reimbursement_cents`, then creates `reimbursement_allocations` | Copies `postings` and `transaction_splits` first (like 011); the allocations table is created after the swap |
 | 013 | Creates `category_budgets` and `savings_goals` | Versioned monthly amounts per expense category; named savings targets on one account each |
+| 014 | Adds `gain_category_id` and `loss_category_id` on `accounts` | Optional categories for Update Net Worth |
+| 015 | Creates `schedules` and `schedule_occurrences` | Recurring templates and posted or skipped dates. New tables, not a rebuild of `transactions` |
 
 Plan commands (mirrored in `mock.ts`): `get_plan`, `set_budgets`, `create_goal`, `update_goal`, `delete_goal`.
+
+Schedule commands (mirrored in `mock.ts`): `list_schedules`, `create_schedule`, `update_schedule`,
+`delete_schedule`, `list_upcoming`, `post_occurrence`, `skip_occurrence`, `run_schedule_pass`. Client
+wrappers: `client.postScheduleOccurrence` and `client.skipScheduleOccurrence` (plus the other schedule
+helpers in `src/client/index.ts`).
+
+- **`create_schedule` / `update_schedule` / `delete_schedule`** only change `schedules` (and
+  `delete_schedule` cascades occurrence rows). They do **not** run the pass.
+- `schedules.account_id`, `to_account_id`, and `category_id` have **no foreign keys**. A missing target
+  shows as a block reason instead of failing the save.
+- **`run_schedule_pass`** (`schedules::run_pass`) uses **`local_now()`**, auto-posts every due **auto**
+  schedule, returns `{ posted, nextWakeAt }`, and is what drives catch-up while Sens was closed or asleep.
+- **`list_upcoming`** is computed from tap schedules and the clock; **`post_occurrence`** /
+  **`skip_occurrence`** write `schedule_occurrences` and enforce open dates (settled dates →
+  **`ValidationError`**).
+- The React app invokes **`run_schedule_pass`** after every schedule save or delete and on open, focus,
+  and the next wake (`src/lib/useScheduleEngine.ts`).
 
 > ⚠ After migration 006, **a naive rebuild of `transactions` deletes every posting and split**
 > (`ON DELETE CASCADE`). Prefer `ALTER … ADD COLUMN` or a new table (as 007 and 009 do). If a table
@@ -117,7 +136,7 @@ Plan commands (mirrored in `mock.ts`): `get_plan`, `set_budgets`, `create_goal`,
 
 The `reset_app` command (`service::reset_app` → `db::reset_to_defaults`):
 
-- Wipes `savings_goals` and `category_budgets` first, then `reimbursement_allocations` (its `expense_id` FK is `RESTRICT`), `postings`, `transactions`, `categories`, `accounts`, and `app_settings` in **one transaction**.
+- Wipes `schedule_occurrences` and `schedules` first, then `savings_goals` and `category_budgets`, `reimbursement_allocations` (its `expense_id` FK is `RESTRICT`), `postings`, `transactions`, `categories`, `accounts`, and `app_settings` in **one transaction**.
 - Re-runs the idempotent seed, re-setting the `seeded` flag and all `defaults_v*_seeded` flags.
 - Mirrored by `resetApp()` in `mock.ts`.
 - Exposed in Settings → Danger zone (type `RESET` to confirm).

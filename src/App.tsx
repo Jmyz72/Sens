@@ -21,6 +21,8 @@ import { Transactions } from "./screens/Transactions";
 import { Settings } from "./screens/Settings";
 import { Categories } from "./screens/Categories";
 import { AddTransaction } from "./modals/AddTransaction";
+import { AwayNotice } from "./components/AwayNotice";
+import { useScheduleEngine } from "./lib/useScheduleEngine";
 
 const SIDEBAR_KEY = "sens.sidebar";
 
@@ -79,6 +81,8 @@ export default function App() {
 
   useEffect(() => { reload(); }, [reload]);
 
+  const schedules = useScheduleEngine(version, reload);
+
   const updateToastShown = useRef(false);
   useEffect(() => {
     if (!updaterDesktop) return;
@@ -123,6 +127,7 @@ export default function App() {
   const navCount = (id: ScreenId) => {
     if (id === "accounts") return activeAccountCount;
     if (id === "categories") return activeCategoryCount;
+    if (id === "transactions") return schedules.upcomingCount > 0 ? schedules.upcomingCount : null;
     return null;
   };
 
@@ -156,13 +161,23 @@ export default function App() {
             {active === "dashboard" && <Dashboard month={month} go={go} />}
             {active === "plan" && <Plan month={month} />}
             {active === "accounts" && <Accounts go={go} />}
-            {active === "transactions" && <Transactions initialAccountId={txnAccountId} initialAwaiting={txnAwaiting} />}
+            {active === "transactions" && (
+              <Transactions
+                initialAccountId={txnAccountId}
+                initialAwaiting={txnAwaiting}
+                upcoming={schedules.upcoming}
+                commitSchedule={schedules.commitSchedule}
+              />
+            )}
             {active === "categories" && <Categories />}
             {active === "settings" && <Settings updater={updater} />}
           </div>
         </div>
 
         {showTxn && <AddTransaction accounts={accounts} categories={categories} onClose={() => setShowTxn(false)} onDone={() => { setShowTxn(false); reload(); }} />}
+        {schedules.away.length > 0 && (
+          <AwayNotice transactions={schedules.away} accounts={accounts} categories={categories} onDismiss={schedules.dismissAway} />
+        )}
       </div>
     </AppDataCtx.Provider>
   );

@@ -4,9 +4,14 @@
 
 use crate::error::AppResult;
 use crate::models::*;
+use crate::schedules;
 use crate::service;
 use crate::DbState;
 use tauri::State;
+
+fn local_now() -> chrono::NaiveDateTime {
+    chrono::Local::now().naive_local()
+}
 
 macro_rules! with_conn {
     ($state:expr, $conn:ident => $body:expr) => {{
@@ -231,6 +236,53 @@ pub fn set_setting(state: State<'_, DbState>, key: String, value: String) -> App
 #[tauri::command]
 pub fn reset_app(state: State<'_, DbState>) -> AppResult<()> {
     with_conn!(state, c => service::reset_app(&c))
+}
+
+// ── Schedules ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn create_schedule(state: State<'_, DbState>, input: ScheduleWrite) -> AppResult<Schedule> {
+    with_conn!(state, c => schedules::create_schedule(&c, input, local_now()))
+}
+
+#[tauri::command]
+pub fn update_schedule(state: State<'_, DbState>, id: String, input: ScheduleWrite) -> AppResult<Schedule> {
+    with_conn!(state, c => schedules::update_schedule(&c, &id, input, local_now()))
+}
+
+#[tauri::command]
+pub fn delete_schedule(state: State<'_, DbState>, id: String) -> AppResult<()> {
+    with_conn!(state, c => schedules::delete_schedule(&c, &id))
+}
+
+#[tauri::command]
+pub fn list_schedules(state: State<'_, DbState>) -> AppResult<Vec<Schedule>> {
+    with_conn!(state, c => schedules::list_schedules(&c, local_now()))
+}
+
+#[tauri::command]
+pub fn list_upcoming(state: State<'_, DbState>) -> AppResult<Vec<UpcomingOccurrence>> {
+    with_conn!(state, c => schedules::list_upcoming(&c, local_now()))
+}
+
+#[tauri::command]
+pub fn post_occurrence(
+    state: State<'_, DbState>,
+    schedule_id: String,
+    date: String,
+    amount_cents: i64,
+) -> AppResult<Transaction> {
+    with_conn!(state, c => schedules::post_occurrence(&c, &schedule_id, &date, amount_cents, local_now()))
+}
+
+#[tauri::command]
+pub fn skip_occurrence(state: State<'_, DbState>, schedule_id: String, date: String) -> AppResult<()> {
+    with_conn!(state, c => schedules::skip_occurrence(&c, &schedule_id, &date, local_now()))
+}
+
+#[tauri::command]
+pub fn run_schedule_pass(state: State<'_, DbState>) -> AppResult<SchedulePass> {
+    with_conn!(state, c => schedules::run_pass(&c, local_now()))
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────

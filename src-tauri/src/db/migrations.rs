@@ -7,7 +7,7 @@ pub const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004),
     (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008),
     (9, MIGRATION_009), (10, MIGRATION_010), (11, MIGRATION_011), (12, MIGRATION_012),
-    (13, MIGRATION_013), (14, MIGRATION_014),
+    (13, MIGRATION_013), (14, MIGRATION_014), (15, MIGRATION_015),
 ];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
@@ -476,4 +476,40 @@ CREATE TABLE savings_goals (
 const MIGRATION_014: &str = r#"
 ALTER TABLE accounts ADD COLUMN gain_category_id TEXT;
 ALTER TABLE accounts ADD COLUMN loss_category_id TEXT;
+"#;
+
+const MIGRATION_015: &str = r#"
+CREATE TABLE schedules (
+    id TEXT PRIMARY KEY,
+    mode TEXT NOT NULL CHECK (mode IN ('auto', 'tap')),
+    kind TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'transfer', 'payment')),
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    account_id TEXT NOT NULL,
+    to_account_id TEXT,
+    category_id TEXT,
+    description TEXT,
+    start_date TEXT NOT NULL,
+    time TEXT,
+    frequency TEXT NOT NULL CHECK (frequency IN ('daily', 'weekly', 'monthly', 'yearly')),
+    interval INTEGER NOT NULL CHECK (interval BETWEEN 1 AND 999),
+    weekdays TEXT NOT NULL DEFAULT '',
+    month_mode TEXT,
+    month_days TEXT NOT NULL DEFAULT '',
+    ordinal TEXT,
+    ordinal_day TEXT,
+    months TEXT NOT NULL DEFAULT '',
+    day_of_month INTEGER,
+    end_mode TEXT NOT NULL CHECK (end_mode IN ('never', 'after', 'on')),
+    end_count INTEGER,
+    end_date TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE schedule_occurrences (
+    schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+    occurrence_date TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('posted', 'skipped')),
+    transaction_id TEXT REFERENCES transactions(id) ON DELETE SET NULL,
+    PRIMARY KEY (schedule_id, occurrence_date)
+);
 "#;

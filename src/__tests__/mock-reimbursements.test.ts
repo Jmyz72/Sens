@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { mockInvoke } from "../client/mock";
 import type { Account, AwaitingReimbursement, Category, DashboardSummary, Transaction } from "../types";
 
@@ -44,6 +44,10 @@ const expenseUpdate = (e: Transaction, amount: number, over: Record<string, unkn
 });
 
 describe("mock reimbursements", () => {
+  beforeEach(async () => {
+    await mockInvoke("set_setting", { key: "transaction_time_enabled", value: "0" });
+  });
+
   it("raises the balance, hydrates both sides, and reports true cost in the original month", async () => {
     const savings = await account("Maybank", "savings", 500_000);
     const e = await spend(savings.id, 20_000, "2027-03-10");

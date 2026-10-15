@@ -3,10 +3,65 @@
 //! the `account_subtypes` taxonomy, runs balance correction, and assembles
 //! dashboard summaries.
 
+use std::ops::Deref;
+
 use crate::error::{AppError, AppResult};
 use crate::models::*;
 use crate::{now, repo};
 use rusqlite::Connection;
+
+/// One deferred transaction, or a savepoint when the caller already began one.
+/// Standalone creates still commit on their own. A schedule post can wrap them
+/// so the occurrence, the money, and the link roll back together.
+struct WriteTxn<'a> {
+    conn: &'a Connection,
+    savepoint: bool,
+    open: bool,
+}
+
+impl<'a> WriteTxn<'a> {
+    fn begin(conn: &'a Connection) -> AppResult<Self> {
+        if conn.is_autocommit() {
+            conn.execute_batch("BEGIN DEFERRED")?;
+            Ok(Self { conn, savepoint: false, open: true })
+        } else {
+            conn.execute_batch("SAVEPOINT sens_posting")?;
+            Ok(Self { conn, savepoint: true, open: true })
+        }
+    }
+
+    fn commit(mut self) -> AppResult<()> {
+        if self.savepoint {
+            self.conn.execute_batch("RELEASE sens_posting")?;
+        } else {
+            self.conn.execute_batch("COMMIT")?;
+        }
+        self.open = false;
+        Ok(())
+    }
+}
+
+impl Drop for WriteTxn<'_> {
+    fn drop(&mut self) {
+        if !self.open {
+            return;
+        }
+        if self.savepoint {
+            let _ = self.conn.execute_batch("ROLLBACK TO sens_posting");
+            let _ = self.conn.execute_batch("RELEASE sens_posting");
+        } else {
+            let _ = self.conn.execute_batch("ROLLBACK");
+        }
+    }
+}
+
+impl Deref for WriteTxn<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        self.conn
+    }
+}
 
 fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
@@ -622,8 +677,8 @@ fn validate_positive(amount_cents: i64) -> AppResult<()> {
 
 const SETTING_TIME_ENABLED: &str = "transaction_time_enabled";
 
-fn time_enabled(conn: &Connection) -> AppResult<bool> {
-    Ok(repo::get_setting(conn, SETTING_TIME_ENABLED)?.as_deref() == Some("1"))
+pub(crate) fn time_enabled(conn: &Connection) -> AppResult<bool> {
+    Ok(repo::get_setting(conn, SETTING_TIME_ENABLED)?.as_deref() != Some("0"))
 }
 
 fn validate_hhmm(s: &str) -> AppResult<()> {
@@ -683,7 +738,7 @@ fn create_income_expense(
     validate_positive(amount_cents)?;
     ensure_active_account(conn, account_id, "selected")?;
     let time = resolve_time(conn, time, None)?;
-    let tx = conn.unchecked_transaction()?;
+    let tx = WriteTxn::begin(conn)?;
 
     let is_split = splits.as_ref().is_some_and(|s| !s.is_empty());
     let header_cat: String = if is_split {
@@ -720,7 +775,7 @@ pub fn create_transfer(conn: &Connection, from_account_id: &str, to_account_id: 
         return Err(AppError::Validation("Pay a credit card or BNPL as a payment.".into()));
     }
     let time = resolve_time(conn, time, None)?;
-    let tx = conn.unchecked_transaction()?;
+    let tx = WriteTxn::begin(conn)?;
     let t = repo::insert_transaction(&tx, &new_id(), KIND_TRANSFER, from_account_id, Some(to_account_id), None, amount_cents, description, date, time.as_deref(), false, &now())?;
     materialize_postings(&tx, &t)?;
     tx.commit()?;
@@ -761,7 +816,7 @@ pub fn create_payment(
         ));
     }
     let time = resolve_time(conn, time, None)?;
-    let tx = conn.unchecked_transaction()?;
+    let tx = WriteTxn::begin(conn)?;
     let t = repo::insert_transaction(
         &tx, &new_id(), KIND_PAYMENT, from_account_id, Some(to_account_id), None,
         amount_cents, description, date, time.as_deref(), false, &now(),

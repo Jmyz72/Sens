@@ -16,7 +16,11 @@ import type {
   GoalWrite,
   Plan,
   PlanGoal,
+  Schedule,
+  SchedulePass,
+  ScheduleWrite,
   Transaction,
+  UpcomingOccurrence,
   TransactionFilters,
   TxnAllocation,
   TxnSplit,
@@ -86,6 +90,18 @@ export const client = {
   getAwaitingReimbursement: () => dispatch<AwaitingReimbursement>("get_awaiting_reimbursement"),
   getAccountBalances: () => dispatch<AccountBalance[]>("get_account_balances"),
   getAccountBalance: (accountId: string) => dispatch<number>("get_account_balance", { accountId }),
+
+  // Schedules
+  listSchedules: () => dispatch<Schedule[]>("list_schedules"),
+  createSchedule: (input: ScheduleWrite) => dispatch<Schedule>("create_schedule", { input }),
+  updateSchedule: (id: string, input: ScheduleWrite) => dispatch<Schedule>("update_schedule", { id, input }),
+  deleteSchedule: (id: string) => dispatch<void>("delete_schedule", { id }),
+  listUpcoming: () => dispatch<UpcomingOccurrence[]>("list_upcoming"),
+  postScheduleOccurrence: (scheduleId: string, date: string, amountCents: number) =>
+    dispatch<Transaction>("post_occurrence", { scheduleId, date, amountCents }),
+  skipScheduleOccurrence: (scheduleId: string, date: string) =>
+    dispatch<void>("skip_occurrence", { scheduleId, date }),
+  runSchedulePass: () => dispatch<SchedulePass>("run_schedule_pass"),
 
   // Settings
   getSetting: (key: string) => dispatch<string | null>("get_setting", { key }),

@@ -18,6 +18,7 @@ Read this before changing balance math, transaction validation, or dashboard tot
 - [Transaction time](#transaction-time)
 - [Balance correction](#balance-correction)
 - [Update Net Worth](#update-net-worth)
+- [Schedules](#schedules)
 - [Category splits](#category-splits)
 - [Card and BNPL payments](#card-and-bnpl-payments)
 - [Reimbursements](#reimbursements)
@@ -100,7 +101,7 @@ An `income` / `expense` row can be flagged **`excludedFromReporting`**.
 Optional. A nullable `transaction_time TEXT` column holds 24-hour `"HH:MM"` or NULL.
 
 - Added by **migration 007** as a plain `ALTER TABLE … ADD COLUMN` (not a rebuild; see the ledger warning above).
-- Gated by the **`transaction_time_enabled`** setting (default **off**; `"1"` = on).
+- Gated by the **`transaction_time_enabled`** setting (default **on**; a missing key means on, `"0"` means off).
 
 | Setting | Add/Edit modal | Create | Update |
 |---|---|---|---|
@@ -116,6 +117,7 @@ Optional. A nullable `transaction_time TEXT` column holds 24-hour `"HH:MM"` or N
 - Time appears in the Add/Edit modal, `TxnDetailPanel`, and `TxnRow` (whenever a row has one).
 - The Settings toggle "Record transaction times" drives the setting (read via `useTimeSetting`).
 - Mock mirror: `timeEnabled` / `resolveTime`.
+- A new schedule's time starts as the current minute while the setting is on. While it is off, schedules store no time.
 
 ## Balance correction
 
@@ -146,6 +148,36 @@ Income/expense corrections:
 rewrite the opening row. When **`diff == 0`**, nothing is written. A **saved category** on the account
 wins for that direction; otherwise the UI asks once and does not persist the pick. The row is **editable**
 because it is ordinary income or expense. Reporting and budgets already count it.
+
+## Schedules
+
+A schedule is a saved income, expense, transfer, or payment plus a repeat rule. **Migration 015** adds
+`schedules` (the template) and `schedule_occurrences` (posted or skipped dates only). Waiting tap-to-post
+rows are **calculated** from the rule and `now`; they are not stored until Post or Skip.
+
+- **Auto** posts each due date through **`run_schedule_pass`**. **Tap to post** leaves due dates on
+  **Upcoming** until Post or Skip.
+- **`create_schedule`** and **`update_schedule`** persist the template only; they do **not** run the pass.
+  The frontend calls **`run_schedule_pass`** after create, update, and delete, and also on app open, on
+  window focus, and when the wake timer fires (`useScheduleEngine` in `src/lib/useScheduleEngine.ts`).
+- The pass and due-date math use **local wall time**. **`transaction_time_enabled`** defaults **on**
+  (missing key = on; stored `"0"` = off); when off, schedules ignore stored times for due checks.
+- Auto-posted and tap-posted rows are **ordinary transactions** (same kinds and ledger rules as manual
+  entry). Deleting the schedule cascades its occurrence rows. Deleting a **posted transaction** leaves its
+  date settled (the occurrence keeps `status: posted` with a null `transaction_id`) and does not reopen it.
+- A schedule saved while times were off stores no time. When times are on, a missing stored time is
+  treated as **`00:00`** for validation, due checks, and the time written on the posted transaction.
+- **`list_upcoming`** returns due and overdue tap-to-post dates only. Post can override the amount for
+  that one row (`client.postScheduleOccurrence`); Skip records a skipped occurrence with no transaction
+  (`client.skipScheduleOccurrence`). A date already posted or skipped returns **`ValidationError`**.
+- **`recurrence::next_due`** walks forward to the next real occurrence; it does not stop after one empty
+  month. Editing a schedule moves unposted, unskipped future dates; posted and skipped dates stay settled.
+- An archived account blocks Post but still allows Skip. Factory reset clears both tables.
+- A posted date, its transaction, and the link between them commit in one database transaction.
+  A failure leaves no transaction and no occurrence, so that date can be posted again. Only auto
+  schedules record non-database failures in the in-process failure map, and that map is lost on restart.
+
+Spec: `docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`.
 
 ## Category splits
 

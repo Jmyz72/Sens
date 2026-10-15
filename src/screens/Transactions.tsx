@@ -2,7 +2,7 @@
 // panel for edit/delete. Adjustments can be deleted but not edited.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Transaction, TransactionKind, UpdateTransactionInput } from "../types";
+import type { Transaction, TransactionKind, UpcomingOccurrence, UpdateTransactionInput } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { Card, Empty, IconBtn, Money, Pill } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -17,6 +17,8 @@ import { dateGroupLabel, nowTimeHHMM, todayISO } from "../lib/format";
 import { KIND_META, kindColor, txnSortKey } from "../lib/kinds";
 import { canReimburse, effectiveCents, outstandingCents } from "../lib/reimbursements";
 import { AddTransaction } from "../modals/AddTransaction";
+import { Schedules } from "../modals/Schedules";
+import { UpcomingList } from "../components/UpcomingList";
 import { rangeForPreset, type DateRangePreset, type CustomRange } from "../lib/txnFilters";
 import { planBulk, type BulkAction } from "../lib/txnSelection";
 import { useToast } from "../components/Toast";
@@ -24,7 +26,12 @@ import { useTimeSetting } from "../lib/useTimeSetting";
 
 const KIND_FILTERS: TransactionKind[] = ["income", "expense", "transfer", "payment", "reimbursement", "adjustment", "opening"];
 
-export function Transactions({ initialAccountId, initialAwaiting = false }: { initialAccountId?: string | null; initialAwaiting?: boolean }) {
+export function Transactions({ initialAccountId, initialAwaiting = false, upcoming, commitSchedule }: {
+  initialAccountId?: string | null;
+  initialAwaiting?: boolean;
+  upcoming: UpcomingOccurrence[];
+  commitSchedule: (write: () => Promise<void>) => Promise<void>;
+}) {
   const t = useTheme();
   const { notify } = useToast();
   const { accounts, categories, reload, version } = useAppData();
@@ -40,6 +47,7 @@ export function Transactions({ initialAccountId, initialAwaiting = false }: { in
   const [preset, setPreset] = useState<DateRangePreset>("thisMonth");
   const [custom, setCustom] = useState<CustomRange>({});
   const [sort, setSort] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc">("date-desc");
+  const [showSchedules, setShowSchedules] = useState(false);
   const [density, setDensity] = useState<"comfortable" | "compact">(
     () => (localStorage.getItem("sens.txn.density") as "comfortable" | "compact") || "comfortable",
   );
@@ -299,6 +307,11 @@ export function Transactions({ initialAccountId, initialAwaiting = false }: { in
               background: t.panel, color: t.dim, borderRadius: 9, cursor: "pointer", fontFamily: t.font, fontSize: 12.5 }}>
             {density === "compact" ? "Comfortable" : "Compact"}
           </button>
+          <button type="button" onClick={() => setShowSchedules(true)}
+            style={{ height: 34, padding: "0 12px", border: `0.5px solid ${t.border}`,
+              background: t.panel, color: t.dim, borderRadius: 9, cursor: "pointer", fontFamily: t.font, fontSize: 12.5 }}>
+            Schedules
+          </button>
         </div>
 
         {/* Custom date range inputs */}
@@ -327,6 +340,8 @@ export function Transactions({ initialAccountId, initialAwaiting = false }: { in
             <span style={{ color: t.dim }}>Out <b style={{ color: t.expense, fontFamily: t.mono }}>{(totalOut / 100).toLocaleString("en-MY", { minimumFractionDigits: 2 })}</b></span>
           </div>
         </div>
+
+        <UpcomingList rows={upcoming} onReload={() => { reload(); }} />
 
         <Card pad={0} style={{ overflow: "visible" }}>
           {groups.length === 0 && <Empty icon="list" title="No transactions match" hint="Try clearing filters or add a transaction." />}
@@ -398,6 +413,9 @@ export function Transactions({ initialAccountId, initialAwaiting = false }: { in
       )}
 
       {editing && <AddTransaction accounts={accounts} categories={categories} editing={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); reload(); }} />}
+      {showSchedules && (
+        <Schedules accounts={accounts} categories={categories} onClose={() => setShowSchedules(false)} commitSchedule={commitSchedule} />
+      )}
       {reimburseFor && <AddTransaction accounts={accounts} categories={categories} reimburseExpenseId={reimburseFor} onClose={() => setReimburseFor(null)} onDone={() => { setReimburseFor(null); reload(); }} />}
     </div>
   );

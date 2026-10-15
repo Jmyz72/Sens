@@ -7,13 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Record transaction times** is on until you turn it off. A fresh install and a factory reset ask for a time on new transactions.
+
+### Fixed
+- Editing a schedule saved with no time keeps the post at midnight. A failed post does not move the balance, and that date can be posted again. A new schedule's repeat follows the first date until the pattern is customized.
+- A schedule that fails to load during the schedule pass no longer hides transactions already auto-posted for other schedules.
+
 ### Added
+- **Schedules.** An income, expense, transfer, or card/BNPL payment can repeat on a daily, weekly, monthly, or yearly rule. Auto posts the saved amount when the date and time arrive, including dates missed while Sens was closed or asleep, and a notice lists what was posted. Tap to post waits on Upcoming at the top of Transactions until you post it, with a different amount if you want, or skip that date. Editing a schedule updates dates that are not posted and not skipped.
 - **Update Net Worth.** On a fixed deposit, investment, unit trust, or crypto account, enter what it is worth now. The difference is saved as income or expense, dated today, described "Value update", and counted in income, spending, and budgets. The account can remember an income category for a rise and an expense category for a drop. When it has no category for that side, the update asks once and does not save the choice. Correct balance is unchanged.
 
 ### Fixed
+- A schedule post can no longer double-post if saving its settled date fails, and a schedule saved while times were off posts at 00:00 once times are on.
+- Schedules reject a bad end count, a bad stored time, any invalid weekday, day, or month in a list, and a yearly day no chosen month has. A schedule that cannot post shows the reason.
 - Editing an account shows an archived saved gain or loss category as "Name (archived)", and choosing Ask each time clears it.
 
 ### Documentation
+- Specified recurring schedules, Upcoming, and the away notice (`docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`).
 - Specified Update Net Worth for fixed deposit, investment, unit trust, and crypto accounts (`docs/superpowers/specs/2026-10-14-update-net-worth-design.md`).
 - Planned Update Net Worth (`docs/superpowers/plans/2026-10-14-update-net-worth.md`).
 

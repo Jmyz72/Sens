@@ -18,12 +18,17 @@ import type {
   Plan,
   PlanBudget,
   PlanGoal,
+  Schedule,
+  SchedulePass,
+  ScheduleWrite,
   Transaction,
   TxnAllocation,
+  UpcomingOccurrence,
 } from "../types";
 import catalog from "../generated/seed-catalog.json";
 import { postingsFor } from "../lib/kinds";
 import { localToday, monthlyRequired, resolveAmount } from "../lib/plan";
+import { datesThrough, nextDue, validateRule, type End, type MonthMode, type Ordinal, type Rule } from "../lib/recurrence";
 import { apportion } from "../lib/reimbursements";
 
 const fail = (code: string, message: string): never => {
@@ -240,8 +245,45 @@ function validateAllocations(amountCents: number, list: TxnAllocation[], exceptR
 }
 const settings = new Map<string, string>();
 
+// Test-only clock. `null` uses `new Date()`. A `YYYY-MM-DDTHH:MM` string is local wall time.
+let mockNow: Date | null = null;
+
+export function setMockNow(local: string | null): void {
+  if (local == null) {
+    mockNow = null;
+    return;
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local);
+  if (!match) return;
+  mockNow = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), 0, 0);
+}
+
+interface OccurrenceRow {
+  scheduleId: string;
+  occurrenceDate: string;
+  status: "posted" | "skipped";
+  transactionId: string | null;
+}
+const schedules: Schedule[] = [];
+const occurrences: OccurrenceRow[] = [];
+
+/** The last non-database reason a pass could not post a schedule; lists show it as the block reason. */
+const passFailures = new Map<string, string>();
+
+/** Test hook: a copy of the settled occurrence rows. */
+export function mockOccurrences(): OccurrenceRow[] {
+  return occurrences.map((row) => ({ ...row }));
+}
+
+/** The transaction and the settled date are recorded together. A failed create leaves neither. */
+function settlePost(schedule: Schedule, amountCents: number, date: string): Transaction {
+  const tx = createPosted(schedule, amountCents, date);
+  occurrences.push({ scheduleId: schedule.id, occurrenceDate: date, status: "posted", transactionId: tx.id });
+  return tx;
+}
+
 function timeEnabled(): boolean {
-  return settings.get("transaction_time_enabled") === "1";
+  return settings.get("transaction_time_enabled") !== "0";
 }
 function isHHMM(s: string): boolean {
   const m = /^(\d{2}):(\d{2})$/.exec(s);
@@ -493,6 +535,448 @@ function getPlan(month: string): Plan {
   return { month, budgets, goals: planGoals };
 }
 
+function addIncomeOrExpense(kind: "income" | "expense", a: any): Transaction {
+  if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
+  const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
+  if (acc.isArchived) fail("Conflict", "The selected account is archived");
+  const hasSplits = Array.isArray(a.splits) && a.splits.length > 0;
+  if (hasSplits) {
+    validateSplits(kind, a.splits, a.amountCents);
+  } else if (a.categoryId) {
+    const c = categories.find((x) => x.id === a.categoryId);
+    if (c && c.kind !== kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${kind}'`);
+    if (c && c.isSystem) fail("ValidationError", "That category can't be selected");
+  } else {
+    fail("ValidationError", "A category is required");
+  }
+  const transactionTime = resolveTime(a.time, null);
+  const tx: Transaction = {
+    id: uid(), kind, accountId: a.accountId, toAccountId: null,
+    categoryId: hasSplits ? a.splits[0].categoryId : a.categoryId,
+    amountCents: a.amountCents, description: a.description,
+    transactionDate: a.date, transactionTime,
+    createdAt: now(), updatedAt: now(),
+    excludedFromReporting: !!a.excludedFromReporting,
+    splits: hasSplits ? a.splits.map((s: any) => ({ categoryId: s.categoryId, amountCents: s.amountCents })) : [],
+    ...reimbDefaults(),
+  };
+  txns.unshift(tx);
+  return tx;
+}
+
+function addTransfer(a: any): Transaction {
+  if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
+  if (a.fromAccountId === a.toAccountId) fail("ValidationError", "Cannot transfer to the same account");
+  const src = accounts.find((x) => x.id === a.fromAccountId) ?? fail("NotFound", "Account not found");
+  const dest = accounts.find((x) => x.id === a.toAccountId) ?? fail("NotFound", "Account not found");
+  if (src.isArchived) fail("Conflict", "The source account is archived");
+  if (dest.isArchived) fail("Conflict", "The destination account is archived");
+  if (isPaymentDestination(dest.subtype)) fail("ValidationError", "Pay a credit card or BNPL as a payment.");
+  const transactionTime = resolveTime(a.time, null);
+  const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() };
+  txns.unshift(tx);
+  return tx;
+}
+
+function addPayment(a: any): Transaction {
+  if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
+  if (a.fromAccountId === a.toAccountId) fail("ValidationError", "Cannot pay the same account.");
+  const src = accounts.find((x) => x.id === a.fromAccountId) ?? fail("NotFound", "Account not found");
+  const dest = accounts.find((x) => x.id === a.toAccountId) ?? fail("NotFound", "Account not found");
+  if (src.isArchived) fail("Conflict", "The source account is archived");
+  if (dest.isArchived) fail("Conflict", "The destination account is archived");
+  if (!isPaymentDestination(dest.subtype)) fail("ValidationError", "Payments can only pay a credit card or BNPL.");
+  if (!isPaymentSource(src.subtype)) fail("ValidationError", "Payments can only come from cash, an e-wallet, savings, or a current account.");
+  const transactionTime = resolveTime(a.time, null);
+  const tx: Transaction = { id: uid(), kind: "payment", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() };
+  txns.unshift(tx);
+  return tx;
+}
+
+function clock(): Date {
+  return mockNow ?? new Date();
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function stampOf(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function ymdOf(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function cmpText(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+function appFailure(err: unknown): { code: string; message: string } | null {
+  if (!err || typeof err !== "object") return null;
+  const row = err as { code?: unknown; message?: unknown };
+  if (typeof row.code !== "string" || typeof row.message !== "string") return null;
+  return { code: row.code, message: row.message };
+}
+
+function monthModeOf(mode: string | null): MonthMode {
+  if (mode == null || mode === "each") return "each";
+  if (mode === "onThe") return "onThe";
+  return fail("ValidationError", "Month mode must be each or onThe.");
+}
+
+function ordinalOf(value: string | null): Ordinal {
+  if (value == null || value === "first") return "first";
+  if (value === "second" || value === "third" || value === "fourth" || value === "fifth" || value === "last") return value;
+  return fail("ValidationError", "Ordinal must be first, second, third, fourth, fifth, or last.");
+}
+
+function endOf(write: ScheduleWrite): End {
+  if (write.endMode === "never") return { mode: "never" };
+  if (write.endMode === "after") return { mode: "after", count: write.endCount ?? 0 };
+  if (write.endMode === "on") {
+    const date = write.endDate ?? "";
+    if (!isRealDate(date)) fail("ValidationError", "Date must be a real YYYY-MM-DD.");
+    return { mode: "on", date };
+  }
+  return fail("ValidationError", "End must be never, after, or on.");
+}
+
+function ruleFrom(write: ScheduleWrite): Rule {
+  if (!isRealDate(write.startDate)) fail("ValidationError", "Date must be a real YYYY-MM-DD.");
+  if (write.frequency !== "daily" && write.frequency !== "weekly" && write.frequency !== "monthly" && write.frequency !== "yearly") {
+    fail("ValidationError", "Frequency must be daily, weekly, monthly, or yearly.");
+  }
+  return {
+    start: write.startDate,
+    frequency: write.frequency,
+    interval: write.interval,
+    weekdays: [...write.weekdays],
+    monthMode: monthModeOf(write.monthMode),
+    monthDays: [...write.monthDays],
+    ordinal: ordinalOf(write.ordinal),
+    ordinalDay: write.ordinalDay == null || write.ordinalDay === "weekday" ? "weekday" : write.ordinalDay,
+    months: [...write.months],
+    dayOfMonth: write.dayOfMonth ?? 0,
+    end: endOf(write),
+  };
+}
+
+function ensureActive(id: string, role: "selected" | "source" | "destination"): Account {
+  const account = accounts.find((row) => row.id === id) ?? fail("NotFound", "Account not found");
+  if (account.isArchived) fail("Conflict", `The ${role} account is archived`);
+  return account;
+}
+
+function validateCategory(categoryId: string, kind: string): void {
+  const category = categories.find((row) => row.id === categoryId) ?? fail("NotFound", "Category not found");
+  if (category.isSystem) fail("ValidationError", "That category can't be selected");
+  if (category.kind !== kind) {
+    fail("ValidationError", `Category kind '${category.kind}' does not match transaction kind '${kind}'`);
+  }
+}
+
+function validatePosting(
+  kind: string,
+  amountCents: number,
+  accountId: string,
+  toAccountId: string | null,
+  categoryId: string | null,
+  time: string | null,
+): void {
+  if (amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
+  if (kind === "income" || kind === "expense") {
+    ensureActive(accountId, "selected");
+  } else if (kind === "transfer") {
+    const to = toAccountId ?? fail("ValidationError", "A destination account is required");
+    if (accountId === to) fail("ValidationError", "Cannot transfer to the same account");
+    ensureActive(accountId, "source");
+    const dest = ensureActive(to, "destination");
+    if (dest.subtype === "credit-card" || dest.subtype === "bnpl") {
+      fail("ValidationError", "Pay a credit card or BNPL as a payment.");
+    }
+  } else if (kind === "payment") {
+    const to = toAccountId ?? fail("ValidationError", "A destination account is required");
+    if (accountId === to) fail("ValidationError", "Cannot pay the same account.");
+    const source = ensureActive(accountId, "source");
+    const dest = ensureActive(to, "destination");
+    if (dest.subtype !== "credit-card" && dest.subtype !== "bnpl") {
+      fail("ValidationError", "Payments can only pay a credit card or BNPL.");
+    }
+    if (!isPaymentSource(source.subtype)) {
+      fail("ValidationError", "Payments can only come from cash, an e-wallet, savings, or a current account.");
+    }
+  } else {
+    fail("ValidationError", "Kind must be income, expense, transfer, or payment.");
+  }
+  if (timeEnabled()) {
+    const raw = (time ?? "").trim();
+    if (!raw) fail("ValidationError", "A time is required");
+    if (!isHHMM(raw)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
+  }
+  if (kind === "income" || kind === "expense") {
+    validateCategory(categoryId ?? fail("ValidationError", "A category is required"), kind);
+  }
+}
+
+function prepareSchedule(input: ScheduleWrite): ScheduleWrite {
+  if (input.mode !== "auto" && input.mode !== "tap") fail("ValidationError", "Mode must be auto or tap.");
+  const write: ScheduleWrite = {
+    ...input,
+    weekdays: [...input.weekdays],
+    monthDays: [...input.monthDays],
+    months: [...input.months],
+  };
+  if (timeEnabled()) {
+    const raw = typeof write.time === "string" ? write.time.trim() : "";
+    if (!raw) fail("ValidationError", "A time is required");
+    if (!isHHMM(raw)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
+    write.time = raw;
+  } else {
+    const raw = typeof write.time === "string" ? write.time.trim() : "";
+    if (raw && !isHHMM(raw)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
+    write.time = null;
+  }
+  const reason = validateRule(ruleFrom(write));
+  if (reason) fail("ValidationError", reason);
+  validatePosting(write.kind, write.amountCents, write.accountId, write.toAccountId, write.categoryId, write.time);
+  return write;
+}
+
+/** The stored time, or 00:00 when times are on and it was saved while they were off. */
+function effectiveTime(schedule: Schedule): string | null {
+  if (!timeEnabled()) return null;
+  return schedule.time ?? "00:00";
+}
+
+function scheduleTime(schedule: Schedule): string | null {
+  return schedule.time && isHHMM(schedule.time) ? schedule.time : null;
+}
+
+function dueDates(schedule: Schedule, at: Date): string[] {
+  let dates = datesThrough(ruleFrom(schedule), ymdOf(at));
+  const time = scheduleTime(schedule);
+  if (timeEnabled() && time && stampOf(at).slice(11) < time) {
+    const today = ymdOf(at);
+    dates = dates.filter((date) => date !== today);
+  }
+  const settled = new Set(occurrences.filter((row) => row.scheduleId === schedule.id).map((row) => row.occurrenceDate));
+  return dates.filter((date) => !settled.has(date));
+}
+
+function isDue(schedule: Schedule, date: string, at: Date): boolean {
+  const today = ymdOf(at);
+  if (date > today) return false;
+  if (date < today || !timeEnabled()) return true;
+  const time = scheduleTime(schedule);
+  if (!time) return true;
+  return stampOf(at).slice(11) >= time;
+}
+
+function onSchedule(rule: Rule, date: string): boolean {
+  return datesThrough(rule, date).includes(date);
+}
+
+function ensureOpen(schedule: Schedule, date: string, at: Date): void {
+  if (!isRealDate(date)) fail("ValidationError", "Date must be a real YYYY-MM-DD.");
+  if (occurrences.some((row) => row.scheduleId === schedule.id && row.occurrenceDate === date)) {
+    fail("ValidationError", "That date was already posted or skipped.");
+  }
+  if (!onSchedule(ruleFrom(schedule), date)) fail("ValidationError", "That date is not on this schedule.");
+  if (!isDue(schedule, date, at)) fail("ValidationError", "That date is not due.");
+}
+
+function postingBlock(schedule: Schedule): string | null {
+  try {
+    validatePosting(schedule.kind, schedule.amountCents, schedule.accountId, schedule.toAccountId, schedule.categoryId, effectiveTime(schedule));
+    return null;
+  } catch (err) {
+    const parsed = appFailure(err);
+    if (!parsed || parsed.code === "DatabaseError") throw err;
+    return parsed.message;
+  }
+}
+
+function blockText(schedule: Schedule): string | null {
+  return postingBlock(schedule) ?? passFailures.get(schedule.id) ?? null;
+}
+
+function blockReasonFor(schedule: Schedule, at: Date): string | null {
+  if (dueDates(schedule, at).length === 0) return null;
+  return blockText(schedule);
+}
+
+function present(schedule: Schedule, at: Date): Schedule {
+  return {
+    ...schedule,
+    weekdays: [...schedule.weekdays],
+    monthDays: [...schedule.monthDays],
+    months: [...schedule.months],
+    blockReason: blockReasonFor(schedule, at),
+  };
+}
+
+function findSchedule(id: string): Schedule {
+  return schedules.find((row) => row.id === id) ?? fail("NotFound", "Schedule not found");
+}
+
+function labelFor(schedule: Schedule): string {
+  const text = schedule.description?.trim() ?? "";
+  if (text) return text;
+  if (schedule.categoryId) {
+    const category = categories.find((row) => row.id === schedule.categoryId);
+    if (category) return category.name;
+  }
+  if (schedule.kind === "transfer") return "Transfer";
+  if (schedule.kind === "payment") return "Payment";
+  return schedule.kind;
+}
+
+function createPosted(schedule: Schedule, amountCents: number, date: string): Transaction {
+  const time = effectiveTime(schedule);
+  const description = schedule.description;
+  if (schedule.kind === "income" || schedule.kind === "expense") {
+    return addIncomeOrExpense(schedule.kind, {
+      accountId: schedule.accountId,
+      categoryId: schedule.categoryId,
+      amountCents,
+      description,
+      date,
+      time,
+      excludedFromReporting: false,
+      splits: null,
+    });
+  }
+  const toAccountId = schedule.toAccountId ?? fail("ValidationError", "A destination account is required");
+  const input = { fromAccountId: schedule.accountId, toAccountId, amountCents, description, date, time };
+  if (schedule.kind === "transfer") return addTransfer(input);
+  if (schedule.kind === "payment") return addPayment(input);
+  return fail("ValidationError", "Kind must be income, expense, transfer, or payment.");
+}
+
+function runPass(): SchedulePass {
+  const at = clock();
+  const nowStamp = stampOf(at);
+  const posted: Transaction[] = [];
+  const wakes: string[] = [];
+  for (const schedule of schedules.slice()) {
+    const wake = nextDue(ruleFrom(schedule), nowStamp, timeEnabled() ? scheduleTime(schedule) : null);
+    if (wake && wake > nowStamp) wakes.push(wake);
+    if (schedule.mode !== "auto") continue;
+    const due = dueDates(schedule, at);
+    if (due.length === 0 || postingBlock(schedule) != null) continue;
+    for (const date of due) {
+      try {
+        posted.push(settlePost(schedule, schedule.amountCents, date));
+        passFailures.delete(schedule.id);
+      } catch (err) {
+        const failure = appFailure(err);
+        if (failure?.code === "DatabaseError") throw err;
+        if (failure) passFailures.set(schedule.id, failure.message);
+        break;
+      }
+    }
+  }
+  posted.sort((a, b) => cmpText(a.transactionDate, b.transactionDate) || cmpText(a.id, b.id));
+  const nextWakeAt = wakes.reduce<string | null>((min, wake) => (min == null || wake < min ? wake : min), null);
+  return { posted, nextWakeAt };
+}
+
+function listScheduleRows(): Schedule[] {
+  const at = clock();
+  return schedules
+    .slice()
+    .sort((a, b) => cmpText(a.createdAt, b.createdAt) || cmpText(a.id, b.id))
+    .map((row) => present(row, at));
+}
+
+function createSchedule(input: ScheduleWrite): Schedule {
+  const write = prepareSchedule(input);
+  const stamp = now();
+  const row: Schedule = {
+    ...write,
+    weekdays: [...write.weekdays],
+    monthDays: [...write.monthDays],
+    months: [...write.months],
+    id: uid(),
+    createdAt: stamp,
+    updatedAt: stamp,
+    blockReason: null,
+  };
+  schedules.push(row);
+  return present(row, clock());
+}
+
+function updateSchedule(id: string, input: ScheduleWrite): Schedule {
+  const row = findSchedule(id);
+  const write = prepareSchedule(input);
+  Object.assign(row, write, {
+    id: row.id,
+    createdAt: row.createdAt,
+    updatedAt: now(),
+    weekdays: [...write.weekdays],
+    monthDays: [...write.monthDays],
+    months: [...write.months],
+  });
+  passFailures.delete(id);
+  return present(row, clock());
+}
+
+function deleteSchedule(id: string): void {
+  const index = schedules.findIndex((row) => row.id === id);
+  if (index < 0) fail("NotFound", "Schedule not found");
+  schedules.splice(index, 1);
+  passFailures.delete(id);
+  for (let i = occurrences.length - 1; i >= 0; i--) {
+    if (occurrences[i].scheduleId === id) occurrences.splice(i, 1);
+  }
+}
+
+function upcomingRows(): UpcomingOccurrence[] {
+  const at = clock();
+  const showTime = timeEnabled();
+  const rows: UpcomingOccurrence[] = [];
+  for (const schedule of schedules) {
+    if (schedule.mode !== "tap") continue;
+    const due = dueDates(schedule, at);
+    if (due.length === 0) continue;
+    const blockReason = blockText(schedule);
+    const label = labelFor(schedule);
+    const name = accounts.find((row) => row.id === schedule.accountId)?.name ?? "Missing account";
+    const time = showTime ? effectiveTime(schedule) : null;
+    for (const date of due) {
+      rows.push({
+        scheduleId: schedule.id,
+        occurrenceDate: date,
+        kind: schedule.kind,
+        label,
+        amountCents: schedule.amountCents,
+        time,
+        accountName: name,
+        blockReason,
+      });
+    }
+  }
+  rows.sort((a, b) => cmpText(a.occurrenceDate, b.occurrenceDate) || cmpText(a.label, b.label) || cmpText(a.scheduleId, b.scheduleId));
+  return rows;
+}
+
+function postOccurrence(scheduleId: string, date: string, amountCents: number): Transaction {
+  const schedule = findSchedule(scheduleId);
+  const at = clock();
+  ensureOpen(schedule, date, at);
+  return settlePost(schedule, amountCents, date);
+}
+
+function skipOccurrence(scheduleId: string, date: string): void {
+  const schedule = findSchedule(scheduleId);
+  ensureOpen(schedule, date, clock());
+  occurrences.push({ scheduleId, occurrenceDate: date, status: "skipped", transactionId: null });
+}
+
 export async function mockInvoke<T>(command: string, args: Record<string, unknown>): Promise<T> {
   const result = await mockInvokeInner<T>(command, args);
   syncDerived();
@@ -708,62 +1192,12 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       return cat as T;
     }
     case "create_income_transaction":
-    case "create_expense_transaction": {
-      const kind = command === "create_income_transaction" ? "income" : "expense";
-      if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
-      const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
-      if (acc.isArchived) fail("Conflict", "The selected account is archived");
-      const hasSplits = Array.isArray(a.splits) && a.splits.length > 0;
-      if (hasSplits) {
-        validateSplits(kind, a.splits, a.amountCents);
-      } else if (a.categoryId) {
-        const c = categories.find((x) => x.id === a.categoryId);
-        if (c && c.kind !== kind) fail("ValidationError", `Category kind '${c.kind}' does not match transaction kind '${kind}'`);
-        if (c && c.isSystem) fail("ValidationError", "That category can't be selected");
-      } else {
-        fail("ValidationError", "A category is required");
-      }
-      const transactionTime = resolveTime(a.time, null);
-      const tx: Transaction = {
-        id: uid(), kind, accountId: a.accountId, toAccountId: null,
-        categoryId: hasSplits ? a.splits[0].categoryId : a.categoryId,
-        amountCents: a.amountCents, description: a.description,
-        transactionDate: a.date, transactionTime,
-        createdAt: now(), updatedAt: now(),
-        excludedFromReporting: !!a.excludedFromReporting,
-        splits: hasSplits ? a.splits.map((s: any) => ({ categoryId: s.categoryId, amountCents: s.amountCents })) : [],
-        ...reimbDefaults(),
-      };
-      txns.unshift(tx);
-      return tx as T;
-    }
-    case "create_transfer_transaction": {
-      if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
-      if (a.fromAccountId === a.toAccountId) fail("ValidationError", "Cannot transfer to the same account");
-      const src = accounts.find((x) => x.id === a.fromAccountId) ?? fail("NotFound", "Account not found");
-      const dest = accounts.find((x) => x.id === a.toAccountId) ?? fail("NotFound", "Account not found");
-      if (src.isArchived) fail("Conflict", "The source account is archived");
-      if (dest.isArchived) fail("Conflict", "The destination account is archived");
-      if (isPaymentDestination(dest.subtype)) fail("ValidationError", "Pay a credit card or BNPL as a payment.");
-      const transactionTime = resolveTime(a.time, null);
-      const tx: Transaction = { id: uid(), kind: "transfer", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() };
-      txns.unshift(tx);
-      return tx as T;
-    }
-    case "create_payment_transaction": {
-      if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
-      if (a.fromAccountId === a.toAccountId) fail("ValidationError", "Cannot pay the same account.");
-      const src = accounts.find((x) => x.id === a.fromAccountId) ?? fail("NotFound", "Account not found");
-      const dest = accounts.find((x) => x.id === a.toAccountId) ?? fail("NotFound", "Account not found");
-      if (src.isArchived) fail("Conflict", "The source account is archived");
-      if (dest.isArchived) fail("Conflict", "The destination account is archived");
-      if (!isPaymentDestination(dest.subtype)) fail("ValidationError", "Payments can only pay a credit card or BNPL.");
-      if (!isPaymentSource(src.subtype)) fail("ValidationError", "Payments can only come from cash, an e-wallet, savings, or a current account.");
-      const transactionTime = resolveTime(a.time, null);
-      const tx: Transaction = { id: uid(), kind: "payment", accountId: a.fromAccountId, toAccountId: a.toAccountId, categoryId: null, amountCents: a.amountCents, description: a.description, transactionDate: a.date, transactionTime, createdAt: now(), updatedAt: now(), excludedFromReporting: false, splits: [], ...reimbDefaults() };
-      txns.unshift(tx);
-      return tx as T;
-    }
+    case "create_expense_transaction":
+      return addIncomeOrExpense(command === "create_income_transaction" ? "income" : "expense", a) as T;
+    case "create_transfer_transaction":
+      return addTransfer(a) as T;
+    case "create_payment_transaction":
+      return addPayment(a) as T;
     case "create_reimbursement_transaction": {
       if (a.amountCents <= 0) fail("ValidationError", "Amount must be greater than zero");
       const acc = accounts.find((x) => x.id === a.accountId) ?? fail("NotFound", "Account not found");
@@ -875,6 +1309,9 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       if (removed.kind === "reimbursement") {
         for (let k = allocs.length - 1; k >= 0; k--) if (allocs[k].reimbursementId === removed.id) allocs.splice(k, 1);
       }
+      for (const row of occurrences) {
+        if (row.transactionId === removed.id) row.transactionId = null;
+      }
       return undefined as T;
     }
     case "get_account_balances":
@@ -968,9 +1405,30 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       settings.clear();
       budgetVersions.length = 0;
       goals.length = 0;
+      schedules.length = 0;
+      occurrences.length = 0;
+      passFailures.clear();
       seedCategories();
       return undefined as T;
     }
+    case "list_schedules":
+      return listScheduleRows() as T;
+    case "create_schedule":
+      return createSchedule(a.input) as T;
+    case "update_schedule":
+      return updateSchedule(a.id, a.input) as T;
+    case "delete_schedule":
+      deleteSchedule(a.id);
+      return undefined as T;
+    case "list_upcoming":
+      return upcomingRows() as T;
+    case "post_occurrence":
+      return postOccurrence(a.scheduleId, a.date, a.amountCents) as T;
+    case "skip_occurrence":
+      skipOccurrence(a.scheduleId, a.date);
+      return undefined as T;
+    case "run_schedule_pass":
+      return runPass() as T;
     default:
       return fail("DatabaseError", `Unknown command: ${command}`) as T;
   }

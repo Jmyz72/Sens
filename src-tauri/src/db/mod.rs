@@ -186,6 +186,8 @@ pub fn reset_to_defaults(conn: &Connection) -> AppResult<()> {
         // first so the accounts delete below isn't blocked by the RESTRICT FK.
         // reimbursement_allocations.expense_id is ON DELETE RESTRICT, so the links
         // must go before the transactions they reference.
+        conn.execute("DELETE FROM schedule_occurrences", [])?;
+        conn.execute("DELETE FROM schedules", [])?;
         conn.execute("DELETE FROM savings_goals", [])?;
         conn.execute("DELETE FROM category_budgets", [])?;
         conn.execute("DELETE FROM reimbursement_allocations", [])?;
