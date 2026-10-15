@@ -3283,6 +3283,7 @@ mod schedule_tests {
         let mut input = salary_schedule(&a.id, &cat);
         input.time = Some("09:00".into());
         let saved = schedules::create_schedule(&c, input, at("2026-10-25T08:00")).unwrap();
+        schedules::run_pass(&c, at("2026-10-25T08:00")).unwrap();
         assert_eq!(saved.time, None);
         let income = kinds(&c, "income");
         assert_eq!(income.len(), 1);
@@ -3351,6 +3352,7 @@ mod schedule_tests {
         expense.end_mode = "after".into();
         expense.end_count = Some(1);
         schedules::create_schedule(&c, expense, now).unwrap();
+        schedules::run_pass(&c, now).unwrap();
 
         let posted = kinds(&c, "transfer");
         assert_eq!(posted.len(), 1);
@@ -3393,6 +3395,7 @@ mod schedule_tests {
         input.start_date = "2026-01-01".into();
         input.month_days = vec![1];
         schedules::create_schedule(&c, input, at("2026-01-15T12:00")).unwrap();
+        schedules::run_pass(&c, at("2026-01-15T12:00")).unwrap();
         assert!(table_count(&c, "schedules") > 0);
         assert!(table_count(&c, "schedule_occurrences") > 0);
         service::reset_app(&c).unwrap();
@@ -3443,6 +3446,7 @@ mod schedule_tests {
         input.mode = "auto".into();
         input.amount_cents = 25_000;
         schedules::update_schedule(&c, &saved.id, input.clone(), now).unwrap();
+        schedules::run_pass(&c, now).unwrap();
         let mut dates = kinds(&c, "income").into_iter().map(|t| (t.transaction_date, t.amount_cents)).collect::<Vec<_>>();
         dates.sort();
         assert_eq!(dates, vec![("2026-01-01".into(), 25_000), ("2026-02-01".into(), 25_000)]);

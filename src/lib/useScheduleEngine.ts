@@ -57,9 +57,14 @@ export function useScheduleEngine(version: number, reload: () => Promise<void>) 
     timer.current = window.setTimeout(() => { void runRef.current(); }, delay);
   }
 
+  // A response only lands if no newer load started after it.
+  const loadSeq = useRef(0);
+
   async function loadUpcoming() {
+    const seq = ++loadSeq.current;
     try {
-      setUpcoming(await client.listUpcoming());
+      const rows = await client.listUpcoming();
+      if (seq === loadSeq.current) setUpcoming(rows);
     } catch {
       // Keep the list from the last successful read.
     }
@@ -90,28 +95,20 @@ export function useScheduleEngine(version: number, reload: () => Promise<void>) 
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    client.listUpcoming().then((rows) => { if (!cancelled) setUpcoming(rows); }).catch(() => {});
-    return () => { cancelled = true; };
+    void loadUpcoming();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);
 
-  // create and update run a pass inside the command and do not return what they posted.
+  // Saving stores the schedule only. One pass afterwards posts what is due, and
+  // its `posted` rows are exactly what the away notice lists.
   async function commitSchedule(write: () => Promise<void>) {
-    let beforeIds: Set<string> | null = null;
-    try {
-      beforeIds = new Set((await client.listTransactions({ limit: 1000 })).map((row) => row.id));
-    } catch {
-      beforeIds = null;
-    }
     await write();
     try {
-      if (beforeIds) {
-        const ids = beforeIds;
-        const after = await client.listTransactions({ limit: 1000 });
-        addAway(after.filter((row) => !ids.has(row.id)));
-      }
-      await runRef.current();
+      const pass = await client.runSchedulePass();
+      addAway(pass.posted);
       await reloadRef.current();
+      arm(pass.nextWakeAt);
+      await loadUpcoming();
     } catch {
       // The schedule is already saved. The next focus runs the pass again.
     }

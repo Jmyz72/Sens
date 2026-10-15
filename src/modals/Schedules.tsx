@@ -7,7 +7,7 @@ import { Btn, Modal, Money } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { ruleSummary } from "../lib/recurrence";
-import { kindColor, signedFor } from "../lib/kinds";
+import { KIND_META, kindColor, signedFor } from "../lib/kinds";
 import { ScheduleForm, ruleFromSchedule } from "./ScheduleForm";
 
 export function Schedules({ accounts, categories, onClose, commitSchedule }: {
@@ -63,6 +63,7 @@ export function Schedules({ accounts, categories, onClose, commitSchedule }: {
           {rows.map((row) => {
             const summary = ruleSummary(ruleFromSchedule(row));
             const color = kindColor(t, row.kind);
+            const meta = KIND_META[row.kind];
             const movement = row.kind === "transfer" || row.kind === "payment";
             return (
               <div key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", borderBottom: `0.5px solid ${t.divider}` }}>
@@ -71,6 +72,7 @@ export function Schedules({ accounts, categories, onClose, commitSchedule }: {
                   <div style={{ fontSize: 12, color: t.dim, marginTop: 2 }}>{row.mode === "auto" ? "Auto" : "Tap to post"}</div>
                   {row.blockReason && <div style={{ fontSize: 12, color: t.expense, marginTop: 4 }}>{row.blockReason}</div>}
                 </div>
+                <Icon name={meta.icon} size={16} color={color} stroke={2} />
                 <Money cents={movement ? row.amountCents : signedFor(row.kind, row.amountCents)} signed={!movement} color={color} />
                 <Btn size="sm" variant="outline" onClick={() => setForm(row)}>Edit</Btn>
                 <Btn size="sm" variant="danger" onClick={() => remove(row.id)}>Delete</Btn>

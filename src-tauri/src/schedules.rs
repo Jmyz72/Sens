@@ -12,14 +12,12 @@ pub fn create_schedule(conn: &Connection, input: ScheduleWrite, now: NaiveDateTi
     let write = prepare(conn, &input)?;
     let id = uuid::Uuid::new_v4().to_string();
     repo::insert_schedule(conn, &id, &write, &crate::now())?;
-    run_pass(conn, now)?;
     load(conn, &id, now)
 }
 
 pub fn update_schedule(conn: &Connection, id: &str, input: ScheduleWrite, now: NaiveDateTime) -> AppResult<Schedule> {
     let write = prepare(conn, &input)?;
     repo::update_schedule(conn, id, &write, &crate::now())?;
-    run_pass(conn, now)?;
     load(conn, id, now)
 }
 

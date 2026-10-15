@@ -879,7 +879,6 @@ function createSchedule(input: ScheduleWrite): Schedule {
     blockReason: null,
   };
   schedules.push(row);
-  runPass();
   return present(row, clock());
 }
 
@@ -894,7 +893,6 @@ function updateSchedule(id: string, input: ScheduleWrite): Schedule {
     monthDays: [...write.monthDays],
     months: [...write.months],
   });
-  runPass();
   return present(row, clock());
 }
 

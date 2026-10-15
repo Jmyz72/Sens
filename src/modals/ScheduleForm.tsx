@@ -480,7 +480,7 @@ export function ScheduleForm({ accounts, categories, schedule, onClose, onSaved 
 
         <div style={{ display: "flex", gap: 10 }}>
           <Btn variant="outline" onClick={onClose} style={{ flex: 1, justifyContent: "center", height: 38 }}>Cancel</Btn>
-          <Btn variant="primary" onClick={save} disabled={busy} style={{ flex: 1, justifyContent: "center", height: 38, background: accent }}>Save</Btn>
+          <Btn variant="primary" onClick={save} disabled={busy || !!ruleError} style={{ flex: 1, justifyContent: "center", height: 38, background: accent }}>Save</Btn>
         </div>
       </div>
     </Modal>

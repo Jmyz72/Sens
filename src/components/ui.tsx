@@ -31,7 +31,7 @@ export function Btn({ children, variant = "primary", icon, onClick, size = "md",
     danger: { background: "transparent", color: t.negative, border: `0.5px solid ${hexA(t.negative, 0.5)}` },
   };
   return (
-    <button type={type ?? "button"} disabled={disabled} className={`sens-btn sens-btn-${variant}`} onClick={onClick} style={{ ...base, ...variants[variant] }}>
+    <button type={type ?? "button"} disabled={disabled} aria-disabled={disabled || undefined} className={`sens-btn sens-btn-${variant}`} onClick={onClick} style={{ ...base, ...variants[variant] }}>
       {icon && <Icon name={icon} size={size === "sm" ? 14 : 15} color={variant === "primary" ? t.onAccent : "currentColor"} stroke={2} />}
       {children}
     </button>

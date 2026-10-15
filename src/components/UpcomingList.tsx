@@ -52,7 +52,7 @@ export function UpcomingList({ rows, onReload }: { rows: UpcomingOccurrence[]; o
                   {row.blockReason && <div style={{ fontSize: 12, color: t.expense, marginTop: 4 }}>{row.blockReason}</div>}
                 </div>
                 <Money cents={movement ? row.amountCents : signedFor(row.kind, row.amountCents)} signed={!movement} color={color} />
-                <Btn size="sm" variant="outline" onClick={() => { if (!row.blockReason) setPosting(row); }}>Post</Btn>
+                <Btn size="sm" variant="outline" disabled={!!row.blockReason} onClick={() => { if (!row.blockReason) setPosting(row); }}>Post</Btn>
                 <Btn size="sm" variant="ghost" disabled={skipping === skipKey} onClick={() => skip(row)}>Skip</Btn>
               </div>
             );

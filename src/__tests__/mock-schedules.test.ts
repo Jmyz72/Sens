@@ -242,6 +242,7 @@ describe("mock schedules", () => {
     const other = await account("Other");
     setMockNow("2026-10-25T08:00");
     const stored = await client.createSchedule({ ...salary(other.id, cat), time: "09:00" });
+    await client.runSchedulePass();
     expect(stored.time).toBeNull();
     const income = await client.listTransactions({ accountId: other.id, kind: "income" });
     expect(income).toHaveLength(1);
@@ -290,6 +291,7 @@ describe("mock schedules", () => {
       endMode: "after",
       endCount: 1,
     });
+    await client.runSchedulePass();
     expect((await client.getAccountBalance(from.id)) - beforeFrom).toBe(-1000);
     expect((await client.getAccountBalance(to.id)) - beforeTo).toBe(1000);
   });
