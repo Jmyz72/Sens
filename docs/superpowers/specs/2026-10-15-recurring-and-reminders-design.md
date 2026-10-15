@@ -268,13 +268,20 @@ The UI calls the typed client. The mock mirrors every command.
 | Command | What it does |
 |---|---|
 | `list_schedules` | Every schedule, including the computed block reason |
-| `create_schedule` | Validates, stores, runs a pass |
-| `update_schedule` | Replaces the template and the rule, runs a pass |
+| `create_schedule` | Validates and stores |
+| `update_schedule` | Replaces the template and the rule |
 | `delete_schedule` | Removes the schedule and its occurrence rows, leaves transactions |
 | `list_upcoming` | The calculated due tap-to-post rows |
-| `post_schedule_occurrence` | Posts one due date at the given amount |
-| `skip_schedule_occurrence` | Skips one due date |
+| `post_occurrence` | Posts one due date at the given amount |
+| `skip_occurrence` | Skips one due date |
 | `run_schedule_pass` | Runs the pass and returns the auto transactions it wrote |
+
+`create_schedule` and `update_schedule` store only; the frontend calls
+`run_schedule_pass` after create, update, and delete. The client wrappers keep
+the names `postScheduleOccurrence` and `skipScheduleOccurrence`. Posting or
+skipping a date that is already settled returns `ValidationError`. While
+times are on, a schedule with no stored time (saved while times were off) is
+treated as `00:00`.
 
 `run_schedule_pass` takes no clock from the UI. Tests call the service with
 a fixed time.

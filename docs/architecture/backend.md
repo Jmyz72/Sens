@@ -97,6 +97,8 @@ helpers in `src/client/index.ts`).
 
 - **`create_schedule` / `update_schedule` / `delete_schedule`** only change `schedules` (and
   `delete_schedule` cascades occurrence rows). They do **not** run the pass.
+- `schedules.account_id`, `to_account_id`, and `category_id` have **no foreign keys**. A missing target
+  shows as a block reason instead of failing the save.
 - **`run_schedule_pass`** (`schedules::run_pass`) uses **`local_now()`**, auto-posts every due **auto**
   schedule, returns `{ posted, nextWakeAt }`, and is what drives catch-up while Sens was closed or asleep.
 - **`list_upcoming`** is computed from tap schedules and the clock; **`post_occurrence`** /

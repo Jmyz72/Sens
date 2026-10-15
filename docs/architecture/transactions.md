@@ -163,7 +163,10 @@ rows are **calculated** from the rule and `now`; they are not stored until Post 
 - The pass and due-date math use **local wall time**. **`transaction_time_enabled`** defaults **on**
   (missing key = on; stored `"0"` = off); when off, schedules ignore stored times for due checks.
 - Auto-posted and tap-posted rows are **ordinary transactions** (same kinds and ledger rules as manual
-  entry). Deleting the schedule or the transaction does not reopen a settled date.
+  entry). Deleting the schedule cascades its occurrence rows. Deleting a **posted transaction** leaves its
+  date settled (the occurrence keeps `status: posted` with a null `transaction_id`) and does not reopen it.
+- A schedule saved while times were off stores no time. When times are on, a missing stored time is
+  treated as **`00:00`** for validation, due checks, and the time written on the posted transaction.
 - **`list_upcoming`** returns due and overdue tap-to-post dates only. Post can override the amount for
   that one row (`client.postScheduleOccurrence`); Skip records a skipped occurrence with no transaction
   (`client.skipScheduleOccurrence`). A date already posted or skipped returns **`ValidationError`**.
