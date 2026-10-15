@@ -3526,6 +3526,59 @@ mod schedule_tests {
     }
 
     #[test]
+    fn end_count_and_stored_time_are_validated() {
+        let c = test_db();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let now = at("2026-10-25T09:00");
+        let mut input = salary_schedule(&a.id, &cat);
+        input.end_mode = "after".into();
+        input.end_count = Some(1 << 40);
+        assert!(schedules::create_schedule(&c, input.clone(), now).is_err());
+        input.end_count = Some(0);
+        assert_eq!(
+            schedules::create_schedule(&c, input.clone(), now).unwrap_err().to_string(),
+            "End count must be at least 1."
+        );
+        input.end_count = Some(3);
+        input.time = Some("9am".into());
+        assert_eq!(
+            schedules::create_schedule(&c, input.clone(), now).unwrap_err().to_string(),
+            "Time must be in HH:MM 24-hour format"
+        );
+        input.time = Some("09:00".into());
+        assert!(schedules::create_schedule(&c, input, now).is_ok());
+    }
+
+    #[test]
+    fn a_bad_stored_list_token_fails_the_read_instead_of_shrinking_the_list() {
+        let c = test_db();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let saved = schedules::create_schedule(&c, salary_schedule(&a.id, &cat), at("2026-10-25T09:00")).unwrap();
+        c.execute("UPDATE schedules SET month_days = '25,x' WHERE id = ?1", [&saved.id]).unwrap();
+        assert!(repo::list_schedules(&c).is_err());
+        assert!(repo::get_schedule(&c, &saved.id).is_err());
+    }
+
+    #[test]
+    fn a_missing_account_name_surfaces_as_a_block_reason() {
+        let c = test_db();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.mode = "tap".into();
+        let due = at("2026-10-25T09:00");
+        let saved = schedules::create_schedule(&c, input, due).unwrap();
+        c.execute("UPDATE schedules SET account_id = 'gone' WHERE id = ?1", [&saved.id]).unwrap();
+        let rows = schedules::list_upcoming(&c, due).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].block_reason.is_some());
+        assert!(!rows[0].account_name.is_empty());
+        assert!(schedules::list_schedules(&c, due).unwrap()[0].block_reason.is_some());
+    }
+
+    #[test]
     fn create_and_update_store_only_until_the_pass_runs() {
         let c = test_db();
         let a = acct(&c, "Salary", 0);

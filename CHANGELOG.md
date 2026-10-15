@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Update Net Worth.** On a fixed deposit, investment, unit trust, or crypto account, enter what it is worth now. The difference is saved as income or expense, dated today, described "Value update", and counted in income, spending, and budgets. The account can remember an income category for a rise and an expense category for a drop. When it has no category for that side, the update asks once and does not save the choice. Correct balance is unchanged.
 
 ### Fixed
+- A schedule post can no longer double-post if saving its settled date fails, and a schedule saved while times were off posts at 00:00 once times are on.
+- Schedules reject a bad end count, a bad stored time, any invalid weekday, day, or month in a list, and a yearly day no chosen month has. A schedule that cannot post shows the reason.
 - Editing an account shows an archived saved gain or loss category as "Name (archived)", and choosing Ask each time clears it.
 
 ### Documentation

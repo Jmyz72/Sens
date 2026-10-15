@@ -133,6 +133,33 @@ describe("validateRule", () => {
     );
     expect(validateRule(ruleDaily("2026-10-02", 1))).toBeNull();
   });
+
+  it("rejects a bad end count, any bad list token, and a yearly day no month has", () => {
+    const bad = "End count must be at least 1.";
+    expect(validateRule(ruleDaily("2026-10-02", 1, { mode: "after", count: 1.5 }))).toBe(bad);
+    expect(validateRule(ruleDaily("2026-10-02", 1, { mode: "after", count: 2 ** 31 }))).toBe(bad);
+    expect(validateRule(ruleDaily("2026-10-02", 1, { mode: "after", count: 3 }))).toBeNull();
+
+    const weekly: Rule = { ...ruleDaily("2026-10-02", 1), frequency: "weekly", weekdays: ["mon", "funday"] };
+    expect(validateRule(weekly)).toBe("Pick at least one weekday.");
+    const monthly: Rule = { ...ruleDaily("2026-10-02", 1), frequency: "monthly", monthDays: [5, 32] };
+    expect(validateRule(monthly)).toBe("Pick at least one day of the month.");
+    expect(validateRule({ ...monthly, monthDays: [5, 0] })).toBe("Pick at least one day of the month.");
+    const yearly: Rule = { ...ruleDaily("2026-10-02", 1), frequency: "yearly", months: [10, 13], dayOfMonth: 2 };
+    expect(validateRule(yearly)).toBe("Pick at least one month.");
+
+    const feb30: Rule = { ...ruleDaily("2026-10-02", 1), frequency: "yearly", months: [2], dayOfMonth: 30 };
+    expect(validateRule(feb30)).toBe("Pick at least one day of the month.");
+    expect(validateRule({ ...feb30, months: [2, 4] })).toBeNull();
+    expect(validateRule({ ...feb30, months: [2], dayOfMonth: 29 })).toBeNull();
+  });
+
+  it("nextDue returns null for a time that does not parse", () => {
+    const rule = ruleDaily("2026-10-01", 1);
+    expect(nextDue(rule, "2026-10-01T08:00", "9am")).toBeNull();
+    expect(nextDue(rule, "2026-10-01T08:00", "09:00")).toBe("2026-10-01T09:00");
+    expect(nextDue(rule, "2026-10-01T08:00", null)).toBe("2026-10-02T00:00");
+  });
 });
 
 describe("nextDue", () => {

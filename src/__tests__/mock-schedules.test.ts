@@ -378,4 +378,17 @@ describe("mock schedules", () => {
       { scheduleId: saved.id, occurrenceDate: "2026-10-25", status: "posted", transactionId: null },
     ]);
   });
+
+  it("rejects a bad time and a bad end count even when times are off", async () => {
+    setMockNow("2026-10-25T09:00");
+    const acc = await account("Salary");
+    const cat = await categoryId("income");
+    await client.setSetting("transaction_time_enabled", "0");
+    await expect(client.createSchedule({ ...salary(acc.id, cat), time: "9am" })).rejects.toMatchObject({
+      message: "Time must be in HH:MM 24-hour format",
+    });
+    await expect(
+      client.createSchedule({ ...salary(acc.id, cat), endMode: "after", endCount: 1.5 }),
+    ).rejects.toMatchObject({ message: "End count must be at least 1." });
+  });
 });

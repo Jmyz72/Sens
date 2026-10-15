@@ -2,11 +2,41 @@
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use rusqlite::Connection;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 use crate::error::{AppError, AppResult};
 use crate::models::*;
 use crate::recurrence::{self, End, Freq, MonthMode, Ordinal, OrdinalDay, Rule};
 use crate::{repo, service};
+
+/// The last non-database reason a pass could not post a schedule. Lists show it
+/// as the block reason until a pass posts the schedule or the schedule is edited.
+fn failures() -> &'static Mutex<HashMap<String, String>> {
+    static FAILURES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    FAILURES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn record_failure(schedule_id: &str, message: &str) {
+    if let Ok(mut map) = failures().lock() {
+        map.insert(schedule_id.to_string(), message.to_string());
+    }
+}
+
+fn clear_failure(schedule_id: &str) {
+    if let Ok(mut map) = failures().lock() {
+        map.remove(schedule_id);
+    }
+}
+
+fn recorded_failure(schedule_id: &str) -> Option<String> {
+    failures().lock().ok().and_then(|map| map.get(schedule_id).cloned())
+}
+
+/// Why this schedule cannot post: the validation block, else the last pass failure.
+fn block_text(conn: &Connection, schedule: &Schedule) -> AppResult<Option<String>> {
+    Ok(posting_block(conn, schedule)?.or_else(|| recorded_failure(&schedule.id)))
+}
 
 pub fn create_schedule(conn: &Connection, input: ScheduleWrite, now: NaiveDateTime) -> AppResult<Schedule> {
     let write = prepare(conn, &input)?;
@@ -18,10 +48,12 @@ pub fn create_schedule(conn: &Connection, input: ScheduleWrite, now: NaiveDateTi
 pub fn update_schedule(conn: &Connection, id: &str, input: ScheduleWrite, now: NaiveDateTime) -> AppResult<Schedule> {
     let write = prepare(conn, &input)?;
     repo::update_schedule(conn, id, &write, &crate::now())?;
+    clear_failure(id);
     load(conn, id, now)
 }
 
 pub fn delete_schedule(conn: &Connection, id: &str) -> AppResult<()> {
+    clear_failure(id);
     repo::delete_schedule(conn, id)
 }
 
@@ -47,11 +79,13 @@ pub fn list_upcoming(conn: &Connection, now: NaiveDateTime) -> AppResult<Vec<Upc
         if due.is_empty() {
             continue;
         }
-        let reason = posting_block(conn, schedule)?;
+        let reason = block_text(conn, schedule)?;
         let label = label_for(conn, schedule);
-        let account_name = repo::get_account(conn, &schedule.account_id)
-            .map(|account| account.name)
-            .unwrap_or_default();
+        let account_name = match repo::get_account(conn, &schedule.account_id) {
+            Ok(account) => account.name,
+            Err(AppError::NotFound(_)) => "Missing account".to_string(),
+            Err(other) => return Err(other),
+        };
         let time = effective_time(schedule, times_on);
         for date in due {
             rows.push(UpcomingOccurrence {
@@ -152,13 +186,18 @@ pub fn run_pass(conn: &Connection, now: NaiveDateTime) -> AppResult<SchedulePass
         for date in due {
             let ymd = ymd(date);
             match settle_post(conn, schedule, schedule.amount_cents, &ymd, times_on) {
-                Ok(tx) => posted.push(tx),
+                Ok(tx) => {
+                    clear_failure(&schedule.id);
+                    posted.push(tx);
+                }
                 Err(PostFailure { tx, error }) => {
                     if let Some(tx) = tx {
                         posted.push(tx);
                     }
                     if let AppError::Database(_) = error {
                         first_error.get_or_insert(error);
+                    } else {
+                        record_failure(&schedule.id, &error.to_string());
                     }
                     break;
                 }
@@ -187,7 +226,7 @@ fn block_reason(conn: &Connection, schedule: &Schedule, now: NaiveDateTime, time
     if due_dates(conn, schedule, &rule, now, times_on)?.is_empty() {
         return Ok(None);
     }
-    posting_block(conn, schedule)
+    block_text(conn, schedule)
 }
 
 fn posting_block(conn: &Connection, schedule: &Schedule) -> AppResult<Option<String>> {
@@ -224,6 +263,11 @@ fn prepare(conn: &Connection, input: &ScheduleWrite) -> AppResult<ScheduleWrite>
         }
         write.time = Some(raw.to_string());
     } else {
+        if let Some(raw) = write.time.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+            if parse_hhmm(raw).is_none() {
+                return Err(AppError::Validation("Time must be in HH:MM 24-hour format".into()));
+            }
+        }
         write.time = None;
     }
     let rule = rule_from_parts(
@@ -540,7 +584,11 @@ fn rule_from_parts(
     };
     let end = match end_mode {
         "never" => End::Never,
-        "after" => End::After(i32::try_from(end_count.unwrap_or(0)).unwrap_or(i32::MAX)),
+        "after" => End::After(
+            end_count
+                .and_then(|count| i32::try_from(count).ok())
+                .ok_or_else(|| AppError::Validation("End count must be at least 1.".into()))?,
+        ),
         "on" => End::On(parse_date(end_date.unwrap_or(""))?),
         _ => return Err(AppError::Validation("End must be never, after, or on.".into())),
     };

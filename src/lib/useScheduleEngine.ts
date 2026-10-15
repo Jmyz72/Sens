@@ -73,11 +73,11 @@ export function useScheduleEngine(version: number, reload: () => Promise<void>) 
   runRef.current = async () => {
     try {
       const pass = await client.runSchedulePass();
+      arm(pass.nextWakeAt);
       if (pass.posted.length > 0) {
         addAway(pass.posted);
         await reloadRef.current();
       }
-      arm(pass.nextWakeAt);
       await loadUpcoming();
     } catch {
       // The next focus tries the pass again.
@@ -105,9 +105,9 @@ export function useScheduleEngine(version: number, reload: () => Promise<void>) 
     await write();
     try {
       const pass = await client.runSchedulePass();
+      arm(pass.nextWakeAt);
       addAway(pass.posted);
       await reloadRef.current();
-      arm(pass.nextWakeAt);
       await loadUpcoming();
     } catch {
       // The schedule is already saved. The next focus runs the pass again.

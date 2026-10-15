@@ -267,6 +267,9 @@ interface OccurrenceRow {
 const schedules: Schedule[] = [];
 const occurrences: OccurrenceRow[] = [];
 
+/** The last non-database reason a pass could not post a schedule; lists show it as the block reason. */
+const passFailures = new Map<string, string>();
+
 /** Test hook: a copy of the settled occurrence rows. */
 export function mockOccurrences(): OccurrenceRow[] {
   return occurrences.map((row) => ({ ...row }));
@@ -741,6 +744,8 @@ function prepareSchedule(input: ScheduleWrite): ScheduleWrite {
     if (!isHHMM(raw)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
     write.time = raw;
   } else {
+    const raw = typeof write.time === "string" ? write.time.trim() : "";
+    if (raw && !isHHMM(raw)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
     write.time = null;
   }
   const reason = validateRule(ruleFrom(write));
@@ -803,9 +808,13 @@ function postingBlock(schedule: Schedule): string | null {
   }
 }
 
+function blockText(schedule: Schedule): string | null {
+  return postingBlock(schedule) ?? passFailures.get(schedule.id) ?? null;
+}
+
 function blockReasonFor(schedule: Schedule, at: Date): string | null {
   if (dueDates(schedule, at).length === 0) return null;
-  return postingBlock(schedule);
+  return blockText(schedule);
 }
 
 function present(schedule: Schedule, at: Date): Schedule {
@@ -870,8 +879,11 @@ function runPass(): SchedulePass {
     for (const date of due) {
       try {
         posted.push(settlePost(schedule, schedule.amountCents, date));
+        passFailures.delete(schedule.id);
       } catch (err) {
-        if (appFailure(err)?.code === "DatabaseError") throw err;
+        const failure = appFailure(err);
+        if (failure?.code === "DatabaseError") throw err;
+        if (failure) passFailures.set(schedule.id, failure.message);
         break;
       }
     }
@@ -917,6 +929,7 @@ function updateSchedule(id: string, input: ScheduleWrite): Schedule {
     monthDays: [...write.monthDays],
     months: [...write.months],
   });
+  passFailures.delete(id);
   return present(row, clock());
 }
 
@@ -924,6 +937,7 @@ function deleteSchedule(id: string): void {
   const index = schedules.findIndex((row) => row.id === id);
   if (index < 0) fail("NotFound", "Schedule not found");
   schedules.splice(index, 1);
+  passFailures.delete(id);
   for (let i = occurrences.length - 1; i >= 0; i--) {
     if (occurrences[i].scheduleId === id) occurrences.splice(i, 1);
   }
@@ -937,9 +951,9 @@ function upcomingRows(): UpcomingOccurrence[] {
     if (schedule.mode !== "tap") continue;
     const due = dueDates(schedule, at);
     if (due.length === 0) continue;
-    const blockReason = postingBlock(schedule);
+    const blockReason = blockText(schedule);
     const label = labelFor(schedule);
-    const name = accounts.find((row) => row.id === schedule.accountId)?.name ?? "";
+    const name = accounts.find((row) => row.id === schedule.accountId)?.name ?? "Missing account";
     const time = showTime ? effectiveTime(schedule) : null;
     for (const date of due) {
       rows.push({
@@ -1401,6 +1415,7 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       goals.length = 0;
       schedules.length = 0;
       occurrences.length = 0;
+      passFailures.clear();
       seedCategories();
       return undefined as T;
     }

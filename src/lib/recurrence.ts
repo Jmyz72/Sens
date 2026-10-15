@@ -36,6 +36,7 @@ interface Series {
   found: string | null;
 }
 
+const MAX_END_COUNT = 2_147_483_647;
 const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 const WEEKDAY_LABELS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MONTH_LABELS = [
@@ -78,6 +79,7 @@ export function nextDue(rule: Rule, after: string, time: string | null): string 
   }
   const stamp = normalizeStamp(after);
   if (!stamp) return null;
+  if (time !== null && !parseTime(time)) return null;
   const series = emptySeries(stamp, normalizeTime(time));
   walk(rule, through, series);
   return series.found;
@@ -88,7 +90,7 @@ export function validateRule(rule: Rule): string | null {
   if (!Number.isInteger(rule.interval) || rule.interval < 1 || rule.interval > 999) {
     return "Repeat interval must be from 1 to 999.";
   }
-  if (rule.end.mode === "after" && rule.end.count < 1) {
+  if (rule.end.mode === "after" && (!Number.isInteger(rule.end.count) || rule.end.count < 1 || rule.end.count > MAX_END_COUNT)) {
     return "End count must be at least 1.";
   }
   if (rule.end.mode === "on") {
@@ -102,13 +104,18 @@ export function validateRule(rule: Rule): string | null {
     case "daily":
       return null;
     case "weekly":
-      return weekdayOffsets(rule.weekdays).length > 0 ? null : "Pick at least one weekday.";
+      return rule.weekdays.length > 0 && rule.weekdays.every((name) => weekdayOffset(name) !== null)
+        ? null
+        : "Pick at least one weekday.";
     case "monthly":
       return rule.monthMode === "each" ? validateMonthDays(rule.monthDays) : validateOrdinalDay(rule.ordinalDay);
     case "yearly": {
       const months = validateMonths(rule.months);
       if (months) return months;
-      return rule.monthMode === "each" ? validateDayOfMonth(rule.dayOfMonth) : validateOrdinalDay(rule.ordinalDay);
+      if (rule.monthMode !== "each") return validateOrdinalDay(rule.ordinalDay);
+      const day = validateDayOfMonth(rule.dayOfMonth);
+      if (day) return day;
+      return rule.months.some((month) => rule.dayOfMonth <= longestMonth(month)) ? null : "Pick at least one day of the month.";
     }
   }
 }
@@ -321,11 +328,21 @@ function mondayIndex(date: Ymd): number {
 }
 
 function validateMonthDays(days: number[]): string | null {
-  return days.some((day) => day >= 1 && day <= 31) ? null : "Pick at least one day of the month.";
+  return days.length > 0 && days.every((day) => Number.isInteger(day) && day >= 1 && day <= 31)
+    ? null
+    : "Pick at least one day of the month.";
 }
 
 function validateMonths(months: number[]): string | null {
-  return months.some((month) => month >= 1 && month <= 12) ? null : "Pick at least one month.";
+  return months.length > 0 && months.every((month) => Number.isInteger(month) && month >= 1 && month <= 12)
+    ? null
+    : "Pick at least one month.";
+}
+
+/** The most days month `month` (1..12) can have, counting February as 29. */
+function longestMonth(month: number): number {
+  if (month === 2) return 29;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
 }
 
 function validateDayOfMonth(day: number): string | null {
@@ -405,6 +422,14 @@ function uniqueInRange(values: number[], min: number, max: number): number[] {
   const kept = values.filter((value) => value >= min && value <= max);
   kept.sort((a, b) => a - b);
   return kept.filter((value, index) => index === 0 || value !== kept[index - 1]);
+}
+
+function parseTime(time: string): { hh: number; mm: number } | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(time);
+  if (!match) return null;
+  const hh = Number(match[1]);
+  const mm = Number(match[2]);
+  return hh > 23 || mm > 59 ? null : { hh, mm };
 }
 
 function normalizeTime(time: string | null): string {

@@ -142,7 +142,7 @@ pub fn validate_rule(rule: &Rule) -> Result<(), String> {
     match rule.frequency {
         Freq::Daily => Ok(()),
         Freq::Weekly => {
-            if rule.weekdays.iter().any(|day| parse_weekday(day).is_some()) {
+            if !rule.weekdays.is_empty() && rule.weekdays.iter().all(|day| parse_weekday(day).is_some()) {
                 Ok(())
             } else {
                 Err("Pick at least one weekday.".to_string())
@@ -155,7 +155,14 @@ pub fn validate_rule(rule: &Rule) -> Result<(), String> {
         Freq::Yearly => {
             validate_months(&rule.months)?;
             match rule.month_mode {
-                MonthMode::Each => validate_day_of_month(rule.day_of_month),
+                MonthMode::Each => {
+                    validate_day_of_month(rule.day_of_month)?;
+                    if rule.months.iter().any(|month| rule.day_of_month <= longest_month(*month)) {
+                        Ok(())
+                    } else {
+                        Err("Pick at least one day of the month.".to_string())
+                    }
+                }
                 MonthMode::OnThe => validate_ordinal_day(&rule.ordinal_day),
             }
         }
@@ -414,7 +421,7 @@ fn parse_weekday(name: &str) -> Option<Weekday> {
 }
 
 fn validate_month_days(days: &[i32]) -> Result<(), String> {
-    if days.iter().any(|day| (1..=31).contains(day)) {
+    if !days.is_empty() && days.iter().all(|day| (1..=31).contains(day)) {
         Ok(())
     } else {
         Err("Pick at least one day of the month.".to_string())
@@ -422,10 +429,19 @@ fn validate_month_days(days: &[i32]) -> Result<(), String> {
 }
 
 fn validate_months(months: &[i32]) -> Result<(), String> {
-    if months.iter().any(|month| (1..=12).contains(month)) {
+    if !months.is_empty() && months.iter().all(|month| (1..=12).contains(month)) {
         Ok(())
     } else {
         Err("Pick at least one month.".to_string())
+    }
+}
+
+/// The most days month `month` (1..=12) can have, counting February as 29.
+fn longest_month(month: i32) -> i32 {
+    match month {
+        2 => 29,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
     }
 }
 
@@ -622,6 +638,37 @@ mod tests {
             validate_rule(&rule_daily("2026-10-02", 1, End::After(0))).unwrap_err(),
             "End count must be at least 1."
         );
+    }
+
+    #[test]
+    fn validate_rule_rejects_any_bad_token_and_an_impossible_yearly_day() {
+        let mut weekly = rule_daily("2026-10-02", 1, End::Never);
+        weekly.frequency = Freq::Weekly;
+        weekly.weekdays = vec!["mon".into(), "funday".into()];
+        assert_eq!(validate_rule(&weekly).unwrap_err(), "Pick at least one weekday.");
+        weekly.weekdays = vec!["mon".into()];
+        assert!(validate_rule(&weekly).is_ok());
+
+        let mut monthly = rule_daily("2026-10-02", 1, End::Never);
+        monthly.frequency = Freq::Monthly;
+        monthly.month_days = vec![5, 32];
+        assert_eq!(validate_rule(&monthly).unwrap_err(), "Pick at least one day of the month.");
+        monthly.month_days = vec![5, 0];
+        assert_eq!(validate_rule(&monthly).unwrap_err(), "Pick at least one day of the month.");
+
+        let mut yearly = rule_daily("2026-10-02", 1, End::Never);
+        yearly.frequency = Freq::Yearly;
+        yearly.months = vec![10, 13];
+        yearly.day_of_month = 2;
+        assert_eq!(validate_rule(&yearly).unwrap_err(), "Pick at least one month.");
+        yearly.months = vec![2];
+        yearly.day_of_month = 30;
+        assert_eq!(validate_rule(&yearly).unwrap_err(), "Pick at least one day of the month.");
+        yearly.months = vec![2, 4];
+        assert!(validate_rule(&yearly).is_ok());
+        yearly.months = vec![2];
+        yearly.day_of_month = 29;
+        assert!(validate_rule(&yearly).is_ok());
     }
 
     #[test]

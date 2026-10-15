@@ -999,14 +999,21 @@ fn join_ints(items: &[i64]) -> String {
         .join(",")
 }
 
-fn split_ints(raw: &str) -> Vec<i64> {
+fn split_ints(raw: &str, column: usize) -> rusqlite::Result<Vec<i64>> {
     if raw.is_empty() {
-        Vec::new()
-    } else {
-        raw.split(',')
-            .filter_map(|part| part.parse().ok())
-            .collect()
+        return Ok(Vec::new());
     }
+    raw.split(',')
+        .map(|part| {
+            part.parse().map_err(|_| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    column,
+                    rusqlite::types::Type::Text,
+                    format!("Bad number '{part}' in a stored list").into(),
+                )
+            })
+        })
+        .collect()
 }
 
 fn map_schedule(r: &Row) -> rusqlite::Result<Schedule> {
@@ -1025,10 +1032,10 @@ fn map_schedule(r: &Row) -> rusqlite::Result<Schedule> {
         interval: r.get("interval")?,
         weekdays: split_strings(&r.get::<_, String>("weekdays")?),
         month_mode: r.get("month_mode")?,
-        month_days: split_ints(&r.get::<_, String>("month_days")?),
+        month_days: split_ints(&r.get::<_, String>("month_days")?, 14)?,
         ordinal: r.get("ordinal")?,
         ordinal_day: r.get("ordinal_day")?,
-        months: split_ints(&r.get::<_, String>("months")?),
+        months: split_ints(&r.get::<_, String>("months")?, 17)?,
         day_of_month: r.get("day_of_month")?,
         end_mode: r.get("end_mode")?,
         end_count: r.get("end_count")?,
