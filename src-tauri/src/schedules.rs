@@ -52,7 +52,7 @@ pub fn list_upcoming(conn: &Connection, now: NaiveDateTime) -> AppResult<Vec<Upc
         let account_name = repo::get_account(conn, &schedule.account_id)
             .map(|account| account.name)
             .unwrap_or_default();
-        let time = if times_on { schedule.time.clone() } else { None };
+        let time = effective_time(schedule, times_on);
         for date in due {
             rows.push(UpcomingOccurrence {
                 schedule_id: schedule.id.clone(),
@@ -85,8 +85,39 @@ pub fn post_occurrence(
     let schedule = repo::get_schedule(conn, schedule_id)?;
     let times_on = service::time_enabled(conn)?;
     ensure_open(conn, &schedule, date, now, times_on)?;
-    let tx = create_posted(conn, &schedule, amount_cents, date, times_on)?;
-    repo::insert_occurrence(conn, schedule_id, date, "posted", Some(&tx.id))?;
+    settle_post(conn, &schedule, amount_cents, date, times_on).map_err(|failure| failure.error)
+}
+
+struct PostFailure {
+    /// Set when the transaction committed but its occurrence row could not be linked.
+    tx: Option<Transaction>,
+    error: AppError,
+}
+
+/// Insert the settled row first, then create the transaction, then link them.
+/// The row exists before the transaction does, so a retry never posts twice.
+fn settle_post(
+    conn: &Connection,
+    schedule: &Schedule,
+    amount_cents: i64,
+    date: &str,
+    times_on: bool,
+) -> Result<Transaction, PostFailure> {
+    repo::insert_occurrence(conn, &schedule.id, date, "posted", None)
+        .map_err(|error| PostFailure { tx: None, error })?;
+    let tx = match create_posted(conn, schedule, amount_cents, date, times_on) {
+        Ok(tx) => tx,
+        Err(error) => {
+            let error = match repo::delete_occurrence(conn, &schedule.id, date) {
+                Ok(()) => error,
+                Err(cleanup) => cleanup,
+            };
+            return Err(PostFailure { tx: None, error });
+        }
+    };
+    if let Err(error) = repo::set_occurrence_transaction(conn, &schedule.id, date, &tx.id) {
+        return Err(PostFailure { tx: Some(tx), error });
+    }
     Ok(tx)
 }
 
@@ -103,6 +134,7 @@ pub fn run_pass(conn: &Connection, now: NaiveDateTime) -> AppResult<SchedulePass
     let schedules = repo::list_schedules(conn)?;
     let mut posted = Vec::new();
     let mut wakes = Vec::new();
+    let mut first_error: Option<AppError> = None;
     for schedule in &schedules {
         let rule = rule_from(schedule)?;
         if let Some(wake) = recurrence::next_due(&rule, now, due_clock(schedule, times_on)) {
@@ -119,14 +151,23 @@ pub fn run_pass(conn: &Connection, now: NaiveDateTime) -> AppResult<SchedulePass
         }
         for date in due {
             let ymd = ymd(date);
-            match create_posted(conn, schedule, schedule.amount_cents, &ymd, times_on) {
-                Ok(tx) => {
-                    repo::insert_occurrence(conn, &schedule.id, &ymd, "posted", Some(&tx.id))?;
-                    posted.push(tx);
+            match settle_post(conn, schedule, schedule.amount_cents, &ymd, times_on) {
+                Ok(tx) => posted.push(tx),
+                Err(PostFailure { tx, error }) => {
+                    if let Some(tx) = tx {
+                        posted.push(tx);
+                    }
+                    if let AppError::Database(_) = error {
+                        first_error.get_or_insert(error);
+                    }
+                    break;
                 }
-                Err(AppError::Database(message)) => return Err(AppError::Database(message)),
-                Err(_) => break,
             }
+        }
+    }
+    if posted.is_empty() {
+        if let Some(error) = first_error {
+            return Err(error);
         }
     }
     posted.sort_by(|a, b| a.transaction_date.cmp(&b.transaction_date).then(a.id.cmp(&b.id)));
@@ -150,6 +191,7 @@ fn block_reason(conn: &Connection, schedule: &Schedule, now: NaiveDateTime, time
 }
 
 fn posting_block(conn: &Connection, schedule: &Schedule) -> AppResult<Option<String>> {
+    let times_on = service::time_enabled(conn)?;
     match validate_posting(
         conn,
         &schedule.kind,
@@ -157,7 +199,7 @@ fn posting_block(conn: &Connection, schedule: &Schedule) -> AppResult<Option<Str
         &schedule.account_id,
         schedule.to_account_id.as_deref(),
         schedule.category_id.as_deref(),
-        schedule.time.as_deref(),
+        effective_time(schedule, times_on).as_deref(),
     ) {
         Ok(()) => Ok(None),
         Err(AppError::Database(message)) => Err(AppError::Database(message)),
@@ -349,6 +391,15 @@ fn due_dates(
     Ok(dates)
 }
 
+/// The time a posting uses: the stored time, or `00:00` when times are on and
+/// the schedule was saved while they were off. `None` while times are off.
+fn effective_time(schedule: &Schedule, times_on: bool) -> Option<String> {
+    if !times_on {
+        return None;
+    }
+    Some(schedule.time.clone().unwrap_or_else(|| "00:00".to_string()))
+}
+
 fn due_clock(schedule: &Schedule, times_on: bool) -> NaiveTime {
     if !times_on {
         return NaiveTime::MIN;
@@ -363,7 +414,8 @@ fn create_posted(
     date: &str,
     times_on: bool,
 ) -> AppResult<Transaction> {
-    let time = if times_on { schedule.time.as_deref() } else { None };
+    let time = effective_time(schedule, times_on);
+    let time = time.as_deref();
     let description = schedule.description.as_deref();
     match schedule.kind.as_str() {
         KIND_INCOME => service::create_income(

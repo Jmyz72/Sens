@@ -3457,4 +3457,87 @@ mod schedule_tests {
         assert!(schedules::run_pass(&c, now).unwrap().posted.is_empty());
         assert!(schedules::list_upcoming(&c, now).unwrap().is_empty());
     }
+
+    fn block_settle_writes(conn: &Connection) {
+        conn.execute_batch(
+            "CREATE TRIGGER fail_settle_insert BEFORE INSERT ON schedule_occurrences
+             WHEN NEW.transaction_id IS NOT NULL BEGIN SELECT RAISE(ABORT, 'settle failed'); END;
+             CREATE TRIGGER fail_settle_update BEFORE UPDATE OF transaction_id ON schedule_occurrences
+             WHEN NEW.transaction_id IS NOT NULL BEGIN SELECT RAISE(ABORT, 'settle failed'); END;",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn tap_post_never_double_posts_when_the_settle_step_fails() {
+        let c = test_db();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let mut input = salary_schedule(&a.id, &cat);
+        input.mode = "tap".into();
+        let due = at("2026-10-25T09:00");
+        let saved = schedules::create_schedule(&c, input, due).unwrap();
+        block_settle_writes(&c);
+        assert!(schedules::post_occurrence(&c, &saved.id, "2026-10-25", 500_000, due).is_err());
+        assert_eq!(kinds(&c, "income").len(), 1);
+        assert_eq!(table_count(&c, "schedule_occurrences"), 1);
+        assert!(schedules::post_occurrence(&c, &saved.id, "2026-10-25", 500_000, due).is_err());
+        assert_eq!(kinds(&c, "income").len(), 1);
+        assert_eq!(table_count(&c, "schedule_occurrences"), 1);
+    }
+
+    #[test]
+    fn run_pass_keeps_posted_transactions_when_the_settle_step_fails() {
+        let c = test_db();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let due = at("2026-10-25T09:00");
+        schedules::create_schedule(&c, salary_schedule(&a.id, &cat), due).unwrap();
+        block_settle_writes(&c);
+        let pass = schedules::run_pass(&c, due).unwrap();
+        assert_eq!(pass.posted.len(), 1);
+        assert_eq!(kinds(&c, "income").len(), 1);
+        assert_eq!(table_count(&c, "schedule_occurrences"), 1);
+        assert!(schedules::run_pass(&c, due).unwrap().posted.is_empty());
+        assert_eq!(kinds(&c, "income").len(), 1);
+    }
+
+    #[test]
+    fn schedules_saved_with_times_off_post_at_midnight_once_times_are_on() {
+        let c = test_db();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let early = at("2026-10-25T08:00");
+        let auto = schedules::create_schedule(&c, salary_schedule(&a.id, &cat), early).unwrap();
+        let mut tap_input = salary_schedule(&a.id, &cat);
+        tap_input.mode = "tap".into();
+        tap_input.description = Some("Tap".into());
+        schedules::create_schedule(&c, tap_input, early).unwrap();
+        assert!(auto.time.is_none());
+        service::set_setting(&c, "transaction_time_enabled", "1").unwrap();
+        let now = at("2026-10-25T12:00");
+        let upcoming = schedules::list_upcoming(&c, now).unwrap();
+        assert_eq!(upcoming.len(), 1);
+        assert!(upcoming[0].block_reason.is_none());
+        assert_eq!(upcoming[0].time.as_deref(), Some("00:00"));
+        let pass = schedules::run_pass(&c, now).unwrap();
+        assert_eq!(pass.posted.len(), 1);
+        assert_eq!(pass.posted[0].transaction_time.as_deref(), Some("00:00"));
+    }
+
+    #[test]
+    fn create_and_update_store_only_until_the_pass_runs() {
+        let c = test_db();
+        let a = acct(&c, "Salary", 0);
+        let cat = income_cat(&c);
+        let due = at("2026-10-25T09:00");
+        let saved = schedules::create_schedule(&c, salary_schedule(&a.id, &cat), due).unwrap();
+        assert_eq!(table_count(&c, "transactions"), 1);
+        let mut edited = salary_schedule(&a.id, &cat);
+        edited.amount_cents = 600_000;
+        schedules::update_schedule(&c, &saved.id, edited, due).unwrap();
+        assert_eq!(table_count(&c, "transactions"), 1);
+        assert_eq!(table_count(&c, "schedule_occurrences"), 0);
+        assert_eq!(schedules::run_pass(&c, due).unwrap().posted.len(), 1);
+    }
 }

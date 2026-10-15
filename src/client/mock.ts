@@ -267,6 +267,26 @@ interface OccurrenceRow {
 const schedules: Schedule[] = [];
 const occurrences: OccurrenceRow[] = [];
 
+/** Test hook: a copy of the settled occurrence rows. */
+export function mockOccurrences(): OccurrenceRow[] {
+  return occurrences.map((row) => ({ ...row }));
+}
+
+/** Insert the settled row first, then create the transaction, then link them. */
+function settlePost(schedule: Schedule, amountCents: number, date: string): Transaction {
+  const row: OccurrenceRow = { scheduleId: schedule.id, occurrenceDate: date, status: "posted", transactionId: null };
+  occurrences.push(row);
+  try {
+    const tx = createPosted(schedule, amountCents, date);
+    row.transactionId = tx.id;
+    return tx;
+  } catch (err) {
+    const index = occurrences.indexOf(row);
+    if (index >= 0) occurrences.splice(index, 1);
+    throw err;
+  }
+}
+
 function timeEnabled(): boolean {
   return settings.get("transaction_time_enabled") !== "0";
 }
@@ -729,6 +749,12 @@ function prepareSchedule(input: ScheduleWrite): ScheduleWrite {
   return write;
 }
 
+/** The stored time, or 00:00 when times are on and it was saved while they were off. */
+function effectiveTime(schedule: Schedule): string | null {
+  if (!timeEnabled()) return null;
+  return schedule.time ?? "00:00";
+}
+
 function scheduleTime(schedule: Schedule): string | null {
   return schedule.time && isHHMM(schedule.time) ? schedule.time : null;
 }
@@ -768,7 +794,7 @@ function ensureOpen(schedule: Schedule, date: string, at: Date): void {
 
 function postingBlock(schedule: Schedule): string | null {
   try {
-    validatePosting(schedule.kind, schedule.amountCents, schedule.accountId, schedule.toAccountId, schedule.categoryId, schedule.time);
+    validatePosting(schedule.kind, schedule.amountCents, schedule.accountId, schedule.toAccountId, schedule.categoryId, effectiveTime(schedule));
     return null;
   } catch (err) {
     const parsed = appFailure(err);
@@ -809,7 +835,7 @@ function labelFor(schedule: Schedule): string {
 }
 
 function createPosted(schedule: Schedule, amountCents: number, date: string): Transaction {
-  const time = timeEnabled() ? schedule.time : null;
+  const time = effectiveTime(schedule);
   const description = schedule.description;
   if (schedule.kind === "income" || schedule.kind === "expense") {
     return addIncomeOrExpense(schedule.kind, {
@@ -843,9 +869,7 @@ function runPass(): SchedulePass {
     if (due.length === 0 || postingBlock(schedule) != null) continue;
     for (const date of due) {
       try {
-        const tx = createPosted(schedule, schedule.amountCents, date);
-        occurrences.push({ scheduleId: schedule.id, occurrenceDate: date, status: "posted", transactionId: tx.id });
-        posted.push(tx);
+        posted.push(settlePost(schedule, schedule.amountCents, date));
       } catch (err) {
         if (appFailure(err)?.code === "DatabaseError") throw err;
         break;
@@ -916,7 +940,7 @@ function upcomingRows(): UpcomingOccurrence[] {
     const blockReason = postingBlock(schedule);
     const label = labelFor(schedule);
     const name = accounts.find((row) => row.id === schedule.accountId)?.name ?? "";
-    const time = showTime ? schedule.time : null;
+    const time = showTime ? effectiveTime(schedule) : null;
     for (const date of due) {
       rows.push({
         scheduleId: schedule.id,
@@ -938,9 +962,7 @@ function postOccurrence(scheduleId: string, date: string, amountCents: number): 
   const schedule = findSchedule(scheduleId);
   const at = clock();
   ensureOpen(schedule, date, at);
-  const tx = createPosted(schedule, amountCents, date);
-  occurrences.push({ scheduleId, occurrenceDate: date, status: "posted", transactionId: tx.id });
-  return tx;
+  return settlePost(schedule, amountCents, date);
 }
 
 function skipOccurrence(scheduleId: string, date: string): void {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { client } from "../client";
-import { setMockNow } from "../client/mock";
+import { mockOccurrences, setMockNow } from "../client/mock";
 import type { ScheduleWrite } from "../types";
 
 beforeEach(async () => {
@@ -331,5 +331,51 @@ describe("mock schedules", () => {
     expect(await client.getSetting("transaction_time_enabled")).toBeNull();
     expect(await client.listSchedules()).toEqual([]);
     expect(await client.listUpcoming()).toEqual([]);
+  });
+
+  it("posts at 00:00 and does not block a schedule saved while times were off", async () => {
+    setMockNow("2026-10-25T08:00");
+    const acc = await account("Salary");
+    const cat = await categoryId("income");
+    await client.setSetting("transaction_time_enabled", "0");
+    const auto = await client.createSchedule(salary(acc.id, cat));
+    await client.createSchedule({ ...salary(acc.id, cat), mode: "tap", description: "Tap" });
+    expect(auto.time).toBeNull();
+    await client.setSetting("transaction_time_enabled", "1");
+    setMockNow("2026-10-25T12:00");
+    const upcoming = await client.listUpcoming();
+    expect(upcoming).toHaveLength(1);
+    expect(upcoming[0].blockReason).toBeNull();
+    expect(upcoming[0].time).toBe("00:00");
+    const pass = await client.runSchedulePass();
+    expect(pass.posted).toHaveLength(1);
+    expect(pass.posted[0].transactionTime).toBe("00:00");
+  });
+
+  it("create and update write no transactions until the pass runs", async () => {
+    setMockNow("2026-10-25T09:00");
+    const acc = await account("Salary");
+    const cat = await categoryId("income");
+    const before = (await client.listTransactions({ accountId: acc.id })).length;
+    const saved = await client.createSchedule(salary(acc.id, cat));
+    await client.updateSchedule(saved.id, { ...salary(acc.id, cat), amountCents: 600_000 });
+    expect((await client.listTransactions({ accountId: acc.id })).length).toBe(before);
+    expect(mockOccurrences()).toEqual([]);
+    expect((await client.runSchedulePass()).posted).toHaveLength(1);
+  });
+
+  it("keeps a posted occurrence with a null transaction id after the transaction is deleted", async () => {
+    setMockNow("2026-10-25T09:00");
+    const acc = await account("Salary");
+    const cat = await categoryId("income");
+    const saved = await client.createSchedule({ ...salary(acc.id, cat), mode: "tap" });
+    const posted = await client.postScheduleOccurrence(saved.id, "2026-10-25", 125_000);
+    expect(mockOccurrences()).toEqual([
+      { scheduleId: saved.id, occurrenceDate: "2026-10-25", status: "posted", transactionId: posted.id },
+    ]);
+    await client.deleteTransaction(posted.id);
+    expect(mockOccurrences()).toEqual([
+      { scheduleId: saved.id, occurrenceDate: "2026-10-25", status: "posted", transactionId: null },
+    ]);
   });
 });

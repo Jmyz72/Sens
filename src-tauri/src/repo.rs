@@ -1192,6 +1192,28 @@ pub fn insert_occurrence(
     Ok(())
 }
 
+pub fn set_occurrence_transaction(
+    conn: &Connection,
+    schedule_id: &str,
+    occurrence_date: &str,
+    transaction_id: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "UPDATE schedule_occurrences SET transaction_id = ?3
+         WHERE schedule_id = ?1 AND occurrence_date = ?2",
+        params![schedule_id, occurrence_date, transaction_id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_occurrence(conn: &Connection, schedule_id: &str, occurrence_date: &str) -> AppResult<()> {
+    conn.execute(
+        "DELETE FROM schedule_occurrences WHERE schedule_id = ?1 AND occurrence_date = ?2",
+        params![schedule_id, occurrence_date],
+    )?;
+    Ok(())
+}
+
 pub fn occurrence_status(
     conn: &Connection,
     schedule_id: &str,
