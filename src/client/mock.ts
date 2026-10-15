@@ -275,19 +275,11 @@ export function mockOccurrences(): OccurrenceRow[] {
   return occurrences.map((row) => ({ ...row }));
 }
 
-/** Insert the settled row first, then create the transaction, then link them. */
+/** The transaction and the settled date are recorded together. A failed create leaves neither. */
 function settlePost(schedule: Schedule, amountCents: number, date: string): Transaction {
-  const row: OccurrenceRow = { scheduleId: schedule.id, occurrenceDate: date, status: "posted", transactionId: null };
-  occurrences.push(row);
-  try {
-    const tx = createPosted(schedule, amountCents, date);
-    row.transactionId = tx.id;
-    return tx;
-  } catch (err) {
-    const index = occurrences.indexOf(row);
-    if (index >= 0) occurrences.splice(index, 1);
-    throw err;
-  }
+  const tx = createPosted(schedule, amountCents, date);
+  occurrences.push({ scheduleId: schedule.id, occurrenceDate: date, status: "posted", transactionId: tx.id });
+  return tx;
 }
 
 function timeEnabled(): boolean {

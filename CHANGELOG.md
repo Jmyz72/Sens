@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Record transaction times** is on until you turn it off. A fresh install and a factory reset ask for a time on new transactions.
 
 ### Fixed
+- Editing a schedule saved with no time keeps the post at midnight. A failed post does not move the balance, and that date can be posted again. A new schedule's repeat follows the first date until the pattern is customized.
 - A schedule that fails to load during the schedule pass no longer hides transactions already auto-posted for other schedules.
 
 ### Added

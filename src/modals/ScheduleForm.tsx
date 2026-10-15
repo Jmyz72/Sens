@@ -2,13 +2,14 @@
 // Custom edits the pattern and leaves that date where it is.
 
 import { useMemo, useState, type ReactNode } from "react";
-import type { Account, Category, Schedule, ScheduleEndMode, ScheduleFrequency, ScheduleKind, ScheduleMonthMode, ScheduleOrdinal, ScheduleWrite } from "../types";
+import type { Account, Category, Schedule, ScheduleEndMode, ScheduleFrequency, ScheduleKind, ScheduleOrdinal, ScheduleWrite } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { hexA } from "../theme/tokens";
 import { Btn, Field, Modal, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { nowTimeHHMM, parseAmountToCents, todayISO } from "../lib/format";
+import { initialScheduleTime, partsOf, patternAfterFirstDate, presetPattern, type SchedulePattern } from "../lib/scheduleForm";
 import { KIND_META, kindColor } from "../lib/kinds";
 import { isPaymentSource, movementKind } from "../lib/payments";
 import { appendMissingSelection, categoryPickerItems } from "../lib/categories";
@@ -33,47 +34,7 @@ const REPEAT: { id: ScheduleFrequency | "custom"; label: string }[] = [
   { id: "custom", label: "Custom" },
 ];
 
-interface Pattern {
-  frequency: ScheduleFrequency;
-  interval: number;
-  weekdays: string[];
-  monthMode: ScheduleMonthMode;
-  monthDays: number[];
-  ordinal: ScheduleOrdinal;
-  ordinalDay: string;
-  months: number[];
-  dayOfMonth: number;
-}
-
-interface DateParts {
-  day: number;
-  month: number;
-  weekday: string;
-}
-
-function partsOf(iso: string): DateParts | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(year, month - 1, day);
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
-  const js = date.getDay();
-  return { day, month, weekday: WEEKDAYS[js === 0 ? 6 : js - 1] };
-}
-
-function presetPattern(frequency: ScheduleFrequency, start: string, current: Pattern): Pattern {
-  const parts = partsOf(start);
-  const next: Pattern = { ...current, frequency, interval: 1 };
-  if (!parts) return next;
-  if (frequency === "weekly") return { ...next, weekdays: [parts.weekday] };
-  if (frequency === "monthly") return { ...next, monthMode: "each", monthDays: [parts.day] };
-  if (frequency === "yearly") return { ...next, monthMode: "each", months: [parts.month], dayOfMonth: parts.day };
-  return next;
-}
-
-function patternFrom(schedule: Schedule): Pattern {
+function patternFrom(schedule: Schedule): SchedulePattern {
   return {
     frequency: schedule.frequency,
     interval: schedule.interval,
@@ -152,13 +113,13 @@ export function ScheduleForm({ accounts, categories, schedule, onClose, onSaved 
   const [mode, setMode] = useState(schedule?.mode ?? "tap");
   const [startDate, setStartDate] = useState(initialStart);
   const [repeat, setRepeat] = useState<ScheduleFrequency | "custom">(schedule ? repeatChoice(schedule) : "monthly");
-  const [pattern, setPattern] = useState<Pattern>(() => schedule ? patternFrom(schedule) : presetPattern("monthly", initialStart, {
+  const [pattern, setPattern] = useState<SchedulePattern>(() => schedule ? patternFrom(schedule) : presetPattern("monthly", initialStart, {
     frequency: "monthly", interval: 1, weekdays: [], monthMode: "each", monthDays: [], ordinal: "first", ordinalDay: "weekday", months: [], dayOfMonth: 1,
   }));
   const [endMode, setEndMode] = useState<ScheduleEndMode>(schedule?.endMode ?? "never");
   const [endCount, setEndCount] = useState(schedule?.endCount ?? 1);
   const [endDate, setEndDate] = useState(schedule?.endDate ?? initialStart);
-  const [time, setTime] = useState(schedule?.time ?? nowTimeHHMM());
+  const [time, setTime] = useState(() => initialScheduleTime(schedule?.time, nowTimeHHMM()));
   const [accountId, setAccountId] = useState(schedule?.accountId ?? active[0]?.id ?? "");
   const [toAccountId, setToAccountId] = useState(schedule?.toAccountId ?? "");
   const [categoryId, setCategoryId] = useState(
@@ -196,6 +157,11 @@ export function ScheduleForm({ accounts, categories, schedule, onClose, onSaved 
   };
   const summary = ruleSummary(rule);
   const ruleError = validateRule(rule);
+
+  function changeStart(next: string) {
+    setStartDate(next);
+    setPattern((current) => patternAfterFirstDate(schedule != null, repeat, next, current));
+  }
 
   function chooseRepeat(next: ScheduleFrequency | "custom") {
     setRepeat(next);
@@ -355,7 +321,7 @@ export function ScheduleForm({ accounts, categories, schedule, onClose, onSaved 
         </div>
 
         <Field label="First date">
-          <input className="sens-input" aria-label="First date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle(t)} />
+          <input className="sens-input" aria-label="First date" type="date" value={startDate} onChange={(e) => changeStart(e.target.value)} style={inputStyle(t)} />
         </Field>
 
         <div>

@@ -3468,6 +3468,10 @@ mod schedule_tests {
         .unwrap();
     }
 
+    fn drop_settle_blocks(conn: &Connection) {
+        conn.execute_batch("DROP TRIGGER fail_settle_insert; DROP TRIGGER fail_settle_update;").unwrap();
+    }
+
     #[test]
     fn tap_post_never_double_posts_when_the_settle_step_fails() {
         let c = test_db();
@@ -3479,11 +3483,22 @@ mod schedule_tests {
         let saved = schedules::create_schedule(&c, input, due).unwrap();
         block_settle_writes(&c);
         assert!(schedules::post_occurrence(&c, &saved.id, "2026-10-25", 500_000, due).is_err());
-        assert_eq!(kinds(&c, "income").len(), 1);
+        assert_eq!(kinds(&c, "income").len(), 0);
+        assert_eq!(table_count(&c, "schedule_occurrences"), 0);
+        drop_settle_blocks(&c);
+        let posted = schedules::post_occurrence(&c, &saved.id, "2026-10-25", 500_000, due).unwrap();
+        let incomes = kinds(&c, "income");
+        assert_eq!(incomes.len(), 1);
+        assert_eq!(incomes[0].id, posted.id);
         assert_eq!(table_count(&c, "schedule_occurrences"), 1);
-        assert!(schedules::post_occurrence(&c, &saved.id, "2026-10-25", 500_000, due).is_err());
-        assert_eq!(kinds(&c, "income").len(), 1);
-        assert_eq!(table_count(&c, "schedule_occurrences"), 1);
+        let linked: String = c
+            .query_row(
+                "SELECT transaction_id FROM schedule_occurrences WHERE schedule_id = ?1",
+                [&saved.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(linked, posted.id);
     }
 
     #[test]
@@ -3494,12 +3509,19 @@ mod schedule_tests {
         let due = at("2026-10-25T09:00");
         schedules::create_schedule(&c, salary_schedule(&a.id, &cat), due).unwrap();
         block_settle_writes(&c);
+        assert!(schedules::run_pass(&c, due).is_err());
+        assert_eq!(kinds(&c, "income").len(), 0);
+        assert_eq!(table_count(&c, "schedule_occurrences"), 0);
+        drop_settle_blocks(&c);
         let pass = schedules::run_pass(&c, due).unwrap();
         assert_eq!(pass.posted.len(), 1);
         assert_eq!(kinds(&c, "income").len(), 1);
+        assert_eq!(kinds(&c, "income")[0].id, pass.posted[0].id);
         assert_eq!(table_count(&c, "schedule_occurrences"), 1);
-        assert!(schedules::run_pass(&c, due).unwrap().posted.is_empty());
-        assert_eq!(kinds(&c, "income").len(), 1);
+        let linked: String = c
+            .query_row("SELECT transaction_id FROM schedule_occurrences", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(linked, pass.posted[0].id);
     }
 
     #[test]

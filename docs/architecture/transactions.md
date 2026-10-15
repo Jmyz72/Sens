@@ -173,10 +173,9 @@ rows are **calculated** from the rule and `now`; they are not stored until Post 
 - **`recurrence::next_due`** walks forward to the next real occurrence; it does not stop after one empty
   month. Editing a schedule moves unposted, unskipped future dates; posted and skipped dates stay settled.
 - An archived account blocks Post but still allows Skip. Factory reset clears both tables.
-- **Known limitation:** `settle_post` inserts the occurrence row before the service creates the
-  transaction (they cannot share one SQL transaction), so a crash between the two leaves a settled date
-  with no transaction. Only auto schedules record non-database failures in the in-process failure map,
-  and that map is lost on restart.
+- A posted date, its transaction, and the link between them commit in one database transaction.
+  A failure leaves no transaction and no occurrence, so that date can be posted again. Only auto
+  schedules record non-database failures in the in-process failure map, and that map is lost on restart.
 
 Spec: `docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`.
 

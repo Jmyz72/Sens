@@ -1213,14 +1213,6 @@ pub fn set_occurrence_transaction(
     Ok(())
 }
 
-pub fn delete_occurrence(conn: &Connection, schedule_id: &str, occurrence_date: &str) -> AppResult<()> {
-    conn.execute(
-        "DELETE FROM schedule_occurrences WHERE schedule_id = ?1 AND occurrence_date = ?2",
-        params![schedule_id, occurrence_date],
-    )?;
-    Ok(())
-}
-
 pub fn occurrence_status(
     conn: &Connection,
     schedule_id: &str,

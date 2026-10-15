@@ -119,38 +119,24 @@ pub fn post_occurrence(
     let schedule = repo::get_schedule(conn, schedule_id)?;
     let times_on = service::time_enabled(conn)?;
     ensure_open(conn, &schedule, date, now, times_on)?;
-    settle_post(conn, &schedule, amount_cents, date, times_on).map_err(|failure| failure.error)
+    settle_post(conn, &schedule, amount_cents, date, times_on)
 }
 
-struct PostFailure {
-    /// Set when the transaction committed but its occurrence row could not be linked.
-    tx: Option<Transaction>,
-    error: AppError,
-}
-
-/// Insert the settled row first, then create the transaction, then link them.
-/// The row exists before the transaction does, so a retry never posts twice.
+/// The occurrence, the transaction and its postings, and the link commit together.
+/// A failure leaves none of them, so a later attempt can post the same date.
 fn settle_post(
     conn: &Connection,
     schedule: &Schedule,
     amount_cents: i64,
     date: &str,
     times_on: bool,
-) -> Result<Transaction, PostFailure> {
-    repo::insert_occurrence(conn, &schedule.id, date, "posted", None)
-        .map_err(|error| PostFailure { tx: None, error })?;
-    let tx = match create_posted(conn, schedule, amount_cents, date, times_on) {
-        Ok(tx) => tx,
-        Err(error) => {
-            // Best effort: the original failure is what the caller needs to see.
-            let _ = repo::delete_occurrence(conn, &schedule.id, date);
-            return Err(PostFailure { tx: None, error });
-        }
-    };
-    if let Err(error) = repo::set_occurrence_transaction(conn, &schedule.id, date, &tx.id) {
-        return Err(PostFailure { tx: Some(tx), error });
-    }
-    Ok(tx)
+) -> AppResult<Transaction> {
+    let tx = conn.unchecked_transaction()?;
+    repo::insert_occurrence(&tx, &schedule.id, date, "posted", None)?;
+    let posted = create_posted(&tx, schedule, amount_cents, date, times_on)?;
+    repo::set_occurrence_transaction(&tx, &schedule.id, date, &posted.id)?;
+    tx.commit()?;
+    Ok(posted)
 }
 
 pub fn skip_occurrence(conn: &Connection, schedule_id: &str, date: &str, now: NaiveDateTime) -> AppResult<()> {
@@ -208,11 +194,8 @@ pub fn run_pass(conn: &Connection, now: NaiveDateTime) -> AppResult<SchedulePass
                     clear_failure(&schedule.id);
                     posted.push(tx);
                 }
-                Err(PostFailure { tx, error }) => {
-                    if let Some(tx) = tx {
-                        posted.push(tx);
-                    }
-                    if let AppError::Database(_) = error {
+                Err(error) => {
+                    if let AppError::Database(_) = &error {
                         first_error.get_or_insert(error);
                     } else {
                         record_failure(&schedule.id, &error.to_string());
