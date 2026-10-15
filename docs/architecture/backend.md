@@ -90,7 +90,20 @@ The UI never touches SQL.
 
 Plan commands (mirrored in `mock.ts`): `get_plan`, `set_budgets`, `create_goal`, `update_goal`, `delete_goal`.
 
-Schedule commands (mirrored in `mock.ts`): `list_schedules`, `create_schedule`, `update_schedule`, `delete_schedule`, `list_upcoming`, `post_occurrence`, `skip_occurrence`, `run_schedule_pass`.
+Schedule commands (mirrored in `mock.ts`): `list_schedules`, `create_schedule`, `update_schedule`,
+`delete_schedule`, `list_upcoming`, `post_occurrence`, `skip_occurrence`, `run_schedule_pass`. Client
+wrappers: `client.postScheduleOccurrence` and `client.skipScheduleOccurrence` (plus the other schedule
+helpers in `src/client/index.ts`).
+
+- **`create_schedule` / `update_schedule` / `delete_schedule`** only change `schedules` (and
+  `delete_schedule` cascades occurrence rows). They do **not** run the pass.
+- **`run_schedule_pass`** (`schedules::run_pass`) uses **`local_now()`**, auto-posts every due **auto**
+  schedule, returns `{ posted, nextWakeAt }`, and is what drives catch-up while Sens was closed or asleep.
+- **`list_upcoming`** is computed from tap schedules and the clock; **`post_occurrence`** /
+  **`skip_occurrence`** write `schedule_occurrences` and enforce open dates (settled dates →
+  **`ValidationError`**).
+- The React app invokes **`run_schedule_pass`** after every schedule save or delete and on open, focus,
+  and the next wake (`src/lib/useScheduleEngine.ts`).
 
 > ⚠ After migration 006, **a naive rebuild of `transactions` deletes every posting and split**
 > (`ON DELETE CASCADE`). Prefer `ALTER … ADD COLUMN` or a new table (as 007 and 009 do). If a table

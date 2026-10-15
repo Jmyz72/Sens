@@ -16,9 +16,9 @@ Read this before changing balance math, transaction validation, or dashboard tot
 - [Opening balance](#opening-balance)
 - [Excluded from reporting](#excluded-from-reporting)
 - [Transaction time](#transaction-time)
-- [Schedules](#schedules)
 - [Balance correction](#balance-correction)
 - [Update Net Worth](#update-net-worth)
+- [Schedules](#schedules)
 - [Category splits](#category-splits)
 - [Card and BNPL payments](#card-and-bnpl-payments)
 - [Reimbursements](#reimbursements)
@@ -119,20 +119,6 @@ Optional. A nullable `transaction_time TEXT` column holds 24-hour `"HH:MM"` or N
 - Mock mirror: `timeEnabled` / `resolveTime`.
 - A new schedule's time starts as the current minute while the setting is on. While it is off, schedules store no time.
 
-## Schedules
-
-A schedule is a saved income, expense, transfer, or payment plus a repeat rule. It is not a transaction until a pass or a tap posts one date.
-
-- **Auto** posts each due date. **Tap to post** leaves it on Upcoming until Post or Skip.
-- The pass runs when Sens opens, when the window focuses, when the next due time arrives, and when a schedule is saved or deleted.
-- Upcoming is due and overdue tap-to-post dates only. The Transactions sidebar count is that number, and it is hidden at zero.
-- Post can use a different amount for that one transaction. Skip writes no transaction. A schedule that cannot post shows the reason; Skip still works.
-- While you were away lists the transactions a pass wrote, then Dismiss closes it.
-- Repeat presets fill the pattern from the first date. A later change to that date does not rewrite the pattern. Custom edits the pattern and leaves the first date alone. Weeks start on Monday.
-- Factory reset deletes schedules and their occurrence rows.
-
-Spec: `docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`.
-
 ## Balance correction
 
 `set_account_balance` takes a **signed** target. The frontend negates the "Amount owed"
@@ -162,6 +148,30 @@ Income/expense corrections:
 rewrite the opening row. When **`diff == 0`**, nothing is written. A **saved category** on the account
 wins for that direction; otherwise the UI asks once and does not persist the pick. The row is **editable**
 because it is ordinary income or expense. Reporting and budgets already count it.
+
+## Schedules
+
+A schedule is a saved income, expense, transfer, or payment plus a repeat rule. **Migration 015** adds
+`schedules` (the template) and `schedule_occurrences` (posted or skipped dates only). Waiting tap-to-post
+rows are **calculated** from the rule and `now`; they are not stored until Post or Skip.
+
+- **Auto** posts each due date through **`run_schedule_pass`**. **Tap to post** leaves due dates on
+  **Upcoming** until Post or Skip.
+- **`create_schedule`** and **`update_schedule`** persist the template only; they do **not** run the pass.
+  The frontend calls **`run_schedule_pass`** after create, update, and delete, and also on app open, on
+  window focus, and when the wake timer fires (`useScheduleEngine` in `src/lib/useScheduleEngine.ts`).
+- The pass and due-date math use **local wall time**. **`transaction_time_enabled`** defaults **on**
+  (missing key = on; stored `"0"` = off); when off, schedules ignore stored times for due checks.
+- Auto-posted and tap-posted rows are **ordinary transactions** (same kinds and ledger rules as manual
+  entry). Deleting the schedule or the transaction does not reopen a settled date.
+- **`list_upcoming`** returns due and overdue tap-to-post dates only. Post can override the amount for
+  that one row (`client.postScheduleOccurrence`); Skip records a skipped occurrence with no transaction
+  (`client.skipScheduleOccurrence`). A date already posted or skipped returns **`ValidationError`**.
+- **`recurrence::next_due`** walks forward to the next real occurrence; it does not stop after one empty
+  month. Editing a schedule moves unposted, unskipped future dates; posted and skipped dates stay settled.
+- An archived account blocks Post but still allows Skip. Factory reset clears both tables.
+
+Spec: `docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`.
 
 ## Category splits
 

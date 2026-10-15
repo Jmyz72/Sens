@@ -37,6 +37,7 @@ Composed in `src/App.tsx` from `Sidebar.tsx` and `TopBar.tsx`.
 |---|---|
 | `src/components/Sidebar.tsx` | Collapsible: full 220 px ↔ 56 px icon rail with hover tooltips. State persisted in `localStorage` under `sens.sidebar`. Net-worth card shows only when expanded. |
 | `src/components/TopBar.tsx` | Title/subtitle, the month control on **Dashboard and Plan**, and a **Transaction-only** Add button. |
+| `src/lib/useScheduleEngine.ts` | Runs **`run_schedule_pass`** on mount, window focus, and the next due wake; loads **Upcoming**; accumulates **While you were away** when a pass returns posted rows; exposes **`commitSchedule`** so create/update/delete schedule then pass in one step. Wired from `src/App.tsx`. |
 | `src/nav.ts` | Nav config. **Overview** groups Dashboard and Plan. |
 | `src/components/Brand.tsx` | Brand mark (Coin S). |
 
@@ -78,12 +79,20 @@ Spec: `docs/superpowers/specs/2026-06-02-transactions-screen-redesign-design.md`
 - Date-range segmented control (This month / Last month / Custom / All), wired to `listTransactions` `fromDate` / `toDate`.
 - Sort by date or amount.
 - Compact / comfortable density toggle, persisted in `localStorage` under `sens.txn.density`.
-- **Schedules** opens the schedule list (add, edit, delete). The form has the Add Transaction fields for the kind, Tap to post or Auto, the first date, the repeat, the end, and the time while times are on.
+- **Schedules** opens the schedule list (add, edit, delete). Saves go through **`commitSchedule`** from
+  `useScheduleEngine` (write, then **`run_schedule_pass`**). The form reuses Add Transaction fields for
+  the kind, Tap to post or Auto, the first date, the repeat, the end, and the time while **Record
+  transaction times** is on (default on; stored `"0"` is off — see [App settings](#app-settings--window-config)).
 
 **List**
 
-- **Upcoming** sits above the date groups when a tap-to-post row is due. Post can change the amount. Skip leaves no transaction. A row that cannot post shows the reason and still allows Skip. The sidebar count on Transactions is the number of those rows, hidden at zero.
-- **While you were away** lists auto transactions a pass wrote. Dismiss closes it. Theme tokens only; kind color is paired with the sign and icon.
+- **Upcoming** sits above the date groups when a tap-to-post row is due. **Post** opens `PostOccurrence`
+  and calls **`client.postScheduleOccurrence`**. **Skip** calls **`client.skipScheduleOccurrence`**. A
+  row that cannot post shows the reason and still allows Skip. The Transactions sidebar badge is
+  **`upcomingCount`**, hidden at zero.
+- **While you were away** lists only the transactions **`run_schedule_pass`** returned on that pass (any
+  trigger, not just launch). Dismiss clears the notice. Theme tokens only; kind color is paired with the
+  sign and icon.
 - Date-grouped, with **sticky day headers showing the day's net subtotal**.
 - Aligned monospace amount column.
 - A category color dot on each glyph tile.
