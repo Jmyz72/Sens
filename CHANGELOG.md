@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-10-17
+
 ### Changed
 - Docs: cleaned up `ROADMAP.md` (status block reflects v0.10.0, shipped phases moved out of Planned, unreleased work marked). Refreshed `AGENTS.md` (scope now covers photo import, new photo-import privacy rule, a gotchas section, a done-checklist, and a less brittle Rust test-location note).
 - **Record transaction times** is on until you turn it off. A fresh install and a factory reset ask for a time on new transactions.
@@ -447,7 +449,8 @@ Design: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.m
   TypeScript + Vite, integer-MYR-cents money, dark/light theming, and the
   Tauri/in-memory-mock dispatch seam for browser-only dev.
 
-[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.10.0
 [0.9.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.9.0
