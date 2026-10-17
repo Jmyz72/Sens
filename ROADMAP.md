@@ -2,9 +2,9 @@
 
 Sens is built one **phase** at a time. **One phase = one release.** This file is the index; specs and plans hold the detail.
 
-> **Last shipped:** `v0.9.1` (Rust↔mock seed drift guard; latest feature `v0.9.0`, category splits)
-> **Next up:** Update Net Worth
-> Credit & debt behavior is complete and unreleased.
+> **Last shipped:** `v0.10.0` (credit limits, card/BNPL payments, reimbursements, budgets & goals)
+> **Unreleased:** Update Net Worth, Recurring & reminders, and photo import (Drafts)
+> **Next up:** Advanced search, filter & tags
 > **Later:** the climb to `v1.0.0`
 
 Legend: 🟢 shipped · 🟡 in progress · ⚪ planned
@@ -81,6 +81,12 @@ Per-release detail lives in [`CHANGELOG.md`](./CHANGELOG.md).
 | 🟢 `v0.9.0` | **Category splits:** divide an income/expense across ≥ 2 categories (`transaction_splits`, migration 009) via the itemized Add Transaction builder; Split·N badge, per-category detail breakdown, attributed in the dashboard spending breakdown; balances untouched | `2026-06-06-category-splits-and-add-transaction-redesign-design.md` |
 | 🟢 `v0.9.1` | **Rust↔mock drift guard:** the mock's seed data is generated from Rust into `src/generated/seed-catalog.json` and checked in CI | `2026-06-06-rust-mock-seed-drift-guard-design.md` |
 
+### Credit, debt & planning (`v0.10`)
+
+| Release | What landed | Spec |
+|---|---|---|
+| 🟢 `v0.10.0` | **Credit & debt behavior:** credit limit + utilization, card/BNPL payments as their own `payment` kind, reimbursements & claims. **Budgets & goals:** monthly budget per category, budget-vs-actual, savings goals. | `2026-10-12-credit-limit-design.md` · `2026-10-13-card-bnpl-payments-design.md` · `2026-10-13-reimbursements-and-receivables-design.md` · `2026-10-14-budgets-and-goals-design.md` |
+
 Spec files above live in `docs/superpowers/specs/`.
 
 ## Planned — the climb to 1.0
@@ -90,31 +96,14 @@ into *Shipped* with its tag.
 
 | # | Phase | Status | Spec |
 |---|---|---|---|
-| 1 | [Credit & debt behavior](#-credit--debt-behavior) | 🟢 (shipped, awaiting release) | credit limit ✅ · payments ✅ · reimbursements ✅ |
-| 2 | [Update Net Worth](#-update-net-worth) | ⚪ | `2026-10-14-update-net-worth-design.md` |
-| 3 | [Budgets & goals](#-budgets--goals) | ⚪ | `2026-10-14-budgets-and-goals-design.md` |
-| 4 | [Recurring & reminders](#-recurring--reminders) | ⚪ | `2026-10-15-recurring-and-reminders-design.md` |
-| 5 | [Advanced search, filter & tags](#-advanced-search-filter--tags) | ⚪ | TBD |
-| 6 | [Reports & insights](#-reports--insights) | ⚪ | TBD |
-| 7 | [Data integrity & ownership](#-data-integrity--ownership) | ⚪ | TBD |
-| 8 | [1.0 — Onboarding & polish](#--10--onboarding--polish-feature-complete-milestone) | ⚪ | TBD |
+| 1 | [Update Net Worth](#-update-net-worth-awaiting-release) | 🟢 shipped, awaiting release | `2026-10-14-update-net-worth-design.md` |
+| 2 | [Recurring & reminders](#-recurring--reminders-awaiting-release) | 🟢 shipped, awaiting release | `2026-10-15-recurring-and-reminders-design.md` |
+| 3 | [Advanced search, filter & tags](#-advanced-search-filter--tags) | ⚪ | TBD |
+| 4 | [Reports & insights](#-reports--insights) | ⚪ | TBD |
+| 5 | [Data integrity & ownership](#-data-integrity--ownership) | 🟡 photo import shipped, awaiting release | photo import: `2026-10-17-photo-transaction-import-design.md` |
+| 6 | [1.0 — Onboarding & polish](#--10--onboarding--polish-feature-complete-milestone) | ⚪ | TBD |
 
-### ⚪ Credit & debt behavior
-
-Credit limits and utilization (credit-card, BNPL), plus card/BNPL repayments and reimbursement pairing.
-Builds on the **v0.5.0** non-cashflow flag so repayments move money without polluting income/expense.
-Loan schedules and interest are unscheduled; see [Later / unscheduled](#later--unscheduled).
-
-- [x] Credit limit + utilization % + available credit
-  — spec: `docs/superpowers/specs/2026-10-12-credit-limit-design.md`
-- [x] Credit-card payments and BNPL repayments recorded as their own `payment` kind
-  (cash, e-wallet, savings, or current → credit card or BNPL)
-  — spec: `docs/superpowers/specs/2026-10-13-card-bnpl-payments-design.md`
-- [x] Reimbursements & claims: money back that explicitly offsets an original expense (pairing),
-  beyond the v0.5.0 flag that already excludes it from income; also an "Owes you" reading for `lent` accounts
-  — spec: `docs/superpowers/specs/2026-10-13-reimbursements-and-receivables-design.md`
-
-### ⚪ Update Net Worth
+### 🟢 Update Net Worth (awaiting release)
 
 Set what a fixed deposit, investment, unit trust, or crypto account is worth
 now. The difference is income or expense in a category saved on the account,
@@ -126,15 +115,7 @@ or picked for that update. Correct balance stays as it is.
 
 Spec: `docs/superpowers/specs/2026-10-14-update-net-worth-design.md`
 
-### ⚪ Budgets & goals
-
-- [x] Monthly budget per category
-- [x] Budget-vs-actual + overspend warnings
-- [x] Savings goals (target amounts + progress)
-
-Spec: `docs/superpowers/specs/2026-10-14-budgets-and-goals-design.md`
-
-### ⚪ Recurring & reminders
+### 🟢 Recurring & reminders (awaiting release)
 
 - [x] Recurring/scheduled transactions
 - [x] Upcoming list + one-tap post
@@ -159,11 +140,10 @@ Spec: _TBD_
 
 Spec: _TBD_
 
-### ⚪ Data integrity & ownership
+### 🟡 Data integrity & ownership
 
 - [ ] CSV import/export
 - [x] Import transactions from a photo (OS OCR + LLM, review before save): the Drafts screen
-  — spec: `docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md`
 - [ ] Full backup & restore
 - [ ] Account reconciliation against a statement balance
 

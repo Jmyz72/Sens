@@ -1,14 +1,14 @@
 # AGENTS.md
 
 Guidance for AI coding agents (Cursor, Claude Code, Codex, …) working in this repo.
-`CLAUDE.md` is a symlink to this file. Edit `AGENTS.md` only.
+`CLAUDE.md` is a symlink to this file; edit `AGENTS.md` only.
 
 ## What this is
 
 Sens is a **local-first desktop personal-finance tracker** for Malaysian Ringgit (MYR).
 
 - **Stack:** Tauri v2 (Rust) + React 19 + TypeScript + Vite + SQLite (`rusqlite`, bundled).
-- **Scope:** manual entry only. No sync, no bank connections, no multi-currency.
+- **Scope:** manual entry plus photo import (on-device OCR, then a user-configured AI endpoint). No sync, no bank connections, no multi-currency. The AI call is the only network traffic.
 - **Authoritative design:** `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.md`.
   Newer features each have a spec in `docs/superpowers/specs/`. **Read the relevant spec before
   changing data-model or business-rule behavior.**
@@ -23,7 +23,7 @@ Rust is not on the default PATH. Prefix Rust/Tauri commands with `export PATH="$
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Vite dev server in the **browser**, using the in-memory mock backend. Fastest way to see UI. |
+| `npm run dev` | Vite dev server in the **browser**, using the in-memory mock backend. Fastest way to see UI; prefer it over `tauri dev` for UI-only work. |
 | `npm run tauri dev` | The **real desktop app** (Rust backend + SQLite). Needs the Rust toolchain. |
 | `npm run build` | `tsc` typecheck + `vite build`. The frontend gate; must stay clean (strict TS, `noUnusedLocals` / `noUnusedParameters`). |
 | `npm test` | Vitest suite. `npm run test:watch` to watch. |
@@ -32,10 +32,13 @@ Rust is not on the default PATH. Prefix Rust/Tauri commands with `export PATH="$
 | `cd src-tauri && cargo build` | Compile the desktop binary (validates command registration + config). |
 | `npm run gen:seed-catalog` | Regenerate `src/generated/seed-catalog.json` from the Rust seed. |
 
-Test locations: frontend tests in `src/__tests__/` (mock and UI-logic tests) and `src/lib/__tests__/`,
-release-tooling tests in `scripts/__tests__/`, Rust tests as `#[cfg(test)]` in `src-tauri/src/lib.rs`,
-`src-tauri/src/db/mod.rs`, `src-tauri/src/apportion.rs`, `src-tauri/src/recurrence.rs`, `src-tauri/src/ai.rs`,
-`src-tauri/src/drafts.rs` and `src-tauri/src/ocr.rs`.
+Test locations: frontend tests in `src/__tests__/` (mock backend and UI-logic tests) and `src/lib/__tests__/`,
+release-tooling tests in `scripts/__tests__/`. Rust tests are `#[cfg(test)]` modules inside the
+`src-tauri/src/*.rs` file they cover (not every file has one).
+
+**Before you finish a task**, run what CI runs: `npm run build`, `npm test`, `cd src-tauri && cargo test --lib`.
+Run `npm run gen:seed-catalog` if you touched seeds or subtype migrations, and update `CHANGELOG.md` and
+`ROADMAP.md` (see *Keeping docs in sync*).
 
 ## Architecture
 
@@ -75,6 +78,13 @@ and commit the JSON. CI fails if it is stale. Details: [backend.md](docs/archite
 8. **Enriching default categories?** Append only, and bump a new `defaults_vN_seeded` gate.
 9. **Don't remove `dragDropEnabled: false`** from `tauri.conf.json` (it makes drag-to-reorder work).
 10. **Errors** are `AppError` (`{code, message}`). The TS client and the mock throw the same shape.
+11. **Photo import privacy:** the image is never stored, and only OCR text plus account and category names go to the AI. The API key never appears in errors, logs or the mock. AI failures use `AppError::Ai` with its stable codes. `ocr_image` takes a raw IPC body (`dispatchRaw`), not JSON args. See `backend.md`.
+
+## Gotchas
+
+- OCR is platform-specific (Apple Vision on macOS, `Windows.Media.Ocr` on Windows, an `ocr_unavailable` stub elsewhere), so OCR behavior differs per OS. Tests must not depend on a real OCR engine.
+- Rust and the mock must stay in step for the drafts/AI commands too, not just the core ledger.
+- Rust is not on the default PATH, so a bare `cargo` failing with "command not found" is the PATH issue above, not a broken toolchain.
 
 ## Before you change X, read Y
 
@@ -112,5 +122,5 @@ Follows [`RELEASING.md`](RELEASING.md) and **GitHub Flow** (SemVer, `main` alway
 | `CHANGELOG.md` | Add an entry under `[Unreleased]` for every user-visible or behavior change (and notable docs/tooling changes). |
 | `ROADMAP.md` | Tick the matching checklist item, move a finished phase into *Shipped* with its tag and spec link, and refresh the **Last shipped / Next up** block. Add any new idea to its phase or to *Later / unscheduled*. |
 
-Also update, as relevant: the matching `docs/architecture/*.md` topic, the spec in
-`docs/superpowers/specs/`, and `AGENTS.md` itself if a hard rule changed.
+Also update, as relevant: the matching `docs/architecture/*.md` topic and the spec in
+`docs/superpowers/specs/`.
