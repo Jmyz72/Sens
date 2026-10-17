@@ -162,10 +162,11 @@ Spec: _TBD_
 ### ⚪ Data integrity & ownership
 
 - [ ] CSV import/export
+- [ ] Import transactions from a photo (OS OCR + LLM, review before save)
 - [ ] Full backup & restore
 - [ ] Account reconciliation against a statement balance
 
-Spec: _TBD_
+Spec: [photo import](docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md) (CSV/backup _TBD_)
 
 ### 🎉 ⚪ 1.0 — Onboarding & polish (feature-complete milestone)
 
