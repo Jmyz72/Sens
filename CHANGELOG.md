@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- CI: the release workflow passes `includeUpdaterJson` (the old `uploadUpdaterJson` input did not exist and raised a warning), and workflows pin `ubuntu-24.04` instead of `ubuntu-latest` ahead of the Ubuntu 26 migration.
+
 ## [0.11.0] — 2026-10-17
 
 ### Changed
