@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Docs: cleaned up `ROADMAP.md` (status block reflects v0.10.0, shipped phases moved out of Planned, unreleased work marked). Refreshed `AGENTS.md` (scope now covers photo import, new photo-import privacy rule, a gotchas section, a done-checklist, and a less brittle Rust test-location note).
 - **Record transaction times** is on until you turn it off. A fresh install and a factory reset ask for a time on new transactions.
 
 ### Fixed
