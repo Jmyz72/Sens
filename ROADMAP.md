@@ -2,8 +2,7 @@
 
 Sens is built one **phase** at a time. **One phase = one release.** This file is the index; specs and plans hold the detail.
 
-> **Last shipped:** `v0.10.0` (credit limits, card/BNPL payments, reimbursements, budgets & goals)
-> **Unreleased:** Update Net Worth, Recurring & reminders, and photo import (Drafts)
+> **Last shipped:** `v0.11.0` (Update Net Worth, recurring schedules & Upcoming, photo import Drafts)
 > **Next up:** Advanced search, filter & tags
 > **Later:** the climb to `v1.0.0`
 
@@ -87,6 +86,12 @@ Per-release detail lives in [`CHANGELOG.md`](./CHANGELOG.md).
 |---|---|---|
 | 🟢 `v0.10.0` | **Credit & debt behavior:** credit limit + utilization, card/BNPL payments as their own `payment` kind, reimbursements & claims. **Budgets & goals:** monthly budget per category, budget-vs-actual, savings goals. | `2026-10-12-credit-limit-design.md` · `2026-10-13-card-bnpl-payments-design.md` · `2026-10-13-reimbursements-and-receivables-design.md` · `2026-10-14-budgets-and-goals-design.md` |
 
+### Net worth, schedules & photo import (`v0.11`)
+
+| Release | What landed | Spec |
+|---|---|---|
+| 🟢 `v0.11.0` | **Update Net Worth:** set what a fixed deposit, investment, unit trust, or crypto account is worth now; the difference books as income/expense. **Recurring & reminders:** daily/weekly/monthly/yearly schedules, auto-post or tap-to-post, Upcoming list, away notice. **Photo import:** Drafts screen (OS OCR + user-configured OpenAI-compatible AI, review before save). "Record transaction times" now defaults on. | `2026-10-14-update-net-worth-design.md` · `2026-10-15-recurring-and-reminders-design.md` · `2026-10-17-photo-transaction-import-design.md` |
+
 Spec files above live in `docs/superpowers/specs/`.
 
 ## Planned — the climb to 1.0
@@ -96,32 +101,10 @@ into *Shipped* with its tag.
 
 | # | Phase | Status | Spec |
 |---|---|---|---|
-| 1 | [Update Net Worth](#-update-net-worth-awaiting-release) | 🟢 shipped, awaiting release | `2026-10-14-update-net-worth-design.md` |
-| 2 | [Recurring & reminders](#-recurring--reminders-awaiting-release) | 🟢 shipped, awaiting release | `2026-10-15-recurring-and-reminders-design.md` |
-| 3 | [Advanced search, filter & tags](#-advanced-search-filter--tags) | ⚪ | TBD |
-| 4 | [Reports & insights](#-reports--insights) | ⚪ | TBD |
-| 5 | [Data integrity & ownership](#-data-integrity--ownership) | 🟡 photo import shipped, awaiting release | photo import: `2026-10-17-photo-transaction-import-design.md` |
-| 6 | [1.0 — Onboarding & polish](#--10--onboarding--polish-feature-complete-milestone) | ⚪ | TBD |
-
-### 🟢 Update Net Worth (awaiting release)
-
-Set what a fixed deposit, investment, unit trust, or crypto account is worth
-now. The difference is income or expense in a category saved on the account,
-or picked for that update. Correct balance stays as it is.
-
-- [x] Update Net Worth on those four account kinds
-- [x] Optional gain and loss categories on the account
-- [x] A rise records income and a drop records expense, counted in reporting and budgets
-
-Spec: `docs/superpowers/specs/2026-10-14-update-net-worth-design.md`
-
-### 🟢 Recurring & reminders (awaiting release)
-
-- [x] Recurring/scheduled transactions
-- [x] Upcoming list + one-tap post
-- [x] Bill due-date reminders
-
-Spec: `docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`
+| 1 | [Advanced search, filter & tags](#-advanced-search-filter--tags) | ⚪ | TBD |
+| 2 | [Reports & insights](#-reports--insights) | ⚪ | TBD |
+| 3 | [Data integrity & ownership](#-data-integrity--ownership) | 🟡 photo import shipped `v0.11.0` | photo import: `2026-10-17-photo-transaction-import-design.md` |
+| 4 | [1.0 — Onboarding & polish](#--10--onboarding--polish-feature-complete-milestone) | ⚪ | TBD |
 
 ### ⚪ Advanced search, filter & tags
 
