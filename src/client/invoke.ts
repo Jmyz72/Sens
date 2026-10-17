@@ -14,3 +14,12 @@ export async function dispatch<T>(command: string, args?: Record<string, unknown
   }
   return mockInvoke<T>(command, args ?? {});
 }
+
+/** Sends raw bytes as the IPC body (no JSON number array), for large payloads such as images. */
+export async function dispatchRaw<T>(command: string, bytes: Uint8Array): Promise<T> {
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<T>(command, bytes);
+  }
+  return mockInvoke<T>(command, { bytes });
+}

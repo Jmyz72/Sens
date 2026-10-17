@@ -10,11 +10,14 @@ import type {
   AccountSubtype,
   AccountTemplate,
   AccountTypeName,
+  AiSettings,
   BudgetWrite,
   Category,
   CategoryBreakdown,
   DashboardSummary,
+  DraftFields,
   GoalWrite,
+  ImportDraft,
   Plan,
   PlanBudget,
   PlanGoal,
@@ -266,6 +269,56 @@ interface OccurrenceRow {
 }
 const schedules: Schedule[] = [];
 const occurrences: OccurrenceRow[] = [];
+
+// ── Photo import (mirrors src-tauri/src/drafts.rs) ───────────────────────────
+
+interface DraftRowMock {
+  id: string;
+  sourceName: string;
+  createdAt: string;
+  fields: DraftFields;
+}
+const drafts: DraftRowMock[] = [];
+const MOCK_OCR_TEXT = "KOPITIAM LIM\n15/10/2026 13:42\nNasi lemak 8.00\nTeh ais 4.50\nTotal RM 12.50";
+
+function draftProblems(f: DraftFields): string[] {
+  const p: string[] = [];
+  if (f.amountCents == null || f.amountCents <= 0) p.push("amount");
+  if (!f.date) p.push("date");
+  if (timeEnabled() && !f.time) p.push("time");
+  if (!f.accountId) p.push("account");
+  if (f.kind === "transfer") {
+    if (!f.toAccountId || f.toAccountId === f.accountId) p.push("to_account");
+  } else if (f.kind === "income" || f.kind === "expense") {
+    if (!f.categoryId) p.push("category");
+  } else {
+    p.push("kind");
+  }
+  return p;
+}
+
+function presentDraft(d: DraftRowMock): ImportDraft {
+  return { id: d.id, sourceName: d.sourceName, createdAt: d.createdAt, fields: { ...d.fields, hints: [...d.fields.hints] }, problems: draftProblems(d.fields) };
+}
+
+function findDraft(id: string): DraftRowMock {
+  return drafts.find((d) => d.id === id) ?? fail("NotFound", "Draft not found");
+}
+
+function normalizeOptional(value: string | null | undefined, pattern: RegExp, message: string): string | null {
+  const t = (value ?? "").trim();
+  if (!t) return null;
+  if (!pattern.test(t)) fail("ValidationError", message);
+  return t;
+}
+
+function aiSettings(): AiSettings {
+  return {
+    baseUrl: settings.get("ai_base_url") ?? "",
+    model: settings.get("ai_model") ?? "",
+    hasKey: (settings.get("ai_api_key") ?? "") !== "",
+  };
+}
 
 /** The last non-database reason a pass could not post a schedule; lists show it as the block reason. */
 const passFailures = new Map<string, string>();
@@ -1356,7 +1409,101 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       };
       return summary as T;
     }
+    case "ocr_image": {
+      const bytes = a.bytes as Uint8Array;
+      if (!bytes || bytes.length === 0) fail("ocr_empty", "No text was found in that image.");
+      return MOCK_OCR_TEXT as T;
+    }
+    case "extract_drafts": {
+      if (!settings.get("ai_base_url") || !settings.get("ai_model")) {
+        fail("ai_not_configured", "Set the AI base URL and model in Settings first.");
+      }
+      const active = accounts.filter((x) => !x.isArchived);
+      const category = categories.find((c) => c.kind === "expense" && !c.isSystem && !c.isArchived && c.parentId == null);
+      const needTime = timeEnabled();
+      const rows: DraftFields[] = [
+        {
+          kind: "expense", date: today(), time: needTime ? "00:00" : null, amountCents: 1250,
+          accountId: active[0]?.id ?? null, toAccountId: null, categoryId: category?.id ?? null,
+          note: "Kopitiam Lim", hints: needTime ? ["time_assumed"] : [],
+        },
+      ];
+      if (active.length > 1) {
+        rows.push({
+          kind: "transfer", date: today(), time: needTime ? "00:00" : null, amountCents: 5000,
+          accountId: active[0].id, toAccountId: active[1].id, categoryId: null,
+          note: "Top up", hints: ["low_confidence", ...(needTime ? ["time_assumed"] : [])],
+        });
+      }
+      const created = rows.map((fields) => {
+        const row: DraftRowMock = { id: uid(), sourceName: String(a.sourceName).trim() || "Pasted image", createdAt: now(), fields };
+        drafts.push(row);
+        return presentDraft(row);
+      });
+      return created as T;
+    }
+    case "list_import_drafts":
+      return drafts.map(presentDraft) as T;
+    case "update_import_draft": {
+      const row = findDraft(a.id);
+      const f: DraftFields = { ...a.fields };
+      f.kind = String(f.kind).trim().toLowerCase() as DraftFields["kind"];
+      if (!["expense", "income", "transfer"].includes(f.kind)) fail("ValidationError", "Kind must be expense, income or transfer");
+      f.date = normalizeOptional(f.date, /^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
+      if (f.date && !isRealDate(f.date)) fail("ValidationError", "Date must be YYYY-MM-DD");
+      f.time = normalizeOptional(f.time, /^\d{2}:\d{2}$/, "Time must be in HH:MM 24-hour format");
+      if (f.time && !isHHMM(f.time)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
+      f.note = (f.note ?? "").trim() || null;
+      if (f.kind === "transfer") f.categoryId = null;
+      else f.toAccountId = null;
+      f.hints = [];
+      row.fields = f;
+      return presentDraft(row) as T;
+    }
+    case "discard_import_drafts": {
+      for (const id of a.ids as string[]) findDraft(id);
+      for (const id of a.ids as string[]) drafts.splice(drafts.findIndex((d) => d.id === id), 1);
+      return undefined as T;
+    }
+    case "confirm_import_drafts": {
+      let confirmed = 0;
+      const failed: { id: string; message: string }[] = [];
+      for (const id of a.ids as string[]) {
+        try {
+          const row = findDraft(id);
+          if (draftProblems(row.fields).length > 0) fail("ValidationError", "Fix the highlighted fields first.");
+          const f = row.fields;
+          if (f.kind === "transfer") {
+            addTransfer({ fromAccountId: f.accountId, toAccountId: f.toAccountId, amountCents: f.amountCents, description: f.note, date: f.date, time: f.time });
+          } else {
+            addIncomeOrExpense(f.kind, { accountId: f.accountId, categoryId: f.categoryId, amountCents: f.amountCents, description: f.note, date: f.date, time: f.time, excludedFromReporting: false, splits: null });
+          }
+          drafts.splice(drafts.indexOf(row), 1);
+          confirmed += 1;
+        } catch (e) {
+          failed.push({ id, message: (e as { message?: string })?.message ?? "Could not post this draft." });
+        }
+      }
+      return { confirmed, failed } as T;
+    }
+    case "get_ai_settings":
+      return aiSettings() as T;
+    case "set_ai_settings": {
+      const url = String(a.input.baseUrl).trim().replace(/\/+$/, "");
+      if (url && !/^https?:\/\//.test(url)) fail("ValidationError", "The base URL must start with http:// or https://");
+      settings.set("ai_base_url", url);
+      settings.set("ai_model", String(a.input.model).trim());
+      if (a.input.apiKey != null) settings.set("ai_api_key", String(a.input.apiKey).trim());
+      return aiSettings() as T;
+    }
+    case "test_ai_connection": {
+      if (!settings.get("ai_base_url") || !settings.get("ai_model")) {
+        fail("ai_not_configured", "Set the AI base URL and model in Settings first.");
+      }
+      return undefined as T;
+    }
     case "get_setting":
+      if (String(a.key).trim() === "ai_api_key") fail("ValidationError", "That setting is write-only.");
       return (settings.get(String(a.key)) ?? null) as T;
     case "set_setting": {
       if (!String(a.key).trim()) fail("ValidationError", "Key cannot be empty");
@@ -1407,6 +1554,7 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       goals.length = 0;
       schedules.length = 0;
       occurrences.length = 0;
+      drafts.length = 0;
       passFailures.clear();
       seedCategories();
       return undefined as T;
