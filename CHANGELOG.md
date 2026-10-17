@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Editing an account shows an archived saved gain or loss category as "Name (archived)", and choosing Ask each time clears it.
 
 ### Documentation
-- Specified photo transaction import: OS OCR, an OpenAI-compatible LLM, and a review screen (`docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md`).
+- Specified photo transaction import: OS OCR, an OpenAI-compatible LLM, and a Drafts sidebar screen to review before saving (`docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md`).
 - Specified recurring schedules, Upcoming, and the away notice (`docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`).
 - Specified Update Net Worth for fixed deposit, investment, unit trust, and crypto accounts (`docs/superpowers/specs/2026-10-14-update-net-worth-design.md`).
 - Planned Update Net Worth (`docs/superpowers/plans/2026-10-14-update-net-worth.md`).

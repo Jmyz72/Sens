@@ -126,7 +126,7 @@ and mock throw the same shape. Network errors never expose the API key in messag
 ## Privacy
 
 Only OCR text plus account and category names are sent. When the base URL is not a local host
-(`localhost`, `127.0.0.1`, `[::1]`), the modal shows a one-time notice that the text goes to that
+(`localhost`, `127.0.0.1`, `[::1]`), the Drafts screen shows a one-time notice that the text goes to that
 provider. Logs never include OCR text or keys.
 
 ## Testing
