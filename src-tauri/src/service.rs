@@ -782,7 +782,7 @@ pub fn create_transfer(conn: &Connection, from_account_id: &str, to_account_id: 
     Ok(t)
 }
 
-fn is_payment_destination(subtype: &str) -> bool {
+pub(crate) fn is_payment_destination(subtype: &str) -> bool {
     subtype == "credit-card" || subtype == "bnpl"
 }
 

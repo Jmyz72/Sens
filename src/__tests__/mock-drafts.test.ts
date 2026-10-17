@@ -78,6 +78,47 @@ describe("mock photo import", () => {
     expect(same.problems).toContain("to_account");
   });
 
+  it("drops a category of the old kind when the kind changes", async () => {
+    await client.createAccount("Maybank Savings", "savings", 0, null);
+    await configureAi();
+    const [d] = await client.extractDrafts("receipt.png", "text");
+    expect(d.fields.categoryId).not.toBeNull();
+    const same = await client.updateImportDraft(d.id, { ...d.fields, note: "x" });
+    expect(same.fields.categoryId).toBe(d.fields.categoryId);
+    const switched = await client.updateImportDraft(d.id, { ...d.fields, kind: "income" });
+    expect(switched.fields.categoryId).toBeNull();
+    expect(switched.problems).toContain("category");
+  });
+
+  it("confirms a transfer to a credit card as a payment", async () => {
+    const savings = await client.createAccount("A", "savings", 0, null);
+    const card = await client.createAccount("Card", "credit-card", -20000, null, 1000000);
+    await configureAi();
+    const created = await client.extractDrafts("s.png", "text");
+    const t = created[1];
+    expect(t.fields.kind).toBe("transfer");
+    const ready = await client.updateImportDraft(t.id, { ...t.fields, accountId: savings.id, toAccountId: card.id });
+    expect(ready.problems).toEqual([]);
+    const result = await client.confirmImportDrafts([t.id]);
+    expect(result.failed).toEqual([]);
+    expect(result.confirmed).toBe(1);
+    expect((await client.listImportDrafts()).some((d) => d.id === t.id)).toBe(false);
+    expect(await client.getAccountBalance(card.id)).toBe(-15000);
+    expect(await client.getAccountBalance(savings.id)).toBe(-5000);
+  });
+
+  it("discards the right draft when an id is listed twice", async () => {
+    await client.createAccount("A", "savings", 0, null);
+    await client.createAccount("B", "savings", 0, null);
+    await configureAi();
+    const created = await client.extractDrafts("s.png", "text");
+    await client.discardImportDrafts([created[0].id, created[0].id]);
+    const left = await client.listImportDrafts();
+    expect(left.map((d) => d.id)).toEqual([created[1].id]);
+    await expect(client.discardImportDrafts(["nope"])).rejects.toMatchObject({ code: "NotFound" });
+    expect(await client.listImportDrafts()).toHaveLength(1);
+  });
+
   it("keeps the API key write-only", async () => {
     const saved = await client.setAiSettings({ baseUrl: "http://x.test/v1/", model: "m", apiKey: "secret" });
     expect(saved).toEqual({ baseUrl: "http://x.test/v1", model: "m", hasKey: true });

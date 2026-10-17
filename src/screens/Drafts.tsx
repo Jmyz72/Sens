@@ -112,14 +112,25 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
       const file = Array.from(event.clipboardData?.files ?? []).find((f) => f.type.startsWith("image/"));
       if (file) {
         event.preventDefault();
+        if (busy !== "idle") {
+          notify("Still reading the last photo.", "info");
+          return;
+        }
         void handleFile(file);
       }
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
-  }, [handleFile]);
+  }, [handleFile, busy, notify]);
 
-  const replace = (draft: ImportDraft) => update((drafts ?? []).map((d) => (d.id === draft.id ? draft : d)));
+  // Functional update so an overlapping save or import never writes back a stale list.
+  const replace = useCallback((draft: ImportDraft) => {
+    setDrafts((prev) => {
+      const next = (prev ?? []).map((d) => (d.id === draft.id ? draft : d));
+      onCountChange(next.length);
+      return next;
+    });
+  }, [onCountChange]);
 
   const confirm = async (ids: string[]) => {
     try {
@@ -259,13 +270,23 @@ function DraftRow({
   const input = inputStyle(t);
   const activeAccounts = accounts.filter((a) => !a.isArchived);
   const kind = fields.kind;
+  // Fields typed into but not yet saved. A fresh draft from the server must not
+  // overwrite them; everything else follows the server.
+  const dirty = useRef(new Set<keyof DraftFields>());
 
   useEffect(() => {
-    setFields(draft.fields);
-    setAmountText(draft.fields.amountCents != null ? (draft.fields.amountCents / 100).toFixed(2) : "");
+    setFields((prev) => {
+      const next = { ...draft.fields };
+      for (const key of dirty.current) (next as Record<string, unknown>)[key] = prev[key];
+      return next;
+    });
+    if (!dirty.current.has("amountCents")) {
+      setAmountText(draft.fields.amountCents != null ? (draft.fields.amountCents / 100).toFixed(2) : "");
+    }
   }, [draft]);
 
   const save = async (next: DraftFields) => {
+    dirty.current.clear();
     try {
       onSaved(await client.updateImportDraft(draft.id, next));
     } catch (error) {
@@ -278,6 +299,7 @@ function DraftRow({
     const next = { ...fields, ...patch };
     setFields(next);
     if (saveNow) void save(next);
+    else for (const key of Object.keys(patch)) dirty.current.add(key as keyof DraftFields);
   };
 
   const flagged = (problem: string) => draft.problems.includes(problem);
@@ -318,7 +340,10 @@ function DraftRow({
             style={fieldStyle("amount")}
             inputMode="decimal"
             value={amountText}
-            onChange={(e) => setAmountText(e.target.value)}
+            onChange={(e) => {
+              dirty.current.add("amountCents");
+              setAmountText(e.target.value);
+            }}
             onBlur={() => {
               const cents = parseAmountToCents(amountText);
               const next = { ...fields, amountCents: cents };

@@ -25,25 +25,57 @@ pub struct PromptContext {
 }
 
 /// One transaction as the model returns it. Everything is optional: the model
-/// is not trusted, and `drafts.rs` validates each field.
+/// is not trusted, and `drafts.rs` validates each field. Each field is read
+/// leniently so one badly typed value never rejects the whole reply.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct RawDraft {
+    #[serde(default, deserialize_with = "lenient_string")]
     pub date: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
     pub time: Option<String>,
+    #[serde(default)]
     pub amount: Option<Value>,
+    #[serde(default, deserialize_with = "lenient_string")]
     pub currency: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
     pub kind: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
     pub account: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
     pub to_account: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
     pub category: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
     pub subcategory: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
     pub note: Option<String>,
+    #[serde(default, deserialize_with = "lenient_f64")]
     pub confidence: Option<f64>,
 }
 
+/// A string, number or bool becomes text; null, arrays and objects become None.
+fn lenient_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    Ok(match Value::deserialize(d)? {
+        Value::String(s) => Some(s),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    })
+}
+
+/// A number or a numeric string; anything else becomes None.
+fn lenient_f64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<f64>, D::Error> {
+    Ok(match Value::deserialize(d)? {
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) => s.trim().parse::<f64>().ok().filter(|f| f.is_finite()),
+        _ => None,
+    })
+}
+
+/// `transactions` must be present; `null` counts as an empty list.
 #[derive(Debug, Deserialize)]
 struct RawReply {
-    transactions: Vec<RawDraft>,
+    transactions: Option<Vec<Value>>,
 }
 
 pub const MAX_OCR_CHARS: usize = 20_000;
@@ -84,8 +116,22 @@ fn json_slice(text: &str) -> &str {
 }
 
 pub fn parse_reply(text: &str) -> AppResult<Vec<RawDraft>> {
-    serde_json::from_str::<RawReply>(json_slice(text))
-        .map(|r| r.transactions)
+    serde_json::from_str::<Value>(json_slice(text))
+        .and_then(|v| {
+            // A missing key is invalid; `Option` alone would accept it.
+            if v.get("transactions").is_none() {
+                return Err(serde::de::Error::missing_field("transactions"));
+            }
+            serde_json::from_value::<RawReply>(v)
+        })
+        .map(|r| {
+            r.transactions
+                .unwrap_or_default()
+                .into_iter()
+                .filter(Value::is_object)
+                .filter_map(|row| serde_json::from_value::<RawDraft>(row).ok())
+                .collect()
+        })
         .map_err(|e| AppError::Ai("ai_bad_response", format!("The AI reply was not the expected JSON: {e}")))
 }
 
@@ -238,6 +284,45 @@ mod tests {
     #[test]
     fn rejects_json_without_the_transactions_key() {
         assert!(parse_reply(r#"{"items":[]}"#).is_err());
+    }
+
+    #[test]
+    fn tolerates_badly_typed_fields_in_a_row() {
+        let rows = parse_reply(
+            r#"{"transactions":[{"date":20261015,"time":["13:00"],"amount":12.5,"currency":null,"kind":"expense","account":{"name":"x"},"note":1234,"category":true,"confidence":"0.8"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        let r = &rows[0];
+        assert_eq!(r.date.as_deref(), Some("20261015"));
+        assert_eq!(r.time, None);
+        assert_eq!(r.account, None);
+        assert_eq!(r.currency, None);
+        assert_eq!(r.note.as_deref(), Some("1234"));
+        assert_eq!(r.category.as_deref(), Some("true"));
+        assert_eq!(r.kind.as_deref(), Some("expense"));
+        assert_eq!(r.confidence, Some(0.8));
+        assert!(r.amount.is_some());
+    }
+
+    #[test]
+    fn a_non_numeric_confidence_becomes_none() {
+        let rows = parse_reply(r#"{"transactions":[{"amount":"1","confidence":"high"},{"amount":"2","confidence":[1]}]}"#).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].confidence, None);
+        assert_eq!(rows[1].confidence, None);
+    }
+
+    #[test]
+    fn null_transactions_is_an_empty_list() {
+        assert!(parse_reply(r#"{"transactions":null}"#).unwrap().is_empty());
+    }
+
+    #[test]
+    fn rows_that_are_not_objects_are_skipped() {
+        let rows = parse_reply(r#"{"transactions":["junk",42,null,{"amount":"3"}]}"#).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].amount.is_some());
     }
 
     // A tiny scripted HTTP server: answers each connection with the next canned

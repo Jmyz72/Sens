@@ -1454,6 +1454,8 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       f.time = normalizeOptional(f.time, /^\d{2}:\d{2}$/, "Time must be in HH:MM 24-hour format");
       if (f.time && !isHHMM(f.time)) fail("ValidationError", "Time must be in HH:MM 24-hour format");
       f.note = (f.note ?? "").trim() || null;
+      // A category of the old kind can never be posted under the new one.
+      if (row.fields.kind !== f.kind) f.categoryId = null;
       if (f.kind === "transfer") f.categoryId = null;
       else f.toAccountId = null;
       f.hints = [];
@@ -1461,8 +1463,12 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       return presentDraft(row) as T;
     }
     case "discard_import_drafts": {
-      for (const id of a.ids as string[]) findDraft(id);
-      for (const id of a.ids as string[]) drafts.splice(drafts.findIndex((d) => d.id === id), 1);
+      const ids = [...new Set(a.ids as string[])];
+      for (const id of ids) findDraft(id);
+      for (const id of ids) {
+        const i = drafts.findIndex((d) => d.id === id);
+        if (i >= 0) drafts.splice(i, 1);
+      }
       return undefined as T;
     }
     case "confirm_import_drafts": {
@@ -1474,7 +1480,10 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
           if (draftProblems(row.fields).length > 0) fail("ValidationError", "Fix the highlighted fields first.");
           const f = row.fields;
           if (f.kind === "transfer") {
-            addTransfer({ fromAccountId: f.accountId, toAccountId: f.toAccountId, amountCents: f.amountCents, description: f.note, date: f.date, time: f.time });
+            // Moving money to a credit card or BNPL is posted as a payment.
+            const dest = accounts.find((x) => x.id === f.toAccountId);
+            const post = dest && isPaymentDestination(dest.subtype) ? addPayment : addTransfer;
+            post({ fromAccountId: f.accountId, toAccountId: f.toAccountId, amountCents: f.amountCents, description: f.note, date: f.date, time: f.time });
           } else {
             addIncomeOrExpense(f.kind, { accountId: f.accountId, categoryId: f.categoryId, amountCents: f.amountCents, description: f.note, date: f.date, time: f.time, excludedFromReporting: false, splits: null });
           }

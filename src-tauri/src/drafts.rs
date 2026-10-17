@@ -68,8 +68,13 @@ fn parse_date(s: &str) -> Option<String> {
     NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok().map(|d| d.format("%Y-%m-%d").to_string())
 }
 
+/// `HH:MM` or `HH:MM:SS` (seconds dropped) → `HH:MM`.
 fn parse_time(s: &str) -> Option<String> {
-    NaiveTime::parse_from_str(s.trim(), "%H:%M").ok().map(|t| t.format("%H:%M").to_string())
+    let s = s.trim();
+    NaiveTime::parse_from_str(s, "%H:%M")
+        .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M:%S"))
+        .ok()
+        .map(|t| t.format("%H:%M").to_string())
 }
 
 fn clean(s: Option<&str>) -> Option<&str> {
@@ -377,6 +382,12 @@ pub fn update_draft(conn: &Connection, id: &str, mut fields: DraftFields) -> App
     fields.date = normalize_date(fields.date.as_deref())?;
     fields.time = normalize_time(fields.time.as_deref())?;
     fields.note = clean(fields.note.as_deref()).map(str::to_string);
+    let stored: DraftFields = serde_json::from_str(&repo::get_draft(conn, id)?.payload)
+        .map_err(|e| AppError::Database(format!("Bad draft payload: {e}")))?;
+    if stored.kind != fields.kind {
+        // A category of the old kind can never be posted under the new one.
+        fields.category_id = None;
+    }
     if fields.kind == "transfer" {
         fields.category_id = None;
     } else {
@@ -416,7 +427,12 @@ fn confirm_one(conn: &Connection, id: &str, time_required: bool) -> AppResult<()
             }
             _ => {
                 let to = f.to_account_id.as_deref().ok_or_else(missing)?;
-                service::create_transfer(conn, account, to, amount, f.note.as_deref(), date, f.time.as_deref())?;
+                // Moving money to a credit card or BNPL is posted as a payment.
+                if service::is_payment_destination(&repo::get_account(conn, to)?.subtype) {
+                    service::create_payment(conn, account, to, amount, f.note.as_deref(), date, f.time.as_deref())?;
+                } else {
+                    service::create_transfer(conn, account, to, amount, f.note.as_deref(), date, f.time.as_deref())?;
+                }
             }
         }
         repo::delete_draft(conn, id)
@@ -706,6 +722,64 @@ mod tests {
         assert_eq!(res.confirmed, 1);
         assert_eq!(service::get_account_balance(&c, &a.id).unwrap(), -5000);
         assert_eq!(service::get_account_balance(&c, &b.id).unwrap(), 5000);
+    }
+
+    #[test]
+    fn changing_the_kind_drops_a_category_of_the_old_kind() {
+        let (c, a) = setup_with_category();
+        let stored = store_drafts(&c, "x.png", &[expense_raw("Maybank Savings", "5")], "2026-10-17").unwrap();
+        let d = &stored[0];
+        assert!(d.fields.category_id.is_some());
+        assert_eq!(d.fields.account_id.as_deref(), Some(a.id.as_str()));
+        let mut f = d.fields.clone();
+        f.kind = "income".into();
+        let updated = update_draft(&c, &d.id, f).unwrap();
+        assert_eq!(updated.fields.category_id, None);
+        assert!(updated.problems.contains(&"category".to_string()));
+    }
+
+    #[test]
+    fn keeping_the_kind_keeps_the_category() {
+        let (c, _a) = setup_with_category();
+        let stored = store_drafts(&c, "x.png", &[expense_raw("Maybank Savings", "5")], "2026-10-17").unwrap();
+        let mut f = stored[0].fields.clone();
+        f.note = Some("Edited".into());
+        let updated = update_draft(&c, &stored[0].id, f).unwrap();
+        assert_eq!(updated.fields.category_id, stored[0].fields.category_id);
+        assert!(updated.problems.is_empty());
+    }
+
+    #[test]
+    fn a_transfer_to_a_credit_card_is_confirmed_as_a_payment() {
+        let c = db();
+        let a = account(&c, "Maybank Savings");
+        let card = service::create_account(&c, "Visa Card", "credit-card", -20_000, None, Some(1_000_000), None, None).unwrap();
+        let stored = store_drafts(
+            &c,
+            "x.png",
+            &[raw(r#"{"date":"2026-10-15","amount":"50","kind":"transfer","account":"Maybank Savings","to_account":"Visa Card"}"#)],
+            "2026-10-17",
+        )
+        .unwrap();
+        assert!(stored[0].problems.is_empty());
+        let res = confirm_drafts(&c, &[stored[0].id.clone()]).unwrap();
+        assert_eq!(res.failed.len(), 0, "{:?}", res.failed.first().map(|f| &f.message));
+        assert_eq!(res.confirmed, 1);
+        assert!(list_drafts(&c).unwrap().is_empty());
+        assert_eq!(service::get_account_balance(&c, &a.id).unwrap(), -5000);
+        assert_eq!(service::get_account_balance(&c, &card.id).unwrap(), -15_000);
+    }
+
+    #[test]
+    fn parse_time_accepts_seconds_and_normalises_to_hh_mm() {
+        assert_eq!(parse_time("13:42:00").as_deref(), Some("13:42"));
+        assert_eq!(parse_time("9:05").as_deref(), Some("09:05"));
+        assert_eq!(parse_time("25:00:00"), None);
+        let c = db();
+        let lk = lookups(&c).unwrap();
+        let f = fields_from_raw(&raw(r#"{"amount":"4","kind":"expense","time":"13:42:00"}"#), &lk, "2026-10-17", true);
+        assert_eq!(f.time.as_deref(), Some("13:42"));
+        assert!(!f.hints.contains(&"time_assumed".to_string()));
     }
 
     #[test]

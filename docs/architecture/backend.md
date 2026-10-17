@@ -154,7 +154,8 @@ as drafts the user confirms one by one.
 - **Confirm** posts each draft independently through `service::create_expense` / `create_income` /
   `create_transfer` and deletes the draft in the same transaction. A failure (problems left, or a
   service error such as an archived account) leaves that draft in place and is returned in
-  `ConfirmResult.failed`; the other drafts still post.
+  `ConfirmResult.failed`; the other drafts still post. A transfer draft whose destination is a credit
+  card or BNPL account is confirmed as a payment (`service::create_payment`).
 
 **AI settings** live in `app_settings`: `ai_base_url` (must start with `http://` or `https://`;
 trailing `/` trimmed), `ai_model`, `ai_api_key`.
