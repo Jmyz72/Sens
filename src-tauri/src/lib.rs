@@ -93,6 +93,15 @@ pub fn run() {
             commands::post_occurrence,
             commands::skip_occurrence,
             commands::run_schedule_pass,
+            commands::ocr_image,
+            commands::extract_drafts,
+            commands::list_import_drafts,
+            commands::update_import_draft,
+            commands::discard_import_drafts,
+            commands::confirm_import_drafts,
+            commands::get_ai_settings,
+            commands::set_ai_settings,
+            commands::test_ai_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sens");
