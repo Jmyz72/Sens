@@ -251,7 +251,9 @@ export interface SchedulePass {
 }
 
 export interface AppError {
-  code: "ValidationError" | "NotFound" | "Conflict" | "DatabaseError";
+  code:
+    | "ValidationError" | "NotFound" | "Conflict" | "DatabaseError"
+    | "ocr_unavailable" | "ocr_empty" | "ai_not_configured" | "ai_unreachable" | "ai_auth" | "ai_bad_response";
   message: string;
 }
 

@@ -20,6 +20,7 @@ import { Accounts } from "./screens/Accounts";
 import { Transactions } from "./screens/Transactions";
 import { Settings } from "./screens/Settings";
 import { Categories } from "./screens/Categories";
+import { Drafts } from "./screens/Drafts";
 import { AddTransaction } from "./modals/AddTransaction";
 import { AwayNotice } from "./components/AwayNotice";
 import { useScheduleEngine } from "./lib/useScheduleEngine";
@@ -67,6 +68,7 @@ export default function App() {
   const [showTxn, setShowTxn] = useState(false);
   const [txnAccountId, setTxnAccountId] = useState<string | null>(null);
   const [txnAwaiting, setTxnAwaiting] = useState(false);
+  const [draftCount, setDraftCount] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
 
   const reload = useCallback(async () => {
@@ -113,6 +115,10 @@ export default function App() {
     }).catch(() => {});
   }, [loading, accounts, notify]);
 
+  useEffect(() => {
+    client.listImportDrafts().then((d) => setDraftCount(d.length)).catch(() => {});
+  }, [version]);
+
   const data = useMemo(() => ({ accounts, categories, loading, reload, version }), [accounts, categories, loading, reload, version]);
   const nav = NAV.find((n) => n.id === active)!;
   const portfolioSummary = useMemo(() => sidebarPortfolioSummary(accounts), [accounts]);
@@ -128,6 +134,7 @@ export default function App() {
     if (id === "accounts") return activeAccountCount;
     if (id === "categories") return activeCategoryCount;
     if (id === "transactions") return schedules.upcomingCount > 0 ? schedules.upcomingCount : null;
+    if (id === "drafts") return draftCount > 0 ? draftCount : null;
     return null;
   };
 
@@ -169,6 +176,7 @@ export default function App() {
                 commitSchedule={schedules.commitSchedule}
               />
             )}
+            {active === "drafts" && <Drafts onCountChange={setDraftCount} />}
             {active === "categories" && <Categories />}
             {active === "settings" && <Settings updater={updater} />}
           </div>
