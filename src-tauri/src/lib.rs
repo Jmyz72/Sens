@@ -8,6 +8,7 @@ mod db;
 mod drafts;
 pub mod error;
 mod models;
+mod ocr;
 mod recurrence;
 mod repo;
 mod schedules;
