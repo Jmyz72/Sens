@@ -259,6 +259,185 @@ pub fn problems(f: &DraftFields, time_required: bool) -> Vec<String> {
     p.into_iter().map(String::from).collect()
 }
 
+// ── Presenting drafts ────────────────────────────────────────────────────────
+
+fn present(row: repo::DraftRow, time_required: bool) -> AppResult<ImportDraft> {
+    let fields: DraftFields = serde_json::from_str(&row.payload)
+        .map_err(|e| AppError::Database(format!("Bad draft payload: {e}")))?;
+    let problems = problems(&fields, time_required);
+    Ok(ImportDraft { id: row.id, source_name: row.source_name, created_at: row.created_at, fields, problems })
+}
+
+fn payload_of(fields: &DraftFields) -> AppResult<String> {
+    serde_json::to_string(fields).map_err(|e| AppError::Database(e.to_string()))
+}
+
+/// Run `body` in one transaction (rolled back on error), the way schedules do.
+fn in_transaction<T>(conn: &Connection, body: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+    conn.execute_batch("BEGIN")?;
+    match body() {
+        Ok(v) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
+}
+
+// ── AI settings ──────────────────────────────────────────────────────────────
+
+pub fn get_ai_settings(conn: &Connection) -> AppResult<AiSettings> {
+    Ok(AiSettings {
+        base_url: repo::get_setting(conn, KEY_BASE_URL)?.unwrap_or_default(),
+        model: repo::get_setting(conn, KEY_MODEL)?.unwrap_or_default(),
+        has_key: repo::get_setting(conn, KEY_API_KEY)?.is_some_and(|k| !k.is_empty()),
+    })
+}
+
+pub fn set_ai_settings(conn: &Connection, input: AiSettingsInput) -> AppResult<AiSettings> {
+    let base_url = input.base_url.trim().trim_end_matches('/').to_string();
+    if !base_url.is_empty() && !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+        return Err(AppError::Validation("The base URL must start with http:// or https://".into()));
+    }
+    let now = crate::now();
+    repo::set_setting(conn, KEY_BASE_URL, &base_url, &now)?;
+    repo::set_setting(conn, KEY_MODEL, input.model.trim(), &now)?;
+    if let Some(key) = input.api_key {
+        repo::set_setting(conn, KEY_API_KEY, key.trim(), &now)?;
+    }
+    get_ai_settings(conn)
+}
+
+pub fn load_ai_config(conn: &Connection) -> AppResult<AiConfig> {
+    let base_url = repo::get_setting(conn, KEY_BASE_URL)?.unwrap_or_default();
+    let model = repo::get_setting(conn, KEY_MODEL)?.unwrap_or_default();
+    if base_url.is_empty() || model.is_empty() {
+        return Err(AppError::Ai("ai_not_configured", "Set the AI base URL and model in Settings first.".into()));
+    }
+    let api_key = repo::get_setting(conn, KEY_API_KEY)?.filter(|k| !k.is_empty());
+    Ok(AiConfig { base_url, model, api_key })
+}
+
+/// Everything the async extract command needs, read under one short lock.
+pub fn prepare(conn: &Connection) -> AppResult<(AiConfig, PromptContext, String)> {
+    let cfg = load_ai_config(conn)?;
+    let lk = lookups(conn)?;
+    Ok((cfg, prompt_context(&lk), crate::today()))
+}
+
+// ── Draft lifecycle ──────────────────────────────────────────────────────────
+
+pub fn store_drafts(conn: &Connection, source_name: &str, raws: &[RawDraft], today: &str) -> AppResult<Vec<ImportDraft>> {
+    let lk = lookups(conn)?;
+    let time_required = service::time_enabled(conn)?;
+    let source = {
+        let s = source_name.trim();
+        if s.is_empty() { "Pasted image" } else { s }
+    };
+    in_transaction(conn, || {
+        let mut out = Vec::with_capacity(raws.len());
+        for raw in raws {
+            let fields = fields_from_raw(raw, &lk, today, time_required);
+            let id = uuid::Uuid::new_v4().to_string();
+            repo::insert_draft(conn, &id, source, &payload_of(&fields)?, &crate::now())?;
+            out.push(present(repo::get_draft(conn, &id)?, time_required)?);
+        }
+        Ok(out)
+    })
+}
+
+pub fn list_drafts(conn: &Connection) -> AppResult<Vec<ImportDraft>> {
+    let time_required = service::time_enabled(conn)?;
+    repo::list_drafts(conn)?.into_iter().map(|r| present(r, time_required)).collect()
+}
+
+fn normalize_date(s: Option<&str>) -> AppResult<Option<String>> {
+    match clean(s) {
+        None => Ok(None),
+        Some(d) => parse_date(d).map(Some).ok_or_else(|| AppError::Validation("Date must be YYYY-MM-DD".into())),
+    }
+}
+
+fn normalize_time(s: Option<&str>) -> AppResult<Option<String>> {
+    match clean(s) {
+        None => Ok(None),
+        Some(t) => parse_time(t).map(Some).ok_or_else(|| AppError::Validation("Time must be in HH:MM 24-hour format".into())),
+    }
+}
+
+/// Save the user's edits. Any edit counts as review, so hints are cleared.
+pub fn update_draft(conn: &Connection, id: &str, mut fields: DraftFields) -> AppResult<ImportDraft> {
+    fields.kind = fields.kind.trim().to_lowercase();
+    if !["expense", "income", "transfer"].contains(&fields.kind.as_str()) {
+        return Err(AppError::Validation("Kind must be expense, income or transfer".into()));
+    }
+    fields.date = normalize_date(fields.date.as_deref())?;
+    fields.time = normalize_time(fields.time.as_deref())?;
+    fields.note = clean(fields.note.as_deref()).map(str::to_string);
+    if fields.kind == "transfer" {
+        fields.category_id = None;
+    } else {
+        fields.to_account_id = None;
+    }
+    fields.hints.clear();
+    repo::update_draft_payload(conn, id, &payload_of(&fields)?, &crate::now())?;
+    present(repo::get_draft(conn, id)?, service::time_enabled(conn)?)
+}
+
+pub fn discard_drafts(conn: &Connection, ids: &[String]) -> AppResult<()> {
+    in_transaction(conn, || {
+        for id in ids {
+            repo::delete_draft(conn, id)?;
+        }
+        Ok(())
+    })
+}
+
+fn confirm_one(conn: &Connection, id: &str, time_required: bool) -> AppResult<()> {
+    let draft = present(repo::get_draft(conn, id)?, time_required)?;
+    if !draft.problems.is_empty() {
+        return Err(AppError::Validation("Fix the highlighted fields first.".into()));
+    }
+    let f = draft.fields;
+    let missing = || AppError::Validation("Fix the highlighted fields first.".into());
+    let amount = f.amount_cents.ok_or_else(missing)?;
+    let date = f.date.as_deref().ok_or_else(missing)?;
+    let account = f.account_id.as_deref().ok_or_else(missing)?;
+    in_transaction(conn, || {
+        match f.kind.as_str() {
+            "expense" => {
+                service::create_expense(conn, account, f.category_id.as_deref(), amount, f.note.as_deref(), date, f.time.as_deref(), false, None)?;
+            }
+            "income" => {
+                service::create_income(conn, account, f.category_id.as_deref(), amount, f.note.as_deref(), date, f.time.as_deref(), false, None)?;
+            }
+            _ => {
+                let to = f.to_account_id.as_deref().ok_or_else(missing)?;
+                service::create_transfer(conn, account, to, amount, f.note.as_deref(), date, f.time.as_deref())?;
+            }
+        }
+        repo::delete_draft(conn, id)
+    })
+}
+
+/// Post each draft independently. One failure never blocks the others; failed
+/// drafts stay in the list with the reason.
+pub fn confirm_drafts(conn: &Connection, ids: &[String]) -> AppResult<ConfirmResult> {
+    let time_required = service::time_enabled(conn)?;
+    let mut confirmed = 0;
+    let mut failed = Vec::new();
+    for id in ids {
+        match confirm_one(conn, id, time_required) {
+            Ok(()) => confirmed += 1,
+            Err(e) => failed.push(ConfirmFailure { id: id.clone(), message: e.to_string() }),
+        }
+    }
+    Ok(ConfirmResult { confirmed, failed })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,5 +603,163 @@ mod tests {
         let kept = fields_from_raw(&raw(r#"{"amount":"4","kind":"expense","time":"9:05"}"#), &lk, "2026-10-17", true);
         assert_eq!(kept.time.as_deref(), Some("09:05"));
         assert!(!kept.hints.contains(&"time_assumed".to_string()));
+    }
+
+    fn expense_raw(account: &str, amount: &str) -> RawDraft {
+        raw(&format!(
+            r#"{{"date":"2026-10-15","amount":"{amount}","kind":"expense","account":"{account}","category":"Zebra Meals","note":"Kopitiam"}}"#
+        ))
+    }
+
+    fn setup_with_category() -> (Connection, Account) {
+        let c = db();
+        let a = account(&c, "Maybank Savings");
+        service::create_category(&c, "Zebra Meals", "expense", "🍜", None, None).unwrap();
+        (c, a)
+    }
+
+    #[test]
+    fn store_then_list_returns_drafts_in_order_with_problems() {
+        let (c, _a) = setup_with_category();
+        let stored = store_drafts(
+            &c,
+            "receipt.png",
+            &[expense_raw("Maybank Savings", "12.50"), expense_raw("Maybank Savings", "0")],
+            "2026-10-17",
+        )
+        .unwrap();
+        assert_eq!(stored.len(), 2);
+        let listed = list_drafts(&c).unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].source_name, "receipt.png");
+        assert!(listed[0].problems.is_empty());
+        assert_eq!(listed[1].problems, vec!["amount".to_string()]);
+    }
+
+    #[test]
+    fn updating_a_draft_clears_hints_and_recomputes_problems() {
+        let (c, a) = setup_with_category();
+        let stored = store_drafts(&c, "x.png", &[raw(r#"{"amount":"5","kind":"expense","account":"Nope","confidence":0.2}"#)], "2026-10-17").unwrap();
+        let d = &stored[0];
+        assert!(!d.fields.hints.is_empty());
+        assert!(d.problems.contains(&"account".to_string()));
+
+        let mut f = d.fields.clone();
+        f.account_id = Some(a.id.clone());
+        f.category_id = Some(service::list_categories(&c, Some("expense"), false).unwrap()[0].id.clone());
+        let updated = update_draft(&c, &d.id, f).unwrap();
+        assert!(updated.fields.hints.is_empty());
+        assert!(updated.problems.is_empty());
+    }
+
+    #[test]
+    fn updating_rejects_a_bad_kind_date_or_time() {
+        let (c, _a) = setup_with_category();
+        let stored = store_drafts(&c, "x.png", &[expense_raw("Maybank Savings", "5")], "2026-10-17").unwrap();
+        let base = stored[0].fields.clone();
+
+        let mut bad_kind = base.clone();
+        bad_kind.kind = "refund".into();
+        assert!(update_draft(&c, &stored[0].id, bad_kind).is_err());
+
+        let mut bad_date = base.clone();
+        bad_date.date = Some("15/10/2026".into());
+        assert!(update_draft(&c, &stored[0].id, bad_date).is_err());
+
+        let mut bad_time = base;
+        bad_time.time = Some("25:99".into());
+        assert!(update_draft(&c, &stored[0].id, bad_time).is_err());
+    }
+
+    #[test]
+    fn confirm_posts_ready_drafts_and_keeps_failed_ones() {
+        let (c, a) = setup_with_category();
+        let stored = store_drafts(
+            &c,
+            "x.png",
+            &[expense_raw("Maybank Savings", "12.50"), expense_raw("Maybank Savings", "0")],
+            "2026-10-17",
+        )
+        .unwrap();
+        let ids: Vec<String> = stored.iter().map(|d| d.id.clone()).collect();
+        let res = confirm_drafts(&c, &ids).unwrap();
+        assert_eq!(res.confirmed, 1);
+        assert_eq!(res.failed.len(), 1);
+        assert_eq!(res.failed[0].id, ids[1]);
+        assert_eq!(service::get_account_balance(&c, &a.id).unwrap(), -1250);
+        assert_eq!(list_drafts(&c).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn confirm_posts_a_transfer() {
+        let c = db();
+        let a = account(&c, "Maybank Savings");
+        let b = account(&c, "TNG eWallet");
+        let stored = store_drafts(
+            &c,
+            "x.png",
+            &[raw(r#"{"date":"2026-10-15","amount":"50","kind":"transfer","account":"Maybank Savings","to_account":"TNG eWallet"}"#)],
+            "2026-10-17",
+        )
+        .unwrap();
+        let res = confirm_drafts(&c, &[stored[0].id.clone()]).unwrap();
+        assert_eq!(res.confirmed, 1);
+        assert_eq!(service::get_account_balance(&c, &a.id).unwrap(), -5000);
+        assert_eq!(service::get_account_balance(&c, &b.id).unwrap(), 5000);
+    }
+
+    #[test]
+    fn a_draft_that_fails_in_the_service_stays_and_reports_why() {
+        let (c, a) = setup_with_category();
+        let stored = store_drafts(&c, "x.png", &[expense_raw("Maybank Savings", "5")], "2026-10-17").unwrap();
+        service::archive_account(&c, &a.id).unwrap();
+        let res = confirm_drafts(&c, &[stored[0].id.clone()]).unwrap();
+        assert_eq!(res.confirmed, 0);
+        assert_eq!(res.failed.len(), 1);
+        assert_eq!(list_drafts(&c).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn discard_removes_drafts_without_posting() {
+        let (c, a) = setup_with_category();
+        let stored = store_drafts(&c, "x.png", &[expense_raw("Maybank Savings", "5")], "2026-10-17").unwrap();
+        discard_drafts(&c, &[stored[0].id.clone()]).unwrap();
+        assert!(list_drafts(&c).unwrap().is_empty());
+        assert_eq!(service::get_account_balance(&c, &a.id).unwrap(), 0);
+    }
+
+    #[test]
+    fn ai_settings_round_trip_and_never_expose_the_key() {
+        let c = db();
+        assert_eq!(get_ai_settings(&c).unwrap().has_key, false);
+        let saved = set_ai_settings(
+            &c,
+            AiSettingsInput { base_url: " https://example.test/v1/ ".into(), model: " m ".into(), api_key: Some("k1".into()) },
+        )
+        .unwrap();
+        assert_eq!(saved.base_url, "https://example.test/v1");
+        assert_eq!(saved.model, "m");
+        assert!(saved.has_key);
+
+        // None keeps the key; Some("") clears it.
+        let kept = set_ai_settings(&c, AiSettingsInput { base_url: saved.base_url.clone(), model: "m".into(), api_key: None }).unwrap();
+        assert!(kept.has_key);
+        assert_eq!(load_ai_config(&c).unwrap().api_key.as_deref(), Some("k1"));
+        let cleared = set_ai_settings(&c, AiSettingsInput { base_url: saved.base_url, model: "m".into(), api_key: Some(String::new()) }).unwrap();
+        assert!(!cleared.has_key);
+
+        // The generic settings reader must not leak the key.
+        assert!(service::get_setting(&c, KEY_API_KEY).is_err());
+    }
+
+    #[test]
+    fn config_requires_a_base_url_and_model_and_a_http_scheme() {
+        let c = db();
+        match load_ai_config(&c) {
+            Err(AppError::Ai(code, _)) => assert_eq!(code, "ai_not_configured"),
+            other => panic!("expected ai_not_configured, got {other:?}"),
+        }
+        let err = set_ai_settings(&c, AiSettingsInput { base_url: "ftp://x".into(), model: "m".into(), api_key: None }).unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
     }
 }
