@@ -9,6 +9,7 @@ import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { useAppData } from "../store";
 import { useToast } from "../components/Toast";
+import type { AiSettings } from "../types";
 import { formatLastChecked, updatePanelCopy, type useUpdater } from "../lib/updater";
 
 // ─── Segmented control (reusable 2-option) ───────────────────────────────────
@@ -185,6 +186,113 @@ function ResetModal({ onClose }: { onClose: () => void }) {
 
 // ─── Settings screen ─────────────────────────────────────────────────────────
 
+const AI_PRESETS: { label: string; baseUrl: string; model: string }[] = [
+  { label: "Google AI Studio (Gemini)", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
+  { label: "Ollama (local)", baseUrl: "http://localhost:11434/v1", model: "llama3.1" },
+  { label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+];
+
+function AiImportCard() {
+  const t = useTheme();
+  const { notify } = useToast();
+  const [saved, setSaved] = useState<AiSettings | null>(null);
+  const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const input = inputStyle(t);
+
+  useEffect(() => {
+    client.getAiSettings().then((s) => {
+      setSaved(s);
+      setBaseUrl(s.baseUrl);
+      setModel(s.model);
+    }).catch(() => {});
+  }, []);
+
+  const message = (error: unknown, fallback: string) =>
+    (error instanceof Error ? error.message : (error as { message?: string } | null)?.message) ?? fallback;
+
+  const save = async (): Promise<boolean> => {
+    try {
+      const next = await client.setAiSettings({ baseUrl, model, apiKey: apiKey === "" ? null : apiKey });
+      setSaved(next);
+      setBaseUrl(next.baseUrl);
+      setApiKey("");
+      return true;
+    } catch (error) {
+      notify(message(error, "Could not save"), "error");
+      return false;
+    }
+  };
+
+  const saveAndTest = async () => {
+    setBusy(true);
+    try {
+      if (!(await save())) return;
+      await client.testAiConnection();
+      notify("Connected. The AI answered.", "info");
+    } catch (error) {
+      notify(message(error, "Connection failed"), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearKey = async () => {
+    try {
+      setSaved(await client.setAiSettings({ baseUrl, model, apiKey: "" }));
+      setApiKey("");
+    } catch (error) {
+      notify(message(error, "Could not clear the key"), "error");
+    }
+  };
+
+  return (
+    <Card>
+      <SectionTitle sub="Used by Drafts to turn the text in a photo into transactions. Any OpenAI-compatible chat endpoint works.">
+        AI import
+      </SectionTitle>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        {AI_PRESETS.map((p) => (
+          <Btn key={p.label} variant="outline" size="sm" onClick={() => { setBaseUrl(p.baseUrl); setModel(p.model); }}>
+            {p.label}
+          </Btn>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+        <label>
+          <div style={{ fontSize: 11, color: t.dim, marginBottom: 4 }}>Base URL</div>
+          <input style={input} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…/v1" />
+        </label>
+        <label>
+          <div style={{ fontSize: 11, color: t.dim, marginBottom: 4 }}>Model</div>
+          <input style={input} value={model} onChange={(e) => setModel(e.target.value)} placeholder="model name" />
+        </label>
+        <label>
+          <div style={{ fontSize: 11, color: t.dim, marginBottom: 4 }}>API key {saved?.hasKey ? "(saved)" : "(optional for local)"}</div>
+          <input
+            style={input}
+            type="password"
+            autoComplete="off"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={saved?.hasKey ? "Leave blank to keep the saved key" : "Paste a key"}
+          />
+        </label>
+      </div>
+      <div style={{ fontSize: 12, color: t.faint, marginTop: 10 }}>
+        The key is stored unencrypted in Sens's local database and is never shown again. Anything you send to a cloud provider leaves this computer.
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <Btn disabled={busy} onClick={() => void saveAndTest()}>{busy ? "Testing…" : "Save & test"}</Btn>
+        <Btn variant="outline" disabled={busy} onClick={() => void save().then((ok) => ok && notify("Saved.", "info"))}>Save</Btn>
+        {saved?.hasKey && <Btn variant="danger" disabled={busy} onClick={() => void clearKey()}>Remove key</Btn>}
+      </div>
+    </Card>
+  );
+}
+
 export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }) {
   const t = useTheme();
   const { mode, toggle } = useThemeMode();
@@ -339,6 +447,8 @@ export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }
           }
         />
       </Card>
+
+      <AiImportCard />
 
       {/* About */}
       <Card>

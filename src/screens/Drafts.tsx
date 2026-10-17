@@ -82,6 +82,10 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
       notify("That image is larger than 20 MB.", "error");
       return;
     }
+    if (ai && (ai.baseUrl.trim() === "" || ai.model.trim() === "")) {
+      notify("Set an AI base URL and model in Settings → AI import first.", "error");
+      return;
+    }
     setLostText(null);
     let text = "";
     try {
@@ -101,7 +105,7 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
     } finally {
       setBusy("idle");
     }
-  }, [notify, onCountChange]);
+  }, [ai, notify, onCountChange]);
 
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
