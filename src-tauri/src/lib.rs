@@ -5,6 +5,7 @@ mod ai;
 mod apportion;
 mod commands;
 mod db;
+mod drafts;
 pub mod error;
 mod models;
 mod recurrence;
