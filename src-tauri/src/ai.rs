@@ -1,6 +1,8 @@
 //! OpenAI-compatible chat client and the prompt/reply contract for photo import.
 //! No database access: callers pass the settings and names in.
 
+use std::time::Duration;
+
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -87,6 +89,95 @@ pub fn parse_reply(text: &str) -> AppResult<Vec<RawDraft>> {
         .map_err(|e| AppError::Ai("ai_bad_response", format!("The AI reply was not the expected JSON: {e}")))
 }
 
+fn ensure_crypto_provider() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // reqwest is built with `rustls-no-provider`; install ring once. Ignore
+        // the error if the updater already installed a provider.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
+fn send_error(e: reqwest::Error) -> AppError {
+    AppError::Ai("ai_unreachable", format!("Could not reach the AI provider: {}", e.without_url()))
+}
+
+fn short(text: &str) -> String {
+    text.chars().take(200).collect()
+}
+
+fn content_from(body: &str) -> AppResult<String> {
+    let v: Value = serde_json::from_str(body)
+        .map_err(|_| AppError::Ai("ai_bad_response", "The AI provider did not return JSON.".into()))?;
+    v["choices"][0]["message"]["content"]
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| AppError::Ai("ai_bad_response", "The AI provider's reply had no message content.".into()))
+}
+
+/// One `/chat/completions` call. Asks for JSON mode first and, if the provider
+/// rejects that with a 400, repeats once without it.
+pub async fn chat_completion(cfg: &AiConfig, messages: &[Value]) -> AppResult<String> {
+    ensure_crypto_provider();
+    let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| AppError::Ai("ai_unreachable", e.to_string()))?;
+    let mut json_mode = true;
+    loop {
+        let mut body = json!({"model": cfg.model, "messages": messages, "temperature": 0});
+        if json_mode {
+            body["response_format"] = json!({"type": "json_object"});
+        }
+        let mut req = client.post(&url).json(&body);
+        if let Some(key) = cfg.api_key.as_deref().filter(|k| !k.is_empty()) {
+            req = req.bearer_auth(key);
+        }
+        let resp = req.send().await.map_err(send_error)?;
+        let status = resp.status();
+        let text = resp.text().await.map_err(send_error)?;
+        if status.as_u16() == 400 && json_mode {
+            json_mode = false;
+            continue;
+        }
+        if status.as_u16() == 401 || status.as_u16() == 403 {
+            return Err(AppError::Ai("ai_auth", "The AI provider rejected the API key.".into()));
+        }
+        if !status.is_success() {
+            return Err(AppError::Ai(
+                "ai_bad_response",
+                format!("The AI provider returned {status}: {}", short(&text)),
+            ));
+        }
+        return content_from(&text);
+    }
+}
+
+/// Ask for transactions; if the reply is not valid, show the model the problem
+/// and ask once more.
+pub async fn extract(cfg: &AiConfig, mut messages: Vec<Value>) -> AppResult<Vec<RawDraft>> {
+    let first = chat_completion(cfg, &messages).await?;
+    match parse_reply(&first) {
+        Ok(rows) => Ok(rows),
+        Err(err) => {
+            messages.push(json!({"role": "assistant", "content": first}));
+            messages.push(json!({
+                "role": "user",
+                "content": format!("That reply was not valid: {err}. Reply again with only the JSON object described.")
+            }));
+            let second = chat_completion(cfg, &messages).await?;
+            parse_reply(&second)
+        }
+    }
+}
+
+/// Used by Settings → Test connection.
+pub async fn test_connection(cfg: &AiConfig) -> AppResult<()> {
+    let messages = vec![json!({"role": "user", "content": "Reply with the JSON object {\"ok\": true} and nothing else."})];
+    chat_completion(cfg, &messages).await.map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +238,128 @@ mod tests {
     #[test]
     fn rejects_json_without_the_transactions_key() {
         assert!(parse_reply(r#"{"items":[]}"#).is_err());
+    }
+
+    // A tiny scripted HTTP server: answers each connection with the next canned
+    // response and returns the raw requests it saw.
+    fn find_header_end(buf: &[u8]) -> Option<usize> {
+        buf.windows(4).position(|w| w == b"\r\n\r\n")
+    }
+
+    fn serve(responses: Vec<(u16, String)>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            let mut seen = Vec::new();
+            for (status, body) in responses {
+                let (mut sock, _) = listener.accept().unwrap();
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let n = sock.read(&mut chunk).unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                    if let Some(pos) = find_header_end(&buf) {
+                        let head = String::from_utf8_lossy(&buf[..pos]).to_lowercase();
+                        let len = head
+                            .lines()
+                            .find_map(|l| l.strip_prefix("content-length:"))
+                            .and_then(|v| v.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
+                        if buf.len() >= pos + 4 + len {
+                            break;
+                        }
+                    }
+                }
+                seen.push(String::from_utf8_lossy(&buf).to_string());
+                let resp = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                sock.write_all(resp.as_bytes()).unwrap();
+            }
+            seen
+        });
+        (url, handle)
+    }
+
+    fn chat_ok(content: &str) -> (u16, String) {
+        (200, json!({"choices": [{"message": {"content": content}}]}).to_string())
+    }
+
+    fn cfg(url: &str) -> AiConfig {
+        AiConfig { base_url: url.to_string(), model: "m".into(), api_key: Some("secret".into()) }
+    }
+
+    fn code_of(e: &AppError) -> &'static str {
+        match e {
+            AppError::Ai(c, _) => c,
+            _ => "other",
+        }
+    }
+
+    fn msgs() -> Vec<Value> {
+        vec![json!({"role": "user", "content": "hi"})]
+    }
+
+    #[test]
+    fn chat_completion_returns_content_and_sends_key_and_json_mode() {
+        let (url, server) = serve(vec![chat_ok("{\"transactions\":[]}")]);
+        let out = tauri::async_runtime::block_on(chat_completion(&cfg(&url), &msgs())).unwrap();
+        assert_eq!(out, "{\"transactions\":[]}");
+        let req = server.join().unwrap().remove(0).to_lowercase();
+        assert!(req.contains("post /chat/completions"));
+        assert!(req.contains("bearer secret"));
+        assert!(req.contains("response_format"));
+    }
+
+    #[test]
+    fn chat_completion_retries_without_json_mode_after_a_400() {
+        let (url, server) = serve(vec![(400, "{}".into()), chat_ok("ok")]);
+        let out = tauri::async_runtime::block_on(chat_completion(&cfg(&url), &msgs())).unwrap();
+        assert_eq!(out, "ok");
+        let seen = server.join().unwrap();
+        assert!(seen[0].contains("response_format"));
+        assert!(!seen[1].contains("response_format"));
+    }
+
+    #[test]
+    fn chat_completion_maps_401_to_ai_auth() {
+        let (url, _server) = serve(vec![(401, "{}".into())]);
+        let err = tauri::async_runtime::block_on(chat_completion(&cfg(&url), &msgs())).unwrap_err();
+        assert_eq!(code_of(&err), "ai_auth");
+    }
+
+    #[test]
+    fn chat_completion_maps_connection_failure_to_ai_unreachable() {
+        let err = tauri::async_runtime::block_on(chat_completion(&cfg("http://127.0.0.1:9"), &msgs())).unwrap_err();
+        assert_eq!(code_of(&err), "ai_unreachable");
+    }
+
+    #[test]
+    fn chat_completion_rejects_a_reply_without_content() {
+        let (url, _server) = serve(vec![(200, "{\"choices\":[]}".into())]);
+        let err = tauri::async_runtime::block_on(chat_completion(&cfg(&url), &msgs())).unwrap_err();
+        assert_eq!(code_of(&err), "ai_bad_response");
+    }
+
+    #[test]
+    fn extract_retries_once_when_the_first_reply_is_not_json() {
+        let good = "{\"transactions\":[{\"amount\":\"3.00\",\"kind\":\"expense\"}]}";
+        let (url, server) = serve(vec![chat_ok("not json"), chat_ok(good)]);
+        let rows = tauri::async_runtime::block_on(extract(&cfg(&url), msgs())).unwrap();
+        assert_eq!(rows.len(), 1);
+        let seen = server.join().unwrap();
+        assert!(seen[1].contains("not valid"));
+    }
+
+    #[test]
+    fn extract_gives_up_after_the_second_bad_reply() {
+        let (url, _server) = serve(vec![chat_ok("nope"), chat_ok("still nope")]);
+        let err = tauri::async_runtime::block_on(extract(&cfg(&url), msgs())).unwrap_err();
+        assert_eq!(code_of(&err), "ai_bad_response");
     }
 }
