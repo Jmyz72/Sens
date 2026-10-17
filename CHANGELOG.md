@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A schedule that fails to load during the schedule pass no longer hides transactions already auto-posted for other schedules.
 
 ### Added
+- **Drafts (photo import).** A new Drafts screen reads a receipt or bank screenshot with your computer's built-in text recognition, asks an AI model you configure (any OpenAI-compatible endpoint: Gemini, Ollama, OpenAI…) to find the transactions, and shows them for review. Edit anything, then confirm; nothing posts until you do. Only the recognised text, your account names and category names are sent to the AI. Set it up in Settings → AI import.
 - **Schedules.** An income, expense, transfer, or card/BNPL payment can repeat on a daily, weekly, monthly, or yearly rule. Auto posts the saved amount when the date and time arrive, including dates missed while Sens was closed or asleep, and a notice lists what was posted. Tap to post waits on Upcoming at the top of Transactions until you post it, with a different amount if you want, or skip that date. Editing a schedule updates dates that are not posted and not skipped.
 - **Update Net Worth.** On a fixed deposit, investment, unit trust, or crypto account, enter what it is worth now. The difference is saved as income or expense, dated today, described "Value update", and counted in income, spending, and budgets. The account can remember an income category for a rise and an expense category for a drop. When it has no category for that side, the update asks once and does not save the choice. Correct balance is unchanged.
 
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 - Specified photo transaction import: OS OCR, an OpenAI-compatible LLM, and a Drafts sidebar screen to review before saving (`docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md`).
+- Planned photo transaction import (`docs/superpowers/plans/2026-10-17-photo-transaction-import.md`).
 - Specified recurring schedules, Upcoming, and the away notice (`docs/superpowers/specs/2026-10-15-recurring-and-reminders-design.md`).
 - Specified Update Net Worth for fixed deposit, investment, unit trust, and crypto accounts (`docs/superpowers/specs/2026-10-14-update-net-worth-design.md`).
 - Planned Update Net Worth (`docs/superpowers/plans/2026-10-14-update-net-worth.md`).

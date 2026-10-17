@@ -15,6 +15,7 @@ Read this before changing UI structure or adding a setting.
 - [Transactions screen](#transactions-screen)
 - [Itemized Add-Transaction builder](#itemized-add-transaction-builder)
 - [Reimbursement form](#reimbursement-form)
+- [Drafts screen (photo import)](#drafts-screen-photo-import)
 - [Auto-updater](#auto-updater-desktop-only)
 - [App settings & window config](#app-settings--window-config)
 
@@ -38,7 +39,8 @@ Composed in `src/App.tsx` from `Sidebar.tsx` and `TopBar.tsx`.
 | `src/components/Sidebar.tsx` | Collapsible: full 220 px ↔ 56 px icon rail with hover tooltips. State persisted in `localStorage` under `sens.sidebar`. Net-worth card shows only when expanded. |
 | `src/components/TopBar.tsx` | Title/subtitle, the month control on **Dashboard and Plan**, and a **Transaction-only** Add button. |
 | `src/lib/useScheduleEngine.ts` | Runs **`run_schedule_pass`** on mount, window focus, and the next due wake; loads **Upcoming**; accumulates **While you were away** when a pass returns posted rows; exposes **`commitSchedule`** so create/update/delete schedule then pass in one step. Wired from `src/App.tsx`. |
-| `src/nav.ts` | Nav config. **Overview** groups Dashboard and Plan. |
+| `src/nav.ts` | Nav config. **Overview** groups Dashboard and Plan. **Money** holds Accounts, Transactions, Drafts, Categories. |
+| Drafts badge | `src/App.tsx` loads `draftCount` from `client.listImportDrafts()` on start; the Drafts screen reports changes through `onCountChange`. The badge is the number of pending drafts, hidden at zero. |
 | `src/components/Brand.tsx` | Brand mark (Coin S). |
 
 **Account creation lives on the Accounts screen**, not the top bar: `src/screens/Accounts.tsx` owns the `AddAccount` modal.
@@ -163,6 +165,31 @@ Each picked expense gets an editable allocation; Save stays disabled until "Allo
   an "Awaiting reimbursement" tile.
 - Helpers: `src/lib/reimbursements.ts`.
 
+## Drafts screen (photo import)
+
+`src/screens/Drafts.tsx`, sidebar entry **Drafts** (Money section, after Transactions). Backend and
+draft rules: [backend.md](./backend.md#photo-import-drafts).
+Spec: `docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md`.
+
+- **Add from a photo:** **Choose photo** (a hidden `<input type="file" accept="image/*">`) or paste an
+  image anywhere on the screen (a document `paste` listener). Non-images and files over 20 MB are
+  rejected before any call. Drag-and-drop stays off (`dragDropEnabled: false`).
+- Progress reads "Reading the text in your photo…" (`client.ocrImage`, raw bytes) then "Asking the AI to
+  find transactions…" (`client.extractDrafts`).
+- Choose photo is disabled until an AI base URL and model are saved; the card then points to
+  Settings → AI import. When the base URL is not `localhost` / `127.0.0.1` / `[::1]`, a line names the
+  host the text is sent to.
+- If OCR succeeded but extraction failed, a **Text read from the photo** card shows the OCR text so it
+  can be copied for manual entry.
+- **Review drafts:** one editable card per draft (kind, date, time while **Record transaction times** is
+  on, amount, account or from/to accounts, category, note). Selects save at once; text fields save on
+  blur through `client.updateImportDraft`.
+- Problems show a red border plus an icon and "Needs attention: …" text; hints show an info icon and
+  "Check: …". Color is never the only cue.
+- **Confirm** is disabled while a draft has problems. **Confirm all ready** confirms every draft with no
+  problems; **Discard all** discards everything. After a confirm the app data reloads, and each failure
+  is toasted while the draft stays listed.
+
 ## Auto-updater (desktop only)
 
 Plugins `tauri-plugin-updater` + `tauri-plugin-process` are registered in `src-tauri/src/lib.rs` and
@@ -198,8 +225,17 @@ Preferences are key/value rows, read and written through `client.getSetting` / `
 | `bulk_action_preview` | "Preview bulk actions" toggle (default on) |
 | `transaction_time_enabled` | "Record transaction times" toggle (default on; a missing key means on) |
 | `owe_notice_shown` | One-time post-migration debt-reclassification notice |
+| `ai_base_url` + `ai_model` | Settings → AI import (read and written through `client.getAiSettings` / `setAiSettings`) |
+| `ai_api_key` | Settings → AI import. **Write-only:** the frontend only sees `hasKey`, and `get_setting` refuses this key |
 
-Settings also hosts the theme toggle, the About/updater panel, and the type-`RESET` factory-reset "Danger zone".
+Settings also hosts the theme toggle, the About/updater panel, the **AI import** card, and the type-`RESET`
+factory-reset "Danger zone".
+
+**AI import** (`AiImportCard` in `src/screens/Settings.tsx`): preset buttons (Google AI Studio (Gemini),
+Ollama (local), OpenAI) fill the base URL and model; fields for base URL, model and API key (password
+input, left blank to keep the saved key); **Save & test** saves then calls `client.testAiConnection`,
+**Save** saves only, and **Remove key** appears when a key is saved. The card states that the key is stored
+unencrypted in the local database.
 
 **Window config:** the main window sets `dragDropEnabled: false` in `tauri.conf.json`.
 This is required so HTML5 drag-to-reorder (Categories) works in the Tauri webview. **Don't remove it.**

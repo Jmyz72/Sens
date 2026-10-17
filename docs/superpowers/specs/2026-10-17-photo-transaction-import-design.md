@@ -1,7 +1,7 @@
 # Photo transaction import (OCR + LLM) — design
 
 **Date:** 2026-10-17
-**Status:** Approved design, not yet implemented
+**Status:** Implemented (unreleased). Plan: `docs/superpowers/plans/2026-10-17-photo-transaction-import.md`
 
 ## Goal
 
@@ -34,7 +34,7 @@ until the user confirms.
 
 1. The user opens the **Drafts** screen (sidebar, "Money" section), then picks a file or pastes an image.
 2. `ocr_image` runs the OS OCR and returns text.
-3. `extract_transactions` builds a prompt from the OCR text, the active account names and the
+3. `extract_drafts` builds a prompt from the OCR text, the active account names and the
    category/subcategory tree, calls the configured endpoint in JSON mode, and validates the reply.
 4. The service resolves account and category names to IDs. Unmatched names stay empty and are
    flagged.
@@ -60,7 +60,8 @@ until the user confirms.
   does arithmetic that is stored. Zero, negative or unparseable amounts are rejected as drafts
   needing fixing.
 - `date` is `YYYY-MM-DD`; `time` is optional `HH:MM`. A missing date defaults to today and is
-  flagged. A future date is flagged.
+  flagged. A future date is flagged. When "Record transaction times" is on, a missing time becomes
+  `00:00` with a `time_assumed` hint instead of blocking the row.
 - `kind` is one of `expense | income | transfer`. A transfer requires both `account` and
   `to_account`.
 - `confidence` is 0–1. Below 0.6, or any unresolved name, marks the row "needs review".
@@ -73,31 +74,36 @@ until the user confirms.
 ### Rust
 
 - `src-tauri/src/ocr.rs`: `recognize(image_bytes) -> Result<String, AppError>`, with a
-  `#[cfg(target_os)]` implementation per platform behind a `trait OcrEngine` so tests can stub it.
+  `#[cfg(target_os)]` implementation per platform (no trait; the draft logic takes text, so tests
+  do not need an OCR stub).
 - `src-tauri/src/ai.rs`: OpenAI-compatible client (`POST {base_url}/chat/completions`,
-  JSON response format), prompt builder, response schema validation, `trait LlmClient` for stubbing.
-- `service.rs`: orchestration (`import_from_text`, which saves drafts), name-to-ID resolution (case-insensitive, trimmed,
-  exact match first, then unique prefix match; ambiguous means unresolved), cents conversion and
-  draft flags. It also holds the AI settings get/set and `test_ai_connection`.
-- `commands.rs`: thin commands `ocr_image`, `extract_transactions`, `get_ai_settings`,
-  `set_ai_settings`, `test_ai_connection`. Confirm reuses the existing create-transaction commands.
+  JSON response format), prompt builder, response schema validation. No trait: tests run the client
+  against a local stub HTTP server.
+- `src-tauri/src/drafts.rs` (not `service.rs`, following `schedules.rs`): name-to-ID resolution
+  (case-insensitive, trimmed, exact match first, then unique prefix match; ambiguous means
+  unresolved), cents conversion, draft hints and problems, draft storage and confirm, and the AI
+  settings get/set. `service.rs` only blocks `get_setting` from reading the API key.
+- `commands.rs`: thin commands `ocr_image` (raw IPC body), `extract_drafts`, `get_ai_settings`,
+  `set_ai_settings`, `test_ai_connection`, plus the draft commands below. Confirm reuses the existing
+  create-transaction service functions.
 - `Cargo.toml`: add `reqwest` (rustls, json) and the platform OCR bindings.
 
 ### Drafts storage
 
 A new append-only migration adds `import_drafts` (`id` UUID, `created_at`, `source_name` for the
 file name or "pasted image", and `payload` JSON holding one draft transaction in the shape above
-plus its flags). The backend generates the id and timestamp. Commands: `list_import_drafts`,
-`update_import_draft`, `discard_import_draft`, `confirm_import_drafts(ids)`. The OCR text and image
+plus its flags; an `updated_at` column too). This is migration 016. The backend generates the id and
+timestamps. Commands: `list_import_drafts`, `update_import_draft`, `discard_import_drafts(ids)`,
+`confirm_import_drafts(ids)`. The OCR text and image
 are not stored. Per the repo's no-existing-users rule there is no backfill.
 
 ### Settings
 
-`ai_base_url`, `ai_model`, `ai_api_key`, stored in the settings table. The key is not returned to the
-frontend after saving (only a "set" flag). Presets prefill the base URL (Google AI Studio, Ollama,
-OpenAI). A **Test connection** button sends a tiny request and reports success, auth failure or
-unreachable. If a cheap OS-keychain option exists at implementation time, prefer it for the key;
-otherwise the settings table, noted in the UI.
+`ai_base_url`, `ai_model`, `ai_api_key`, stored in the settings table; the key is write-only from the
+frontend. It is not returned after saving (only a `hasKey` flag), and the generic `get_setting`
+refuses it. No OS keychain is used; the UI says the key is stored unencrypted in the local database.
+Presets prefill the base URL and model (Google AI Studio, Ollama, OpenAI). **Save & test** saves, then
+sends a tiny request and reports success, auth failure or unreachable.
 
 ### Frontend
 
@@ -127,11 +133,11 @@ and mock throw the same shape. Network errors never expose the API key in messag
 
 Only OCR text plus account and category names are sent. When the base URL is not a local host
 (`localhost`, `127.0.0.1`, `[::1]`), the Drafts screen shows a one-time notice that the text goes to that
-provider. Logs never include OCR text or keys.
+provider (shown whenever such a base URL is set, not only once). Logs never include OCR text or keys.
 
 ## Testing
 
-- Rust unit tests (stubbed `OcrEngine` / `LlmClient`): schema validation, retry-on-bad-JSON,
+- Rust unit tests (draft logic on plain text; the HTTP client against a local stub server): schema validation, retry-on-bad-JSON,
   amount-to-cents edge cases, name resolution (exact, prefix, ambiguous, unknown), transfer
   validation, confidence flagging, confirm creating balanced postings.
 - Rust: draft persistence (list, update, discard) and confirm creating transactions and removing drafts.
