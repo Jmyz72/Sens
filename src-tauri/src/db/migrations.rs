@@ -7,7 +7,7 @@ pub const MIGRATIONS: &[(i64, &str)] = &[
     (1, MIGRATION_001), (2, MIGRATION_002), (3, MIGRATION_003), (4, MIGRATION_004),
     (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008),
     (9, MIGRATION_009), (10, MIGRATION_010), (11, MIGRATION_011), (12, MIGRATION_012),
-    (13, MIGRATION_013), (14, MIGRATION_014), (15, MIGRATION_015),
+    (13, MIGRATION_013), (14, MIGRATION_014), (15, MIGRATION_015), (16, MIGRATION_016),
 ];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
@@ -511,5 +511,15 @@ CREATE TABLE schedule_occurrences (
     status TEXT NOT NULL CHECK (status IN ('posted', 'skipped')),
     transaction_id TEXT REFERENCES transactions(id) ON DELETE SET NULL,
     PRIMARY KEY (schedule_id, occurrence_date)
+);
+"#;
+
+const MIGRATION_016: &str = r#"
+CREATE TABLE import_drafts (
+    id TEXT PRIMARY KEY,
+    source_name TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 "#;

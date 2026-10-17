@@ -179,6 +179,32 @@ mod tests {
         assert_eq!(n, 2);
     }
 
+    #[test]
+    fn migration_016_creates_import_drafts_table() {
+        let c = test_db();
+        let n: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='import_drafts'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn factory_reset_leaves_import_drafts_empty() {
+        let c = test_db();
+        c.execute(
+            "INSERT INTO import_drafts (id, source_name, payload, created_at, updated_at) VALUES ('d1', 'x.png', '{}', 't', 't')",
+            [],
+        )
+        .unwrap();
+        service::reset_app(&c).unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM import_drafts", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+    }
+
     fn value_pair(gain: Option<&str>, loss: Option<&str>) -> ValueCategories {
         ValueCategories {
             gain_category_id: gain.map(str::to_string),
