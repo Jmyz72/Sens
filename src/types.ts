@@ -251,6 +251,52 @@ export interface SchedulePass {
 }
 
 export interface AppError {
-  code: "ValidationError" | "NotFound" | "Conflict" | "DatabaseError";
+  code:
+    | "ValidationError" | "NotFound" | "Conflict" | "DatabaseError"
+    | "ocr_unavailable" | "ocr_empty" | "ai_not_configured" | "ai_unreachable" | "ai_auth" | "ai_bad_response";
   message: string;
+}
+
+// ── Photo import ─────────────────────────────────────────────────────────────
+
+export type DraftKind = "expense" | "income" | "transfer";
+
+export interface DraftFields {
+  kind: DraftKind;
+  date: string | null;
+  time: string | null;
+  amountCents: number | null;
+  accountId: string | null;
+  toAccountId: string | null;
+  categoryId: string | null;
+  note: string | null;
+  /** Non-blocking notes from import; cleared by any edit. */
+  hints: string[];
+}
+
+export interface ImportDraft {
+  id: string;
+  sourceName: string;
+  createdAt: string;
+  fields: DraftFields;
+  /** Blocking problems: "amount" | "date" | "time" | "account" | "to_account" | "category" | "kind". */
+  problems: string[];
+}
+
+export interface ConfirmResult {
+  confirmed: number;
+  failed: { id: string; message: string }[];
+}
+
+export interface AiSettings {
+  baseUrl: string;
+  model: string;
+  hasKey: boolean;
+}
+
+export interface AiSettingsInput {
+  baseUrl: string;
+  model: string;
+  /** null keeps the saved key; "" clears it. */
+  apiKey: string | null;
 }

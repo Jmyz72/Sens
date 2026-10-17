@@ -32,8 +32,10 @@ Rust is not on the default PATH. Prefix Rust/Tauri commands with `export PATH="$
 | `cd src-tauri && cargo build` | Compile the desktop binary (validates command registration + config). |
 | `npm run gen:seed-catalog` | Regenerate `src/generated/seed-catalog.json` from the Rust seed. |
 
-Test locations: frontend tests in `src/lib/__tests__/`, release-tooling tests in `scripts/__tests__/`,
-Rust tests as `#[cfg(test)]` in `src-tauri/src/lib.rs`, `src-tauri/src/db/mod.rs` and `src-tauri/src/apportion.rs`.
+Test locations: frontend tests in `src/__tests__/` (mock and UI-logic tests) and `src/lib/__tests__/`,
+release-tooling tests in `scripts/__tests__/`, Rust tests as `#[cfg(test)]` in `src-tauri/src/lib.rs`,
+`src-tauri/src/db/mod.rs`, `src-tauri/src/apportion.rs`, `src-tauri/src/recurrence.rs`, `src-tauri/src/ai.rs`,
+`src-tauri/src/drafts.rs` and `src-tauri/src/ocr.rs`.
 
 ## Architecture
 
@@ -81,7 +83,7 @@ and commit the JSON. CI fails if it is stale. Details: [backend.md](docs/archite
 | Transaction kinds, postings/balances, opening balance, time, splits, balance correction, dashboard totals | [`docs/architecture/transactions.md`](docs/architecture/transactions.md) |
 | Account types/subtypes, signed liabilities, credit limits, providers | [`docs/architecture/accounts.md`](docs/architecture/accounts.md) |
 | Categories, subcategories, system categories, the Categories screen, emoji picker | [`docs/architecture/categories.md`](docs/architecture/categories.md) |
-| Commands, migrations, seeding, factory reset, the mock seam | [`docs/architecture/backend.md`](docs/architecture/backend.md) |
+| Commands, migrations, seeding, factory reset, the mock seam, photo import (OCR, AI, drafts) | [`docs/architecture/backend.md`](docs/architecture/backend.md) |
 | Theming, app shell, Transactions screen, Add Transaction builder, updater, settings | [`docs/architecture/frontend.md`](docs/architecture/frontend.md) |
 | What's planned or shipped | [`ROADMAP.md`](ROADMAP.md) and [`CHANGELOG.md`](CHANGELOG.md) |
 

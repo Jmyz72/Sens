@@ -4,7 +4,7 @@ Layering conventions, errors, migrations, seeding, factory reset, and how the br
 Read this before adding a command, a migration, or changing seed data.
 
 **Key files:** `src-tauri/src/{commands,service,repo}.rs` · `src-tauri/src/db/{migrations,seed,mod}.rs` ·
-`src/client/{index,invoke,mock}.ts` · `src/generated/seed-catalog.json`
+`src-tauri/src/{drafts,ai,ocr}.rs` · `src/client/{index,invoke,mock}.ts` · `src/generated/seed-catalog.json`
 
 ## Contents
 
@@ -12,6 +12,7 @@ Read this before adding a command, a migration, or changing seed data.
 - [The Tauri / mock seam](#the-tauri--mock-seam)
 - [Conventions](#conventions)
 - [Migrations](#migrations)
+- [Photo import (Drafts)](#photo-import-drafts)
 - [Default categories and backfill](#default-categories-and-backfill)
 - [Factory reset](#factory-reset)
 
@@ -56,6 +57,9 @@ The UI never touches SQL.
 - Structs serialize `rename_all = "camelCase"` to match the TS types in `src/types.ts`.
 - **Errors:** `AppError` (`ValidationError | NotFound | Conflict | DatabaseError`) serializes to
   `{code, message}`.
+  - `AppError::Ai(code, message)` carries its own stable code for photo import: `ocr_unavailable`,
+    `ocr_empty`, `ai_not_configured`, `ai_unreachable`, `ai_auth`, `ai_bad_response`. Messages never
+    include the API key (request errors are reported `without_url()`).
   - The TS `AppError` and the mock throw the same shape.
   - Surface errors via toast (page-level) or inline (form-level).
 - The DB lives in the Tauri app-data dir. Every connection sets `PRAGMA foreign_keys = ON`.
@@ -67,7 +71,7 @@ The UI never touches SQL.
   the migration in `BEGIN…COMMIT`.
 - First-run seeding and the `seeded` flag commit atomically.
 - The runner applies migrations **cumulatively**, so a DB at any earlier version is carried forward.
-  Fresh installs run **001 → 015** and reach the same end schema.
+  Fresh installs run **001 → 016** and reach the same end schema.
 - There are no existing users, so don't add backfill or conversion for a prior user base. Keep
   migrations append-only so a local dev DB and a fresh install match.
 
@@ -87,6 +91,7 @@ The UI never touches SQL.
 | 013 | Creates `category_budgets` and `savings_goals` | Versioned monthly amounts per expense category; named savings targets on one account each |
 | 014 | Adds `gain_category_id` and `loss_category_id` on `accounts` | Optional categories for Update Net Worth |
 | 015 | Creates `schedules` and `schedule_occurrences` | Recurring templates and posted or skipped dates. New tables, not a rebuild of `transactions` |
+| 016 | Creates `import_drafts` (`id`, `source_name`, `payload` JSON, `created_at`, `updated_at`) | Photo-import drafts awaiting review. Not transactions: no postings, no balance effect, no foreign keys |
 
 Plan commands (mirrored in `mock.ts`): `get_plan`, `set_budgets`, `create_goal`, `update_goal`, `delete_goal`.
 
@@ -110,6 +115,63 @@ helpers in `src/client/index.ts`).
 > ⚠ After migration 006, **a naive rebuild of `transactions` deletes every posting and split**
 > (`ON DELETE CASCADE`). Prefer `ALTER … ADD COLUMN` or a new table (as 007 and 009 do). If a table
 > CHECK must change, copy `postings` and `transaction_splits` before the swap (as 011 and 012 do).
+
+## Photo import (Drafts)
+
+Spec: `docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md`.
+The image is read by the OS, only the text goes to an OpenAI-compatible LLM, and the result is stored
+as drafts the user confirms one by one.
+
+| Module | Role |
+|---|---|
+| `src-tauri/src/ocr.rs` | `recognize(bytes)`: Apple Vision on macOS (`objc2-vision`), `Windows.Media.Ocr` on Windows (`windows` crate), and an `ocr_unavailable` stub elsewhere. Empty text → `ocr_empty`. The image is never stored. |
+| `src-tauri/src/ai.rs` | Prompt builder (today's date, active account names, the expense/income category tree, OCR text capped at 20,000 chars), reply parsing, and the `reqwest` client for `POST {base_url}/chat/completions`. Asks for JSON mode and repeats once without it on a 400; a reply that fails to parse gets one retry with the error. No DB access. |
+| `src-tauri/src/drafts.rs` | Service-layer module (like `schedules.rs`): amount text → cents, name → ID matching (normalised exact match, then a unique prefix; ambiguous stays empty), hints, blocking problems, draft CRUD, confirm, and the AI settings. SQL stays in `repo.rs`. |
+
+**Commands** (all mirrored in `mock.ts`):
+
+- **`ocr_image`** takes the image as a **raw IPC body**, not JSON args (`dispatchRaw` in
+  `src/client/invoke.ts`, `client.ocrImage`), so a photo is not sent as a JSON number array. OCR runs in
+  `spawn_blocking`. The mock ignores the bytes and returns canned receipt text.
+- **`extract_drafts(sourceName, text)`** reads the settings and lookups under one short lock, calls the
+  LLM **without holding the DB lock**, then stores the rows. The mock skips the LLM and returns one
+  expense (plus a transfer when there are two accounts).
+- **`list_import_drafts`**, **`update_import_draft(id, fields)`**, **`discard_import_drafts(ids)`**,
+  **`confirm_import_drafts(ids)`**.
+- **`get_ai_settings`**, **`set_ai_settings(input)`**, **`test_ai_connection`** (tests the saved settings).
+
+**Drafts**
+
+- `payload` holds `DraftFields` (kind, date, time, amount cents, account, to-account, category, note,
+  `hints`). `problems` are recomputed on every read and are not stored.
+- **Hints** are advisory: `low_confidence` (below 0.6), `date_assumed` (today), `time_assumed`,
+  `kind_assumed` (expense), `future_date`, `non_myr`, `unmatched_account`, `unmatched_category`. Any edit
+  clears them.
+- **Problems** block confirm: `amount`, `date`, `time` (only while times are on), `account`, `to_account`
+  (missing or same as `account`), `category` (income/expense), `kind`.
+- With **Record transaction times** on, a row with no time gets `00:00` and the `time_assumed` hint
+  instead of a `time` problem.
+- **Confirm** posts each draft independently through `service::create_expense` / `create_income` /
+  `create_transfer` and deletes the draft in the same transaction. A failure (problems left, or a
+  service error such as an archived account) leaves that draft in place and is returned in
+  `ConfirmResult.failed`; the other drafts still post. A transfer draft whose destination is a credit
+  card or BNPL account is confirmed as a payment (`service::create_payment`).
+
+**AI settings** live in `app_settings`: `ai_base_url` (must start with `http://` or `https://`;
+trailing `/` trimmed), `ai_model`, `ai_api_key`.
+
+- The key is **write-only from the frontend**: `get_ai_settings` returns only `hasKey`, and the generic
+  `get_setting` rejects `ai_api_key` with a `ValidationError` (the mock does the same).
+- In `set_ai_settings`, `apiKey: null` keeps the saved key and `""` clears it.
+- The key is stored unencrypted in the local database (no OS keychain). The Settings card says so.
+
+**Dependencies:** `reqwest` 0.13 (`json`, `rustls-no-provider`) with `rustls` + `ring` installed as the
+crypto provider once per process; `objc2`, `objc2-foundation`, `objc2-vision` on macOS; `windows` 0.61
+(`Media_Ocr`, `Graphics_Imaging`, `Storage_Streams`, …) on Windows.
+
+> ⚠ CI runs on Ubuntu, so it compiles only the stub OCR backend. The macOS backend is built locally;
+> the **Windows backend is only compiled by the release workflow** and has not been run on Windows.
+> The `ai.rs` tests drive the HTTP client against a local stub server; no test calls a real provider.
 
 ## Default categories and backfill
 
@@ -136,7 +198,7 @@ helpers in `src/client/index.ts`).
 
 The `reset_app` command (`service::reset_app` → `db::reset_to_defaults`):
 
-- Wipes `schedule_occurrences` and `schedules` first, then `savings_goals` and `category_budgets`, `reimbursement_allocations` (its `expense_id` FK is `RESTRICT`), `postings`, `transactions`, `categories`, `accounts`, and `app_settings` in **one transaction**.
+- Wipes `import_drafts`, `schedule_occurrences` and `schedules` first, then `savings_goals` and `category_budgets`, `reimbursement_allocations` (its `expense_id` FK is `RESTRICT`), `postings`, `transactions`, `categories`, `accounts`, and `app_settings` in **one transaction**.
 - Re-runs the idempotent seed, re-setting the `seeded` flag and all `defaults_v*_seeded` flags.
 - Mirrored by `resetApp()` in `mock.ts`.
 - Exposed in Settings → Danger zone (type `RESET` to confirm).

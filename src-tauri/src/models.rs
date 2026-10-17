@@ -362,3 +362,68 @@ pub struct DashboardSummary {
     pub account_balances: Vec<AccountBalance>,
     pub recent_transactions: Vec<Transaction>,
 }
+
+// ── Photo import ─────────────────────────────────────────────────────────────
+
+/// One reviewable draft transaction. Stored as JSON in `import_drafts.payload`.
+/// `hints` are non-blocking notes from import ("low_confidence", "date_assumed",
+/// "time_assumed", "kind_assumed", "future_date", "non_myr", "unmatched_account",
+/// "unmatched_category"); any user edit clears them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftFields {
+    pub kind: String,
+    pub date: Option<String>,
+    pub time: Option<String>,
+    pub amount_cents: Option<i64>,
+    pub account_id: Option<String>,
+    pub to_account_id: Option<String>,
+    pub category_id: Option<String>,
+    pub note: Option<String>,
+    #[serde(default)]
+    pub hints: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportDraft {
+    pub id: String,
+    pub source_name: String,
+    pub created_at: String,
+    pub fields: DraftFields,
+    /// Blocking problems ("amount", "date", "time", "account", "to_account",
+    /// "category", "kind"). The draft can be confirmed only when this is empty.
+    pub problems: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmFailure {
+    pub id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmResult {
+    pub confirmed: usize,
+    pub failed: Vec<ConfirmFailure>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSettings {
+    pub base_url: String,
+    pub model: String,
+    /// The key itself is never sent to the frontend.
+    pub has_key: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSettingsInput {
+    pub base_url: String,
+    pub model: String,
+    /// `None` keeps the saved key; `Some("")` clears it.
+    pub api_key: Option<String>,
+}

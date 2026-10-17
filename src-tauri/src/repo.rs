@@ -1261,6 +1261,71 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str, now: &str) -> AppR
     Ok(())
 }
 
+// ── Import drafts ────────────────────────────────────────────────────────────
+
+pub struct DraftRow {
+    pub id: String,
+    pub source_name: String,
+    pub payload: String,
+    pub created_at: String,
+}
+
+fn draft_row(r: &Row) -> rusqlite::Result<DraftRow> {
+    Ok(DraftRow {
+        id: r.get(0)?,
+        source_name: r.get(1)?,
+        payload: r.get(2)?,
+        created_at: r.get(3)?,
+    })
+}
+
+pub fn insert_draft(conn: &Connection, id: &str, source_name: &str, payload: &str, now: &str) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO import_drafts (id, source_name, payload, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)",
+        params![id, source_name, payload, now],
+    )?;
+    Ok(())
+}
+
+pub fn list_drafts(conn: &Connection) -> AppResult<Vec<DraftRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, source_name, payload, created_at FROM import_drafts ORDER BY created_at, rowid",
+    )?;
+    let rows = stmt.query_map([], draft_row)?.collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn get_draft(conn: &Connection, id: &str) -> AppResult<DraftRow> {
+    conn.query_row(
+        "SELECT id, source_name, payload, created_at FROM import_drafts WHERE id = ?1",
+        [id],
+        draft_row,
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("Draft not found".into()),
+        other => other.into(),
+    })
+}
+
+pub fn update_draft_payload(conn: &Connection, id: &str, payload: &str, now: &str) -> AppResult<()> {
+    let n = conn.execute(
+        "UPDATE import_drafts SET payload = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, payload, now],
+    )?;
+    if n == 0 {
+        return Err(AppError::NotFound("Draft not found".into()));
+    }
+    Ok(())
+}
+
+pub fn delete_draft(conn: &Connection, id: &str) -> AppResult<()> {
+    let n = conn.execute("DELETE FROM import_drafts WHERE id = ?1", [id])?;
+    if n == 0 {
+        return Err(AppError::NotFound("Draft not found".into()));
+    }
+    Ok(())
+}
+
 // ── Error mapping helpers ─────────────────────────────────────────────────────
 
 /// Map a SQLite UNIQUE violation to a friendly Conflict.

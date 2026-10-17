@@ -22,6 +22,11 @@ pub enum AppError {
     /// Unexpected persistence failure.
     #[error("{0}")]
     Database(String),
+    /// OCR or AI import failure. The code is stable so the UI can branch on it:
+    /// `ocr_unavailable`, `ocr_empty`, `ai_not_configured`, `ai_unreachable`,
+    /// `ai_auth`, `ai_bad_response`.
+    #[error("{1}")]
+    Ai(&'static str, String),
 }
 
 impl AppError {
@@ -31,6 +36,7 @@ impl AppError {
             AppError::NotFound(_) => "NotFound",
             AppError::Conflict(_) => "Conflict",
             AppError::Database(_) => "DatabaseError",
+            AppError::Ai(code, _) => code,
         }
     }
 }

@@ -1,11 +1,14 @@
 //! Sens backend entry point. Wires the SQLite connection into Tauri managed
 //! state and registers the command surface.
 
+mod ai;
 mod apportion;
 mod commands;
 mod db;
+mod drafts;
 pub mod error;
 mod models;
+mod ocr;
 mod recurrence;
 mod repo;
 mod schedules;
@@ -90,6 +93,15 @@ pub fn run() {
             commands::post_occurrence,
             commands::skip_occurrence,
             commands::run_schedule_pass,
+            commands::ocr_image,
+            commands::extract_drafts,
+            commands::list_import_drafts,
+            commands::update_import_draft,
+            commands::discard_import_drafts,
+            commands::confirm_import_drafts,
+            commands::get_ai_settings,
+            commands::set_ai_settings,
+            commands::test_ai_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sens");
@@ -177,6 +189,32 @@ mod tests {
             )
             .unwrap();
         assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn migration_016_creates_import_drafts_table() {
+        let c = test_db();
+        let n: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='import_drafts'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn factory_reset_leaves_import_drafts_empty() {
+        let c = test_db();
+        c.execute(
+            "INSERT INTO import_drafts (id, source_name, payload, created_at, updated_at) VALUES ('d1', 'x.png', '{}', 't', 't')",
+            [],
+        )
+        .unwrap();
+        service::reset_app(&c).unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM import_drafts", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
     }
 
     fn value_pair(gain: Option<&str>, loss: Option<&str>) -> ValueCategories {

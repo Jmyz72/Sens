@@ -782,7 +782,7 @@ pub fn create_transfer(conn: &Connection, from_account_id: &str, to_account_id: 
     Ok(t)
 }
 
-fn is_payment_destination(subtype: &str) -> bool {
+pub(crate) fn is_payment_destination(subtype: &str) -> bool {
     subtype == "credit-card" || subtype == "bnpl"
 }
 
@@ -1118,6 +1118,9 @@ pub fn delete_transaction(conn: &Connection, id: &str) -> AppResult<()> {
 
 pub fn get_setting(conn: &Connection, key: &str) -> AppResult<Option<String>> {
     let key = require_nonempty("Key", key)?;
+    if key == crate::drafts::KEY_API_KEY {
+        return Err(AppError::Validation("That setting is write-only.".into()));
+    }
     repo::get_setting(conn, &key)
 }
 

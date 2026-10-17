@@ -8,12 +8,17 @@ import type {
   AccountBalance,
   AccountSubtype,
   AccountTemplate,
+  AiSettings,
+  AiSettingsInput,
   AwaitingReimbursement,
   BudgetWrite,
   Category,
   CategoryKind,
+  ConfirmResult,
   DashboardSummary,
+  DraftFields,
   GoalWrite,
+  ImportDraft,
   Plan,
   PlanGoal,
   Schedule,
@@ -26,7 +31,7 @@ import type {
   TxnSplit,
   UpdateTransactionInput,
 } from "../types";
-import { dispatch } from "./invoke";
+import { dispatch, dispatchRaw } from "./invoke";
 
 export const client = {
   // Accounts
@@ -102,6 +107,19 @@ export const client = {
   skipScheduleOccurrence: (scheduleId: string, date: string) =>
     dispatch<void>("skip_occurrence", { scheduleId, date }),
   runSchedulePass: () => dispatch<SchedulePass>("run_schedule_pass"),
+
+  // Photo import
+  ocrImage: (bytes: Uint8Array) => dispatchRaw<string>("ocr_image", bytes),
+  extractDrafts: (sourceName: string, text: string) =>
+    dispatch<ImportDraft[]>("extract_drafts", { sourceName, text }),
+  listImportDrafts: () => dispatch<ImportDraft[]>("list_import_drafts"),
+  updateImportDraft: (id: string, fields: DraftFields) =>
+    dispatch<ImportDraft>("update_import_draft", { id, fields }),
+  discardImportDrafts: (ids: string[]) => dispatch<void>("discard_import_drafts", { ids }),
+  confirmImportDrafts: (ids: string[]) => dispatch<ConfirmResult>("confirm_import_drafts", { ids }),
+  getAiSettings: () => dispatch<AiSettings>("get_ai_settings"),
+  setAiSettings: (input: AiSettingsInput) => dispatch<AiSettings>("set_ai_settings", { input }),
+  testAiConnection: () => dispatch<void>("test_ai_connection"),
 
   // Settings
   getSetting: (key: string) => dispatch<string | null>("get_setting", { key }),

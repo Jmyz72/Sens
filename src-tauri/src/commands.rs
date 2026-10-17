@@ -333,3 +333,65 @@ pub fn update_goal(state: State<'_, DbState>, input: GoalWrite) -> AppResult<Pla
 pub fn delete_goal(state: State<'_, DbState>, id: String) -> AppResult<()> {
     with_conn!(state, c => service::delete_goal(&c, &id))
 }
+
+// ── Photo import ─────────────────────────────────────────────────────────────
+
+/// Receives the image as a raw IPC body (not a JSON number array) and returns
+/// the recognised text. OCR is blocking, so it runs off the async threads.
+#[tauri::command]
+pub async fn ocr_image(request: tauri::ipc::Request<'_>) -> AppResult<String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(crate::error::AppError::Validation("Expected raw image bytes".into()));
+    };
+    let bytes = bytes.clone();
+    tauri::async_runtime::spawn_blocking(move || crate::ocr::recognize(&bytes))
+        .await
+        .map_err(|e| crate::error::AppError::Ai("ocr_unavailable", e.to_string()))?
+}
+
+/// Ask the model for transactions in `text` and store them as drafts. The
+/// database lock is never held across the network call.
+#[tauri::command]
+pub async fn extract_drafts(state: State<'_, DbState>, source_name: String, text: String) -> AppResult<Vec<ImportDraft>> {
+    let (cfg, ctx, today) = with_conn!(state, c => crate::drafts::prepare(&c))?;
+    let messages = crate::ai::build_messages(&text, &ctx, &today);
+    let raws = crate::ai::extract(&cfg, messages).await?;
+    with_conn!(state, c => crate::drafts::store_drafts(&c, &source_name, &raws, &crate::today()))
+}
+
+#[tauri::command]
+pub fn list_import_drafts(state: State<'_, DbState>) -> AppResult<Vec<ImportDraft>> {
+    with_conn!(state, c => crate::drafts::list_drafts(&c))
+}
+
+#[tauri::command]
+pub fn update_import_draft(state: State<'_, DbState>, id: String, fields: DraftFields) -> AppResult<ImportDraft> {
+    with_conn!(state, c => crate::drafts::update_draft(&c, &id, fields))
+}
+
+#[tauri::command]
+pub fn discard_import_drafts(state: State<'_, DbState>, ids: Vec<String>) -> AppResult<()> {
+    with_conn!(state, c => crate::drafts::discard_drafts(&c, &ids))
+}
+
+#[tauri::command]
+pub fn confirm_import_drafts(state: State<'_, DbState>, ids: Vec<String>) -> AppResult<ConfirmResult> {
+    with_conn!(state, c => crate::drafts::confirm_drafts(&c, &ids))
+}
+
+#[tauri::command]
+pub fn get_ai_settings(state: State<'_, DbState>) -> AppResult<AiSettings> {
+    with_conn!(state, c => crate::drafts::get_ai_settings(&c))
+}
+
+#[tauri::command]
+pub fn set_ai_settings(state: State<'_, DbState>, input: AiSettingsInput) -> AppResult<AiSettings> {
+    with_conn!(state, c => crate::drafts::set_ai_settings(&c, input))
+}
+
+/// Tests the saved settings (the Settings screen saves first).
+#[tauri::command]
+pub async fn test_ai_connection(state: State<'_, DbState>) -> AppResult<()> {
+    let cfg = with_conn!(state, c => crate::drafts::load_ai_config(&c))?;
+    crate::ai::test_connection(&cfg).await
+}
