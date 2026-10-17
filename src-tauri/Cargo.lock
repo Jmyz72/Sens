@@ -3192,7 +3192,9 @@ name = "sens"
 version = "0.10.0"
 dependencies = [
  "chrono",
+ "reqwest",
  "rusqlite",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",

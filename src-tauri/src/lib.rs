@@ -1,6 +1,7 @@
 //! Sens backend entry point. Wires the SQLite connection into Tauri managed
 //! state and registers the command surface.
 
+mod ai;
 mod apportion;
 mod commands;
 mod db;
