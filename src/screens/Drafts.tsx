@@ -132,8 +132,17 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
     });
   }, [onCountChange]);
 
+  // Saves still in flight from a field blur. Confirm waits for them so it never posts a stale row.
+  const pendingSaves = useRef(new Set<Promise<unknown>>());
+  const trackSave = useCallback((save: Promise<unknown>) => {
+    const settled = save.then(() => undefined, () => undefined);
+    pendingSaves.current.add(settled);
+    void settled.then(() => pendingSaves.current.delete(settled));
+  }, []);
+
   const confirm = async (ids: string[]) => {
     try {
+      await Promise.all([...pendingSaves.current]);
       const result = await client.confirmImportDrafts(ids);
       update(await client.listImportDrafts());
       if (result.confirmed > 0) {
@@ -241,6 +250,7 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
                 categories={categories}
                 timeEnabled={timeEnabled}
                 onSaved={replace}
+                trackSave={trackSave}
                 onConfirm={() => void confirm([d.id])}
                 onDiscard={() => void discard([d.id])}
               />
@@ -253,13 +263,14 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
 }
 
 function DraftRow({
-  draft, accounts, categories, timeEnabled, onSaved, onConfirm, onDiscard,
+  draft, accounts, categories, timeEnabled, onSaved, trackSave, onConfirm, onDiscard,
 }: {
   draft: ImportDraft;
   accounts: Account[];
   categories: Category[];
   timeEnabled: boolean;
   onSaved: (d: ImportDraft) => void;
+  trackSave: (save: Promise<unknown>) => void;
   onConfirm: () => void;
   onDiscard: () => void;
 }) {
@@ -287,8 +298,10 @@ function DraftRow({
 
   const save = async (next: DraftFields) => {
     dirty.current.clear();
+    const saving = client.updateImportDraft(draft.id, next);
+    trackSave(saving);
     try {
-      onSaved(await client.updateImportDraft(draft.id, next));
+      onSaved(await saving);
     } catch (error) {
       notify(messageOf(error, "Could not save"), "error");
     }

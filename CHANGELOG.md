@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Drafts: Confirm waits for any field edit still being saved, so an amount changed just before clicking Confirm is no longer posted with its old value.
+
 ### Changed
 - Docs: `ROADMAP.md` records `v0.11.0` as shipped (Update Net Worth, Recurring & reminders, photo import) and moves those phases out of Planned.
 - CI: the release workflow passes `includeUpdaterJson` (the old `uploadUpdaterJson` input did not exist and raised a warning), and workflows pin `ubuntu-24.04` instead of `ubuntu-latest` ahead of the Ubuntu 26 migration.
