@@ -442,20 +442,11 @@ pub struct SkippedProvider {
     pub message: String,
 }
 
+/// What `extract_drafts` returns: the new drafts, who read them, and who failed first.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AiSettings {
-    pub base_url: String,
-    pub model: String,
-    /// The key itself is never sent to the frontend.
-    pub has_key: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AiSettingsInput {
-    pub base_url: String,
-    pub model: String,
-    /// `None` keeps the saved key; `Some("")` clears it.
-    pub api_key: Option<String>,
+pub struct ExtractResult {
+    pub drafts: Vec<ImportDraft>,
+    pub provider: String,
+    pub skipped: Vec<SkippedProvider>,
 }

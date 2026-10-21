@@ -352,11 +352,12 @@ pub async fn ocr_image(request: tauri::ipc::Request<'_>) -> AppResult<String> {
 /// Ask the model for transactions in `text` and store them as drafts. The
 /// database lock is never held across the network call.
 #[tauri::command]
-pub async fn extract_drafts(state: State<'_, DbState>, source_name: String, text: String) -> AppResult<Vec<ImportDraft>> {
-    let (cfg, ctx, today) = with_conn!(state, c => crate::drafts::prepare(&c))?;
+pub async fn extract_drafts(state: State<'_, DbState>, source_name: String, text: String) -> AppResult<ExtractResult> {
+    let (providers, ctx, today) = with_conn!(state, c => crate::drafts::prepare(&c))?;
     let messages = crate::ai::build_messages(&text, &ctx, &today);
-    let raws = crate::ai::extract(&cfg, messages).await?;
-    with_conn!(state, c => crate::drafts::store_drafts(&c, &source_name, &raws, &crate::today()))
+    let out = crate::ai::extract_with_fallback(&providers, messages).await?;
+    let drafts = with_conn!(state, c => crate::drafts::store_drafts(&c, &source_name, &out.rows, &crate::today()))?;
+    Ok(ExtractResult { drafts, provider: out.provider, skipped: out.skipped })
 }
 
 #[tauri::command]
@@ -380,18 +381,38 @@ pub fn confirm_import_drafts(state: State<'_, DbState>, ids: Vec<String>) -> App
 }
 
 #[tauri::command]
-pub fn get_ai_settings(state: State<'_, DbState>) -> AppResult<AiSettings> {
-    with_conn!(state, c => crate::drafts::get_ai_settings(&c))
+pub fn list_ai_providers(state: State<'_, DbState>) -> AppResult<Vec<AiProvider>> {
+    with_conn!(state, c => crate::drafts::list_ai_providers(&c))
 }
 
 #[tauri::command]
-pub fn set_ai_settings(state: State<'_, DbState>, input: AiSettingsInput) -> AppResult<AiSettings> {
-    with_conn!(state, c => crate::drafts::set_ai_settings(&c, input))
+pub fn create_ai_provider(state: State<'_, DbState>, input: AiProviderInput) -> AppResult<AiProvider> {
+    with_conn!(state, c => crate::drafts::create_ai_provider(&c, input))
 }
 
-/// Tests the saved settings (the Settings screen saves first).
 #[tauri::command]
-pub async fn test_ai_connection(state: State<'_, DbState>) -> AppResult<()> {
-    let cfg = with_conn!(state, c => crate::drafts::load_ai_config(&c))?;
-    crate::ai::test_connection(&cfg).await
+pub fn update_ai_provider(state: State<'_, DbState>, id: String, input: AiProviderInput) -> AppResult<AiProvider> {
+    with_conn!(state, c => crate::drafts::update_ai_provider(&c, &id, input))
+}
+
+#[tauri::command]
+pub fn set_ai_provider_enabled(state: State<'_, DbState>, id: String, enabled: bool) -> AppResult<AiProvider> {
+    with_conn!(state, c => crate::drafts::set_ai_provider_enabled(&c, &id, enabled))
+}
+
+#[tauri::command]
+pub fn delete_ai_provider(state: State<'_, DbState>, id: String) -> AppResult<()> {
+    with_conn!(state, c => crate::drafts::delete_ai_provider(&c, &id))
+}
+
+#[tauri::command]
+pub fn reorder_ai_providers(state: State<'_, DbState>, ids: Vec<String>) -> AppResult<()> {
+    with_conn!(state, c => crate::drafts::reorder_ai_providers(&c, &ids))
+}
+
+/// Tests one provider, without fallback and whether or not it is enabled.
+#[tauri::command]
+pub async fn test_ai_provider(state: State<'_, DbState>, id: String) -> AppResult<()> {
+    let named = with_conn!(state, c => crate::drafts::provider_config(&c, &id))?;
+    crate::ai::test_connection(&named.cfg).await
 }

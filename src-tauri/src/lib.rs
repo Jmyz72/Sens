@@ -99,9 +99,13 @@ pub fn run() {
             commands::update_import_draft,
             commands::discard_import_drafts,
             commands::confirm_import_drafts,
-            commands::get_ai_settings,
-            commands::set_ai_settings,
-            commands::test_ai_connection,
+            commands::list_ai_providers,
+            commands::create_ai_provider,
+            commands::update_ai_provider,
+            commands::set_ai_provider_enabled,
+            commands::delete_ai_provider,
+            commands::reorder_ai_providers,
+            commands::test_ai_provider,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sens");

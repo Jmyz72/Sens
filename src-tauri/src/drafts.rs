@@ -1,6 +1,6 @@
 //! Photo-import drafts: turn an LLM reply into reviewable drafts, check them,
 //! and post confirmed ones through the normal transaction path. Also holds the
-//! AI connection settings. SQL stays in repo.rs.
+//! AI provider list. SQL stays in repo.rs.
 
 use chrono::{NaiveDate, NaiveTime};
 use rusqlite::Connection;
@@ -11,9 +11,6 @@ use crate::error::{AppError, AppResult};
 use crate::models::*;
 use crate::{repo, service};
 
-pub const KEY_BASE_URL: &str = "ai_base_url";
-pub const KEY_MODEL: &str = "ai_model";
-pub const KEY_API_KEY: &str = "ai_api_key";
 
 // ── Parsing helpers ──────────────────────────────────────────────────────────
 
@@ -408,45 +405,14 @@ pub fn enabled_provider_configs(conn: &Connection) -> AppResult<Vec<NamedConfig>
     Ok(repo::list_ai_providers(conn)?.into_iter().filter(|p| p.enabled).map(to_named).collect())
 }
 
-// ── AI settings ──────────────────────────────────────────────────────────────
-
-pub fn get_ai_settings(conn: &Connection) -> AppResult<AiSettings> {
-    Ok(AiSettings {
-        base_url: repo::get_setting(conn, KEY_BASE_URL)?.unwrap_or_default(),
-        model: repo::get_setting(conn, KEY_MODEL)?.unwrap_or_default(),
-        has_key: repo::get_setting(conn, KEY_API_KEY)?.is_some_and(|k| !k.is_empty()),
-    })
-}
-
-pub fn set_ai_settings(conn: &Connection, input: AiSettingsInput) -> AppResult<AiSettings> {
-    let base_url = input.base_url.trim().trim_end_matches('/').to_string();
-    if !base_url.is_empty() && !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
-        return Err(AppError::Validation("The base URL must start with http:// or https://".into()));
-    }
-    let now = crate::now();
-    repo::set_setting(conn, KEY_BASE_URL, &base_url, &now)?;
-    repo::set_setting(conn, KEY_MODEL, input.model.trim(), &now)?;
-    if let Some(key) = input.api_key {
-        repo::set_setting(conn, KEY_API_KEY, key.trim(), &now)?;
-    }
-    get_ai_settings(conn)
-}
-
-pub fn load_ai_config(conn: &Connection) -> AppResult<AiConfig> {
-    let base_url = repo::get_setting(conn, KEY_BASE_URL)?.unwrap_or_default();
-    let model = repo::get_setting(conn, KEY_MODEL)?.unwrap_or_default();
-    if base_url.is_empty() || model.is_empty() {
-        return Err(AppError::Ai("ai_not_configured", "Set the AI base URL and model in Settings first.".into()));
-    }
-    let api_key = repo::get_setting(conn, KEY_API_KEY)?.filter(|k| !k.is_empty());
-    Ok(AiConfig { base_url, model, api_key })
-}
-
 /// Everything the async extract command needs, read under one short lock.
-pub fn prepare(conn: &Connection) -> AppResult<(AiConfig, PromptContext, String)> {
-    let cfg = load_ai_config(conn)?;
+pub fn prepare(conn: &Connection) -> AppResult<(Vec<NamedConfig>, PromptContext, String)> {
+    let providers = enabled_provider_configs(conn)?;
+    if providers.is_empty() {
+        return Err(AppError::Ai("ai_not_configured", "Add an AI provider in Settings first.".into()));
+    }
     let lk = lookups(conn)?;
-    Ok((cfg, prompt_context(&lk), crate::today()))
+    Ok((providers, prompt_context(&lk), crate::today()))
 }
 
 // ── Draft lifecycle ──────────────────────────────────────────────────────────
@@ -918,41 +884,6 @@ mod tests {
         assert_eq!(service::get_account_balance(&c, &a.id).unwrap(), 0);
     }
 
-    #[test]
-    fn ai_settings_round_trip_and_never_expose_the_key() {
-        let c = db();
-        assert_eq!(get_ai_settings(&c).unwrap().has_key, false);
-        let saved = set_ai_settings(
-            &c,
-            AiSettingsInput { base_url: " https://example.test/v1/ ".into(), model: " m ".into(), api_key: Some("k1".into()) },
-        )
-        .unwrap();
-        assert_eq!(saved.base_url, "https://example.test/v1");
-        assert_eq!(saved.model, "m");
-        assert!(saved.has_key);
-
-        // None keeps the key; Some("") clears it.
-        let kept = set_ai_settings(&c, AiSettingsInput { base_url: saved.base_url.clone(), model: "m".into(), api_key: None }).unwrap();
-        assert!(kept.has_key);
-        assert_eq!(load_ai_config(&c).unwrap().api_key.as_deref(), Some("k1"));
-        let cleared = set_ai_settings(&c, AiSettingsInput { base_url: saved.base_url, model: "m".into(), api_key: Some(String::new()) }).unwrap();
-        assert!(!cleared.has_key);
-
-        // The generic settings reader must not leak the key.
-        assert!(service::get_setting(&c, KEY_API_KEY).is_err());
-    }
-
-    #[test]
-    fn config_requires_a_base_url_and_model_and_a_http_scheme() {
-        let c = db();
-        match load_ai_config(&c) {
-            Err(AppError::Ai(code, _)) => assert_eq!(code, "ai_not_configured"),
-            other => panic!("expected ai_not_configured, got {other:?}"),
-        }
-        let err = set_ai_settings(&c, AiSettingsInput { base_url: "ftp://x".into(), model: "m".into(), api_key: None }).unwrap_err();
-        assert!(matches!(err, AppError::Validation(_)));
-    }
-
     fn input(name: &str, key: Option<&str>) -> AiProviderInput {
         AiProviderInput { name: name.into(), base_url: " https://x.test/v1/ ".into(), model: " m ".into(), api_key: key.map(Into::into) }
     }
@@ -1037,5 +968,20 @@ mod tests {
         assert_eq!((off.enabled, off.position), (false, 0));
         assert_eq!(enabled_provider_configs(&c).unwrap().iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["B"]);
         assert_eq!(provider_config(&c, &a.id).unwrap().name, "A", "Test ignores the switch");
+    }
+
+    #[test]
+    fn prepare_needs_an_enabled_provider() {
+        let c = db();
+        let ai_err = |r: AppResult<()>| match r {
+            Err(AppError::Ai(code, m)) => (code, m),
+            other => panic!("expected an Ai error, got {other:?}"),
+        };
+        assert_eq!(ai_err(prepare(&c).map(|_| ())), ("ai_not_configured", "Add an AI provider in Settings first.".to_string()));
+        let a = create_ai_provider(&c, input("A", None)).unwrap();
+        set_ai_provider_enabled(&c, &a.id, false).unwrap();
+        assert_eq!(ai_err(prepare(&c).map(|_| ())).0, "ai_not_configured");
+        set_ai_provider_enabled(&c, &a.id, true).unwrap();
+        assert_eq!(prepare(&c).unwrap().0[0].name, "A");
     }
 }
