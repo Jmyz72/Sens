@@ -410,6 +410,14 @@ pub struct ConfirmResult {
     pub failed: Vec<ConfirmFailure>,
 }
 
+/// A provider that failed before another one answered.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedProvider {
+    pub name: String,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiSettings {

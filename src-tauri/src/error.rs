@@ -24,7 +24,7 @@ pub enum AppError {
     Database(String),
     /// OCR or AI import failure. The code is stable so the UI can branch on it:
     /// `ocr_unavailable`, `ocr_empty`, `ai_not_configured`, `ai_unreachable`,
-    /// `ai_auth`, `ai_bad_response`.
+    /// `ai_auth`, `ai_bad_response`, `ai_all_failed`.
     #[error("{1}")]
     Ai(&'static str, String),
 }

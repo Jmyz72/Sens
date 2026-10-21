@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::error::{AppError, AppResult};
+use crate::models::SkippedProvider;
 
 /// Connection settings for an OpenAI-compatible `/chat/completions` endpoint.
 #[derive(Debug, Clone)]
@@ -216,6 +217,41 @@ pub async fn extract(cfg: &AiConfig, mut messages: Vec<Value>) -> AppResult<Vec<
             parse_reply(&second)
         }
     }
+}
+
+/// A provider's connection settings with the name shown to the user.
+#[derive(Debug, Clone)]
+pub struct NamedConfig {
+    pub name: String,
+    pub cfg: AiConfig,
+}
+
+/// What `extract_with_fallback` returns: the rows, who answered, and who failed first.
+#[derive(Debug)]
+pub struct FallbackOutcome {
+    pub rows: Vec<RawDraft>,
+    pub provider: String,
+    pub skipped: Vec<SkippedProvider>,
+}
+
+/// Tries each provider in order and returns the first that answers. Any error
+/// moves on to the next one; when all fail, one error lists every reason.
+pub async fn extract_with_fallback(providers: &[NamedConfig], messages: Vec<Value>) -> AppResult<FallbackOutcome> {
+    if providers.is_empty() {
+        return Err(AppError::Ai("ai_not_configured", "Add an AI provider in Settings first.".into()));
+    }
+    let mut skipped = Vec::new();
+    for p in providers {
+        match extract(&p.cfg, messages.clone()).await {
+            Ok(rows) => return Ok(FallbackOutcome { rows, provider: p.name.clone(), skipped }),
+            Err(e) => skipped.push(SkippedProvider { name: p.name.clone(), message: e.to_string() }),
+        }
+    }
+    let parts: Vec<String> = skipped
+        .iter()
+        .map(|s| format!("{}: {}", s.name, s.message.trim_end_matches('.')))
+        .collect();
+    Err(AppError::Ai("ai_all_failed", format!("All AI providers failed. {}.", parts.join(". "))))
 }
 
 /// Used by Settings → Test connection.
@@ -446,5 +482,53 @@ mod tests {
         let (url, _server) = serve(vec![chat_ok("nope"), chat_ok("still nope")]);
         let err = tauri::async_runtime::block_on(extract(&cfg(&url), msgs())).unwrap_err();
         assert_eq!(code_of(&err), "ai_bad_response");
+    }
+
+    const GOOD: &str = "{\"transactions\":[{\"amount\":\"5\",\"kind\":\"expense\"}]}";
+
+    fn named(name: &str, url: &str) -> NamedConfig {
+        NamedConfig { name: name.into(), cfg: cfg(url) }
+    }
+
+    #[test]
+    fn fallback_uses_the_first_provider_that_answers() {
+        let (a, _sa) = serve(vec![(401, "{}".into())]);
+        let (b, _sb) = serve(vec![chat_ok(GOOD)]);
+        let out = tauri::async_runtime::block_on(extract_with_fallback(&[named("A", &a), named("B", &b)], msgs())).unwrap();
+        assert_eq!(out.provider, "B");
+        assert_eq!(out.rows.len(), 1);
+        assert_eq!(out.skipped.len(), 1);
+        assert_eq!(out.skipped[0].name, "A");
+        assert_eq!(out.skipped[0].message, "The AI provider rejected the API key.");
+    }
+
+    #[test]
+    fn fallback_moves_on_after_429_500_unreachable_and_a_reply_invalid_twice() {
+        let (r429, _1) = serve(vec![(429, "{}".into())]);
+        let (r500, _2) = serve(vec![(500, "{}".into())]);
+        let (bad, _3) = serve(vec![chat_ok("nope"), chat_ok("still nope")]);
+        let (ok, _4) = serve(vec![chat_ok(GOOD)]);
+        let list = [named("429", &r429), named("500", &r500), named("down", "http://127.0.0.1:9"), named("bad", &bad), named("ok", &ok)];
+        let out = tauri::async_runtime::block_on(extract_with_fallback(&list, msgs())).unwrap();
+        assert_eq!(out.provider, "ok");
+        assert_eq!(out.skipped.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["429", "500", "down", "bad"]);
+    }
+
+    #[test]
+    fn fallback_reports_every_reason_in_order_when_all_fail_without_the_key() {
+        let (a, _sa) = serve(vec![(401, "{}".into())]);
+        let list = [named("A", &a), named("B", "http://127.0.0.1:9")];
+        let err = tauri::async_runtime::block_on(extract_with_fallback(&list, msgs())).unwrap_err();
+        assert_eq!(code_of(&err), "ai_all_failed");
+        let m = err.to_string();
+        assert!(m.starts_with("All AI providers failed. A: The AI provider rejected the API key. B: Could not reach the AI provider"), "{m}");
+        assert!(m.ends_with('.') && !m.ends_with(".."), "{m}");
+        assert!(!m.contains("secret"));
+    }
+
+    #[test]
+    fn fallback_with_no_providers_is_not_configured() {
+        let err = tauri::async_runtime::block_on(extract_with_fallback(&[], msgs())).unwrap_err();
+        assert_eq!(code_of(&err), "ai_not_configured");
     }
 }
