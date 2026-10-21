@@ -422,7 +422,8 @@ function AiImportCard() {
         <AiProviderForm
           key={editing === "new" ? "new" : editing.id}
           editing={editing === "new" ? null : editing}
-          onSaved={async (saved) => { if (editing !== "new") setEditing(saved); await refresh(); }}
+          // Always continue on the saved row, so a retry after a failed test updates it instead of creating a duplicate.
+          onSaved={async (saved) => { setEditing(saved); await refresh(); }}
           onCancel={() => setEditing(null)}
         />
       )}
