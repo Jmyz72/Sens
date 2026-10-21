@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Several AI providers for photo import.** Settings → AI import keeps a list of providers in the order you choose (drag, or the arrow buttons). Drafts tries them in turn and moves to the next one when a call fails, then says which provider read the photo and which were skipped. Each provider can be switched off without deleting it. Your earlier AI settings are not carried over; add the provider again.
+- **More AI presets.** Settings → AI import has one-click presets for Gemini, Groq, OpenRouter (its free models), Cerebras and Mistral, which have free tiers, plus Ollama and LM Studio on your own computer, and OpenAI. The Gemini preset now uses `gemini-3.8-flash`, because `gemini-2.0-flash` has been shut down.
 
 ### Fixed
 - Drafts: Confirm waits for any field edit still being saved, so an amount changed just before clicking Confirm is no longer posted with its old value.
