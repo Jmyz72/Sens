@@ -2,6 +2,7 @@
 
 **Date:** 2026-10-17
 **Status:** Implemented (unreleased). Plan: `docs/superpowers/plans/2026-10-17-photo-transaction-import.md`
+**Note:** Provider settings superseded by `2026-10-21-ai-provider-fallback-design.md`.
 
 ## Goal
 

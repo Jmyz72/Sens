@@ -127,10 +127,11 @@ Spec: _TBD_
 
 - [ ] CSV import/export
 - [x] Import transactions from a photo (OS OCR + LLM, review before save): the Drafts screen
+- [x] AI import: several providers tried in order, with fallback (unreleased)
 - [ ] Full backup & restore
 - [ ] Account reconciliation against a statement balance
 
-Spec: [photo import](docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md) (CSV/backup _TBD_)
+Spec: [photo import](docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md) · [AI provider fallback](docs/superpowers/specs/2026-10-21-ai-provider-fallback-design.md) (CSV/backup _TBD_)
 
 ### 🎉 ⚪ 1.0 — Onboarding & polish (feature-complete milestone)
 

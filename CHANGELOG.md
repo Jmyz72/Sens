@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Several AI providers for photo import.** Settings → AI import keeps a list of providers in the order you choose (drag, or the arrow buttons). Drafts tries them in turn and moves to the next one when a call fails, then says which provider read the photo and which were skipped. Each provider can be switched off without deleting it. Your earlier AI settings are not carried over; add the provider again.
+
 ### Fixed
 - Drafts: Confirm waits for any field edit still being saved, so an amount changed just before clicking Confirm is no longer posted with its old value.
 

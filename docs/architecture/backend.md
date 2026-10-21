@@ -118,27 +118,34 @@ helpers in `src/client/index.ts`).
 
 ## Photo import (Drafts)
 
-Spec: `docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md`.
+Spec: `docs/superpowers/specs/2026-10-17-photo-transaction-import-design.md`; the provider list and
+fallback: `docs/superpowers/specs/2026-10-21-ai-provider-fallback-design.md`.
 The image is read by the OS, only the text goes to an OpenAI-compatible LLM, and the result is stored
 as drafts the user confirms one by one.
 
 | Module | Role |
 |---|---|
 | `src-tauri/src/ocr.rs` | `recognize(bytes)`: Apple Vision on macOS (`objc2-vision`), `Windows.Media.Ocr` on Windows (`windows` crate), and an `ocr_unavailable` stub elsewhere. Empty text → `ocr_empty`. The image is never stored. |
-| `src-tauri/src/ai.rs` | Prompt builder (today's date, active account names, the expense/income category tree, OCR text capped at 20,000 chars), reply parsing, and the `reqwest` client for `POST {base_url}/chat/completions`. Asks for JSON mode and repeats once without it on a 400; a reply that fails to parse gets one retry with the error. No DB access. |
-| `src-tauri/src/drafts.rs` | Service-layer module (like `schedules.rs`): amount text → cents, name → ID matching (normalised exact match, then a unique prefix; ambiguous stays empty), hints, blocking problems, draft CRUD, confirm, and the AI settings. SQL stays in `repo.rs`. |
+| `src-tauri/src/ai.rs` | Prompt builder (today's date, active account names, the expense/income category tree, OCR text capped at 20,000 chars), reply parsing, and the `reqwest` client for `POST {base_url}/chat/completions`. Asks for JSON mode and repeats once without it on a 400; a reply that fails to parse gets one retry with the error. `extract_with_fallback` tries each provider in order and moves on after any error. No DB access. |
+| `src-tauri/src/drafts.rs` | Service-layer module (like `schedules.rs`): amount text → cents, name → ID matching (normalised exact match, then a unique prefix; ambiguous stays empty), hints, blocking problems, draft CRUD, confirm, and the AI provider list. SQL stays in `repo.rs`. |
 
 **Commands** (all mirrored in `mock.ts`):
 
 - **`ocr_image`** takes the image as a **raw IPC body**, not JSON args (`dispatchRaw` in
   `src/client/invoke.ts`, `client.ocrImage`), so a photo is not sent as a JSON number array. OCR runs in
   `spawn_blocking`. The mock ignores the bytes and returns canned receipt text.
-- **`extract_drafts(sourceName, text)`** reads the settings and lookups under one short lock, calls the
-  LLM **without holding the DB lock**, then stores the rows. The mock skips the LLM and returns one
-  expense (plus a transfer when there are two accounts).
+- **`extract_drafts(sourceName, text)`** reads the enabled providers and lookups under one short lock,
+  calls `ai::extract_with_fallback` **without holding the DB lock**, then stores the rows. It returns
+  `ExtractResult { drafts, provider, skipped }`: the provider that answered and the earlier ones that
+  failed, with their reasons. No enabled provider → `ai_not_configured`; every provider failed →
+  `ai_all_failed`, whose message lists `name: reason` in order. The mock skips the LLM, reports the first
+  enabled provider, and returns one expense (plus a transfer when there are two accounts).
 - **`list_import_drafts`**, **`update_import_draft(id, fields)`**, **`discard_import_drafts(ids)`**,
   **`confirm_import_drafts(ids)`**.
-- **`get_ai_settings`**, **`set_ai_settings(input)`**, **`test_ai_connection`** (tests the saved settings).
+- **`list_ai_providers`**, **`create_ai_provider(input)`**, **`update_ai_provider(id, input)`**,
+  **`set_ai_provider_enabled(id, enabled)`**, **`delete_ai_provider(id)`**, **`reorder_ai_providers(ids)`**
+  (the full id list, like `reorder_categories`), **`test_ai_provider(id)`** (that provider only, no
+  fallback, ignores the switch).
 
 **Drafts**
 
@@ -157,12 +164,13 @@ as drafts the user confirms one by one.
   `ConfirmResult.failed`; the other drafts still post. A transfer draft whose destination is a credit
   card or BNPL account is confirmed as a payment (`service::create_payment`).
 
-**AI settings** live in `app_settings`: `ai_base_url` (must start with `http://` or `https://`;
-trailing `/` trimmed), `ai_model`, `ai_api_key`.
+**AI providers** live in the `ai_providers` table (migration 017): name (unique ignoring case), base URL
+(must start with `http://` or `https://`; trailing `/` trimmed), model, optional key, an enabled flag and
+a dense `position` (0 is tried first). Migration 017 deleted the old `ai_base_url` / `ai_model` /
+`ai_api_key` settings rows. Factory reset empties the table.
 
-- The key is **write-only from the frontend**: `get_ai_settings` returns only `hasKey`, and the generic
-  `get_setting` rejects `ai_api_key` with a `ValidationError` (the mock does the same).
-- In `set_ai_settings`, `apiKey: null` keeps the saved key and `""` clears it.
+- The key is **write-only from the frontend**: every command returns `hasKey`, never the key.
+- In `update_ai_provider`, `apiKey: null` keeps the saved key and `""` clears it.
 - The key is stored unencrypted in the local database (no OS keychain). The Settings card says so.
 
 **Dependencies:** `reqwest` 0.13 (`json`, `rustls-no-provider`) with `rustls` + `ring` installed as the

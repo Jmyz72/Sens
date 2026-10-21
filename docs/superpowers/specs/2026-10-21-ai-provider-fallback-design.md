@@ -1,7 +1,7 @@
 # AI provider list with fallback — design
 
 **Date:** 2026-10-21
-**Status:** Approved design, not yet planned.
+**Status:** Implemented (unreleased). Plan: `docs/superpowers/plans/2026-10-21-ai-provider-fallback.md`
 **Builds on:** `2026-10-17-photo-transaction-import-design.md` (replaces its single-provider settings).
 
 ## Goal
