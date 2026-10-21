@@ -9,7 +9,7 @@ import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { useAppData } from "../store";
 import { useToast } from "../components/Toast";
-import type { AiSettings } from "../types";
+import type { AiProvider } from "../types";
 import { formatLastChecked, updatePanelCopy, type useUpdater } from "../lib/updater";
 
 // ─── Segmented control (reusable 2-option) ───────────────────────────────────
@@ -60,12 +60,13 @@ function SegmentedControl<T extends string>({
 
 // ─── Toggle ──────────────────────────────────────────────────────────────────
 
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
   const t = useTheme();
   return (
     <button
       role="switch"
       aria-checked={on}
+      aria-label={label}
       onClick={() => onChange(!on)}
       style={{
         width: 42,
@@ -186,81 +187,80 @@ function ResetModal({ onClose }: { onClose: () => void }) {
 
 // ─── Settings screen ─────────────────────────────────────────────────────────
 
-const AI_PRESETS: { label: string; baseUrl: string; model: string }[] = [
-  { label: "Google AI Studio (Gemini)", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
-  { label: "Ollama (local)", baseUrl: "http://localhost:11434/v1", model: "llama3.1" },
-  { label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+const AI_PRESETS: { label: string; name: string; baseUrl: string; model: string }[] = [
+  { label: "Google AI Studio (Gemini)", name: "Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
+  { label: "Ollama (local)", name: "Ollama", baseUrl: "http://localhost:11434/v1", model: "llama3.1" },
+  { label: "OpenAI", name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
 ];
 
-function AiImportCard() {
+const errorMessage = (error: unknown, fallback: string) =>
+  (error instanceof Error ? error.message : (error as { message?: string } | null)?.message) ?? fallback;
+
+function AiProviderForm({ editing, onSaved, onCancel }: {
+  editing: AiProvider | null;
+  onSaved: (saved: AiProvider) => Promise<void>;
+  onCancel: () => void;
+}) {
   const t = useTheme();
   const { notify } = useToast();
-  const [saved, setSaved] = useState<AiSettings | null>(null);
-  const [baseUrl, setBaseUrl] = useState("");
-  const [model, setModel] = useState("");
+  const [name, setName] = useState(editing?.name ?? "");
+  const [baseUrl, setBaseUrl] = useState(editing?.baseUrl ?? "");
+  const [model, setModel] = useState(editing?.model ?? "");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const input = inputStyle(t);
 
-  useEffect(() => {
-    client.getAiSettings().then((s) => {
-      setSaved(s);
-      setBaseUrl(s.baseUrl);
-      setModel(s.model);
-    }).catch(() => {});
-  }, []);
-
-  const message = (error: unknown, fallback: string) =>
-    (error instanceof Error ? error.message : (error as { message?: string } | null)?.message) ?? fallback;
-
-  const save = async (): Promise<boolean> => {
+  // A blank key keeps the saved one when editing; on create it means no key.
+  const save = async (key: string | null = apiKey === "" ? null : apiKey): Promise<AiProvider | null> => {
     try {
-      const next = await client.setAiSettings({ baseUrl, model, apiKey: apiKey === "" ? null : apiKey });
-      setSaved(next);
-      setBaseUrl(next.baseUrl);
-      setApiKey("");
-      return true;
+      const fields = { name, baseUrl, model, apiKey: key };
+      const saved = editing ? await client.updateAiProvider(editing.id, fields) : await client.createAiProvider(fields);
+      await onSaved(saved);
+      return saved;
     } catch (error) {
-      notify(message(error, "Could not save"), "error");
-      return false;
+      notify(errorMessage(error, "Could not save"), "error");
+      return null;
     }
   };
 
-  const saveAndTest = async () => {
+  const run = async (body: () => Promise<void>) => {
     setBusy(true);
     try {
-      if (!(await save())) return;
-      await client.testAiConnection();
-      notify("Connected. The AI answered.", "info");
-    } catch (error) {
-      notify(message(error, "Connection failed"), "error");
+      await body();
     } finally {
       setBusy(false);
     }
   };
 
-  const clearKey = async () => {
+  const saveAndTest = () => run(async () => {
+    const saved = await save();
+    if (!saved) return;
     try {
-      setSaved(await client.setAiSettings({ baseUrl, model, apiKey: "" }));
-      setApiKey("");
+      await client.testAiProvider(saved.id);
+      notify(`${saved.name} answered.`, "info");
+      onCancel();
     } catch (error) {
-      notify(message(error, "Could not clear the key"), "error");
+      notify(errorMessage(error, "Connection failed"), "error");
     }
-  };
+  });
 
   return (
-    <Card>
-      <SectionTitle sub="Used by Drafts to turn the text in a photo into transactions. Any OpenAI-compatible chat endpoint works.">
-        AI import
-      </SectionTitle>
+    <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: t.panel2 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: t.text, marginBottom: 10 }}>
+        {editing ? `Edit ${editing.name}` : "Add provider"}
+      </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         {AI_PRESETS.map((p) => (
-          <Btn key={p.label} variant="outline" size="sm" onClick={() => { setBaseUrl(p.baseUrl); setModel(p.model); }}>
+          <Btn key={p.label} variant="outline" size="sm" onClick={() => { setName(p.name); setBaseUrl(p.baseUrl); setModel(p.model); }}>
             {p.label}
           </Btn>
         ))}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        <label>
+          <div style={{ fontSize: 11, color: t.dim, marginBottom: 4 }}>Name</div>
+          <input style={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Gemini free" />
+        </label>
         <label>
           <div style={{ fontSize: 11, color: t.dim, marginBottom: 4 }}>Base URL</div>
           <input style={input} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…/v1" />
@@ -270,24 +270,164 @@ function AiImportCard() {
           <input style={input} value={model} onChange={(e) => setModel(e.target.value)} placeholder="model name" />
         </label>
         <label>
-          <div style={{ fontSize: 11, color: t.dim, marginBottom: 4 }}>API key {saved?.hasKey ? "(saved)" : "(optional for local)"}</div>
+          <div style={{ fontSize: 11, color: t.dim, marginBottom: 4 }}>API key {editing?.hasKey ? "(saved)" : "(optional for local)"}</div>
           <input
             style={input}
             type="password"
             autoComplete="off"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder={saved?.hasKey ? "Leave blank to keep the saved key" : "Paste a key"}
+            placeholder={editing?.hasKey ? "Leave blank to keep the saved key" : "Paste a key"}
           />
         </label>
       </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <Btn disabled={busy} onClick={() => void saveAndTest()}>{busy ? "Testing…" : "Save & test"}</Btn>
+        <Btn variant="outline" disabled={busy} onClick={() => void run(async () => { if (await save()) onCancel(); })}>Save</Btn>
+        {editing?.hasKey && (
+          <Btn variant="danger" disabled={busy} onClick={() => void run(async () => { if (await save("")) notify("Key removed.", "info"); })}>
+            Remove key
+          </Btn>
+        )}
+        <Btn variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Btn>
+      </div>
+    </div>
+  );
+}
+
+function AiImportCard() {
+  const t = useTheme();
+  const { notify } = useToast();
+  const [providers, setProviders] = useState<AiProvider[] | null>(null);
+  const [editing, setEditing] = useState<AiProvider | "new" | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
+
+  const refresh = async () => {
+    setProviders(await client.listAiProviders());
+  };
+
+  useEffect(() => {
+    refresh().catch(() => {});
+  }, []);
+
+  const act = async (body: () => Promise<unknown>, fallback: string) => {
+    try {
+      await body();
+    } catch (error) {
+      notify(errorMessage(error, fallback), "error");
+    }
+    await refresh().catch(() => {});
+  };
+
+  const list = providers ?? [];
+
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= list.length || from === to) return;
+    const ids = list.map((p) => p.id);
+    const [id] = ids.splice(from, 1);
+    ids.splice(to, 0, id);
+    void act(() => client.reorderAiProviders(ids), "Could not reorder");
+  };
+
+  const test = async (p: AiProvider) => {
+    setTestingId(p.id);
+    try {
+      await client.testAiProvider(p.id);
+      notify(`${p.name} answered.`, "info");
+    } catch (error) {
+      notify(errorMessage(error, "Connection failed"), "error");
+    } finally {
+      setTestingId(null);
+    }
+  };
+
+  const remove = (p: AiProvider) => {
+    if (!window.confirm(`Delete ${p.name}? Its key is removed too.`)) return;
+    if (editing !== null && editing !== "new" && editing.id === p.id) setEditing(null);
+    void act(() => client.deleteAiProvider(p.id), "Could not delete");
+  };
+
+  return (
+    <Card>
+      <SectionTitle sub="Used by Drafts to turn the text in a photo into transactions. Any OpenAI-compatible chat endpoint works.">
+        AI import
+      </SectionTitle>
+      <div style={{ fontSize: 12.5, color: t.dim, marginBottom: 10 }}>
+        Drafts tries these in order and falls back to the next one if a call fails.
+      </div>
+      {providers && list.length === 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: t.dim, padding: "8px 0" }}>
+          <Icon name="info" size={15} color={t.dim} />
+          No AI providers yet. Add one to use photo import.
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {list.map((p, i) => (
+          <div
+            key={p.id}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const from = list.findIndex((x) => x.id === e.dataTransfer.getData("text/plain"));
+              if (from >= 0) move(from, i);
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 9,
+              border: `0.5px solid ${t.border}`, background: t.panel2,
+            }}
+          >
+            <span
+              draggable
+              onDragStart={(e) => e.dataTransfer.setData("text/plain", p.id)}
+              title="Drag to reorder"
+              style={{ cursor: "grab", color: t.faint, userSelect: "none", fontSize: 14, lineHeight: 1 }}
+            >
+              ⋮⋮
+            </span>
+            <span style={{ width: 18, fontFamily: t.mono, fontSize: 12, color: t.faint }}>{i + 1}</span>
+            <div style={{ flex: 1, minWidth: 0, opacity: p.enabled ? 1 : 0.55 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 500, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+              <div style={{ fontSize: 12, color: t.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {p.model} · {p.hasKey ? "key saved" : "no key"}
+              </div>
+            </div>
+            <span style={{ fontSize: 11.5, color: t.dim, width: 22 }}>{p.enabled ? "On" : "Off"}</span>
+            <Toggle
+              on={p.enabled}
+              label={`Use ${p.name}`}
+              onChange={(v) => void act(() => client.setAiProviderEnabled(p.id, v), "Could not update")}
+            />
+            <div style={{ display: "flex", gap: 4 }}>
+              <button className="sens-icon-btn" aria-label={`Move ${p.name} up`} disabled={i === 0} onClick={() => move(i, i - 1)}
+                style={{ width: 26, height: 26, color: t.dim, opacity: i === 0 ? 0.35 : 1 }}>↑</button>
+              <button className="sens-icon-btn" aria-label={`Move ${p.name} down`} disabled={i === list.length - 1} onClick={() => move(i, i + 1)}
+                style={{ width: 26, height: 26, color: t.dim, opacity: i === list.length - 1 ? 0.35 : 1 }}>↓</button>
+            </div>
+            <Btn variant="outline" size="sm" disabled={testingId !== null} onClick={() => void test(p)}>
+              {testingId === p.id ? "Testing…" : "Test"}
+            </Btn>
+            <Btn variant="ghost" size="sm" onClick={() => setEditing(p)}>Edit</Btn>
+            <button className="sens-icon-btn" aria-label={`Delete ${p.name}`} title="Delete" onClick={() => remove(p)}
+              style={{ width: 28, height: 28, color: t.dim }}>
+              <Icon name="trash" size={15} color="currentColor" />
+            </button>
+          </div>
+        ))}
+      </div>
+      {editing === null ? (
+        <div style={{ marginTop: 12 }}>
+          <Btn variant="outline" icon="plus" onClick={() => setEditing("new")}>Add provider</Btn>
+        </div>
+      ) : (
+        <AiProviderForm
+          key={editing === "new" ? "new" : editing.id}
+          editing={editing === "new" ? null : editing}
+          onSaved={async (saved) => { if (editing !== "new") setEditing(saved); await refresh(); }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
       <div style={{ fontSize: 12, color: t.faint, marginTop: 10 }}>
         The key is stored unencrypted in Sens's local database and is never shown again. Anything you send to a cloud provider leaves this computer.
-      </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <Btn disabled={busy} onClick={() => void saveAndTest()}>{busy ? "Testing…" : "Save & test"}</Btn>
-        <Btn variant="outline" disabled={busy} onClick={() => void save().then((ok) => ok && notify("Saved.", "info"))}>Save</Btn>
-        {saved?.hasKey && <Btn variant="danger" disabled={busy} onClick={() => void clearKey()}>Remove key</Btn>}
       </div>
     </Card>
   );
