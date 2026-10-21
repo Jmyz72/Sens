@@ -8,6 +8,7 @@ pub const MIGRATIONS: &[(i64, &str)] = &[
     (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008),
     (9, MIGRATION_009), (10, MIGRATION_010), (11, MIGRATION_011), (12, MIGRATION_012),
     (13, MIGRATION_013), (14, MIGRATION_014), (15, MIGRATION_015), (16, MIGRATION_016),
+    (17, MIGRATION_017),
 ];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
@@ -522,4 +523,22 @@ CREATE TABLE import_drafts (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+"#;
+
+// AI provider list for photo import: an ordered set of OpenAI-compatible
+// endpoints tried in turn. Replaces the single `ai_*` settings rows, which are
+// dropped (nothing is copied; there are no existing users).
+const MIGRATION_017: &str = r#"
+CREATE TABLE ai_providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    model TEXT NOT NULL,
+    api_key TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+DELETE FROM app_settings WHERE key IN ('ai_base_url', 'ai_model', 'ai_api_key');
 "#;

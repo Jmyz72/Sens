@@ -187,6 +187,7 @@ pub fn reset_to_defaults(conn: &Connection) -> AppResult<()> {
         // reimbursement_allocations.expense_id is ON DELETE RESTRICT, so the links
         // must go before the transactions they reference.
         conn.execute("DELETE FROM import_drafts", [])?;
+        conn.execute("DELETE FROM ai_providers", [])?;
         conn.execute("DELETE FROM schedule_occurrences", [])?;
         conn.execute("DELETE FROM schedules", [])?;
         conn.execute("DELETE FROM savings_goals", [])?;
@@ -650,5 +651,40 @@ mod migration_tests {
              VALUES ('g3', 'Zero', 'sav', 0, NULL, '2026-10-01T00:00:00+00:00', '2026-10-01T00:00:00+00:00')",
             [],
         ).is_err(), "target must be > 0");
+    }
+
+    #[test]
+    fn migration_017_creates_ai_providers_and_drops_old_settings() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        let apply = |sql: &str| {
+            conn.execute_batch("BEGIN").unwrap();
+            conn.execute_batch(sql).unwrap();
+            conn.execute_batch("COMMIT").unwrap();
+        };
+        for i in 0..16 {
+            apply(MIGRATIONS[i].1);
+        }
+        apply(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES
+               ('ai_base_url', 'https://x.test/v1', 'now'), ('ai_model', 'm', 'now'),
+               ('ai_api_key', 'secret', 'now'), ('transaction_time_enabled', '1', 'now');",
+        );
+        apply(MIGRATIONS[16].1);
+
+        let keys: Vec<String> = conn
+            .prepare("SELECT key FROM app_settings ORDER BY key").unwrap()
+            .query_map([], |r| r.get(0)).unwrap()
+            .collect::<Result<_, _>>().unwrap();
+        assert_eq!(keys, ["transaction_time_enabled"]);
+        conn.execute(
+            "INSERT INTO ai_providers (id, name, base_url, model, api_key, enabled, position, created_at, updated_at)
+             VALUES ('p1', 'Gemini', 'https://x.test/v1', 'm', NULL, 1, 0, 'now', 'now')",
+            [],
+        ).unwrap();
+
+        super::reset_to_defaults(&conn).unwrap();
+        let left: i64 = conn.query_row("SELECT COUNT(*) FROM ai_providers", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 0, "factory reset removes AI providers");
     }
 }

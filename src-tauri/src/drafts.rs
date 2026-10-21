@@ -6,7 +6,7 @@ use chrono::{NaiveDate, NaiveTime};
 use rusqlite::Connection;
 use serde_json::Value;
 
-use crate::ai::{AiConfig, PromptContext, RawDraft};
+use crate::ai::{AiConfig, NamedConfig, PromptContext, RawDraft};
 use crate::error::{AppError, AppResult};
 use crate::models::*;
 use crate::{repo, service};
@@ -290,6 +290,122 @@ fn in_transaction<T>(conn: &Connection, body: impl FnOnce() -> AppResult<T>) -> 
             Err(e)
         }
     }
+}
+
+// ── AI providers ─────────────────────────────────────────────────────────────
+
+fn to_provider(row: repo::AiProviderRow) -> AiProvider {
+    AiProvider {
+        has_key: row.api_key.is_some(),
+        id: row.id,
+        name: row.name,
+        base_url: row.base_url,
+        model: row.model,
+        enabled: row.enabled,
+        position: row.position,
+    }
+}
+
+fn to_named(row: repo::AiProviderRow) -> NamedConfig {
+    NamedConfig { name: row.name, cfg: AiConfig { base_url: row.base_url, model: row.model, api_key: row.api_key } }
+}
+
+/// Trimmed, non-empty name, base URL and model, with the base URL normalised.
+fn clean_provider_fields(conn: &Connection, input: &AiProviderInput, except_id: Option<&str>) -> AppResult<(String, String, String)> {
+    let name = input.name.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::Validation("Name cannot be empty".into()));
+    }
+    let base_url = input.base_url.trim().trim_end_matches('/').to_string();
+    if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+        return Err(AppError::Validation("The base URL must start with http:// or https://".into()));
+    }
+    let model = input.model.trim().to_string();
+    if model.is_empty() {
+        return Err(AppError::Validation("Model cannot be empty".into()));
+    }
+    let wanted = name.to_lowercase();
+    let taken = repo::list_ai_providers(conn)?
+        .iter()
+        .any(|p| Some(p.id.as_str()) != except_id && p.name.trim().to_lowercase() == wanted);
+    if taken {
+        return Err(AppError::Validation("An AI provider with that name already exists.".into()));
+    }
+    Ok((name, base_url, model))
+}
+
+fn clean_key(key: &str) -> Option<String> {
+    let k = key.trim();
+    (!k.is_empty()).then(|| k.to_string())
+}
+
+pub fn list_ai_providers(conn: &Connection) -> AppResult<Vec<AiProvider>> {
+    Ok(repo::list_ai_providers(conn)?.into_iter().map(to_provider).collect())
+}
+
+pub fn create_ai_provider(conn: &Connection, input: AiProviderInput) -> AppResult<AiProvider> {
+    let (name, base_url, model) = clean_provider_fields(conn, &input, None)?;
+    let row = repo::AiProviderRow {
+        id: uuid::Uuid::new_v4().to_string(),
+        name,
+        base_url,
+        model,
+        api_key: input.api_key.as_deref().and_then(clean_key),
+        enabled: true,
+        position: repo::list_ai_providers(conn)?.len() as i64,
+    };
+    repo::insert_ai_provider(conn, &row, &crate::now())?;
+    Ok(to_provider(repo::get_ai_provider(conn, &row.id)?))
+}
+
+pub fn update_ai_provider(conn: &Connection, id: &str, input: AiProviderInput) -> AppResult<AiProvider> {
+    let mut row = repo::get_ai_provider(conn, id)?;
+    let (name, base_url, model) = clean_provider_fields(conn, &input, Some(id))?;
+    row.name = name;
+    row.base_url = base_url;
+    row.model = model;
+    if let Some(key) = input.api_key.as_deref() {
+        row.api_key = clean_key(key);
+    }
+    repo::update_ai_provider(conn, &row, &crate::now())?;
+    Ok(to_provider(repo::get_ai_provider(conn, id)?))
+}
+
+pub fn set_ai_provider_enabled(conn: &Connection, id: &str, enabled: bool) -> AppResult<AiProvider> {
+    let mut row = repo::get_ai_provider(conn, id)?;
+    row.enabled = enabled;
+    repo::update_ai_provider(conn, &row, &crate::now())?;
+    Ok(to_provider(repo::get_ai_provider(conn, id)?))
+}
+
+pub fn delete_ai_provider(conn: &Connection, id: &str) -> AppResult<()> {
+    repo::get_ai_provider(conn, id)?;
+    in_transaction(conn, || {
+        repo::delete_ai_provider(conn, id)?;
+        let rest: Vec<String> = repo::list_ai_providers(conn)?.into_iter().map(|p| p.id).collect();
+        repo::set_ai_provider_positions(conn, &rest, &crate::now())
+    })
+}
+
+pub fn reorder_ai_providers(conn: &Connection, ids: &[String]) -> AppResult<()> {
+    let mut stored: Vec<String> = repo::list_ai_providers(conn)?.into_iter().map(|p| p.id).collect();
+    let mut given = ids.to_vec();
+    stored.sort();
+    given.sort();
+    if stored != given {
+        return Err(AppError::Validation("The order must list every AI provider exactly once.".into()));
+    }
+    in_transaction(conn, || repo::set_ai_provider_positions(conn, ids, &crate::now()))
+}
+
+/// One provider's settings, whether or not it is enabled (used by Test).
+pub fn provider_config(conn: &Connection, id: &str) -> AppResult<NamedConfig> {
+    Ok(to_named(repo::get_ai_provider(conn, id)?))
+}
+
+/// The enabled providers in the order Drafts tries them.
+pub fn enabled_provider_configs(conn: &Connection) -> AppResult<Vec<NamedConfig>> {
+    Ok(repo::list_ai_providers(conn)?.into_iter().filter(|p| p.enabled).map(to_named).collect())
 }
 
 // ── AI settings ──────────────────────────────────────────────────────────────
@@ -835,5 +951,91 @@ mod tests {
         }
         let err = set_ai_settings(&c, AiSettingsInput { base_url: "ftp://x".into(), model: "m".into(), api_key: None }).unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    fn input(name: &str, key: Option<&str>) -> AiProviderInput {
+        AiProviderInput { name: name.into(), base_url: " https://x.test/v1/ ".into(), model: " m ".into(), api_key: key.map(Into::into) }
+    }
+
+    #[test]
+    fn providers_round_trip_in_order_and_never_expose_the_key() {
+        let c = db();
+        let a = create_ai_provider(&c, input(" Gemini ", Some("k1"))).unwrap();
+        let b = create_ai_provider(&c, input("Ollama", Some(""))).unwrap();
+        assert_eq!(
+            (a.name.as_str(), a.base_url.as_str(), a.model.as_str(), a.has_key, a.enabled, a.position),
+            ("Gemini", "https://x.test/v1", "m", true, true, 0)
+        );
+        assert_eq!((b.has_key, b.position), (false, 1));
+        assert_eq!(list_ai_providers(&c).unwrap().iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Gemini", "Ollama"]);
+        let json = serde_json::to_string(&list_ai_providers(&c).unwrap()).unwrap();
+        assert!(!json.contains("k1"));
+    }
+
+    #[test]
+    fn update_keeps_the_key_on_null_and_clears_it_on_empty() {
+        let c = db();
+        let a = create_ai_provider(&c, input("Gemini", Some("k1"))).unwrap();
+        assert!(update_ai_provider(&c, &a.id, input("Gemini 2", None)).unwrap().has_key);
+        assert_eq!(provider_config(&c, &a.id).unwrap().cfg.api_key.as_deref(), Some("k1"));
+        assert!(!update_ai_provider(&c, &a.id, input("Gemini 2", Some(""))).unwrap().has_key);
+        assert_eq!(provider_config(&c, &a.id).unwrap().cfg.api_key, None);
+    }
+
+    #[test]
+    fn names_are_unique_ignoring_case_and_spaces() {
+        let c = db();
+        let a = create_ai_provider(&c, input("Gemini", None)).unwrap();
+        assert!(matches!(create_ai_provider(&c, input(" gemini ", None)), Err(AppError::Validation(m)) if m == "An AI provider with that name already exists."));
+        let b = create_ai_provider(&c, input("OpenAI", None)).unwrap();
+        assert!(update_ai_provider(&c, &b.id, input("GEMINI", None)).is_err());
+        assert!(update_ai_provider(&c, &a.id, input("gemini", None)).is_ok(), "renaming itself is fine");
+    }
+
+    #[test]
+    fn provider_validation_messages() {
+        let c = db();
+        let bad = |n: &str, u: &str, m: &str| {
+            create_ai_provider(&c, AiProviderInput { name: n.into(), base_url: u.into(), model: m.into(), api_key: None })
+                .unwrap_err()
+                .to_string()
+        };
+        assert_eq!(bad(" ", "https://x", "m"), "Name cannot be empty");
+        assert_eq!(bad("A", "ftp://x", "m"), "The base URL must start with http:// or https://");
+        assert_eq!(bad("A", "https://x", " "), "Model cannot be empty");
+        assert!(matches!(update_ai_provider(&c, "nope", input("A", None)), Err(AppError::NotFound(_))));
+        assert!(matches!(set_ai_provider_enabled(&c, "nope", false), Err(AppError::NotFound(_))));
+        assert!(matches!(delete_ai_provider(&c, "nope"), Err(AppError::NotFound(_))));
+        assert!(matches!(provider_config(&c, "nope"), Err(AppError::NotFound(_))));
+    }
+
+    #[test]
+    fn delete_closes_the_gap_and_reorder_needs_every_id_once() {
+        let c = db();
+        let ids: Vec<String> = ["A", "B", "C"].iter().map(|n| create_ai_provider(&c, input(n, None)).unwrap().id).collect();
+        delete_ai_provider(&c, &ids[1]).unwrap();
+        assert_eq!(list_ai_providers(&c).unwrap().iter().map(|p| p.position).collect::<Vec<_>>(), [0, 1]);
+        reorder_ai_providers(&c, &[ids[2].clone(), ids[0].clone()]).unwrap();
+        assert_eq!(list_ai_providers(&c).unwrap().iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["C", "A"]);
+        let msg = "The order must list every AI provider exactly once.";
+        for bad in [
+            vec![ids[2].clone()],
+            vec![ids[2].clone(), ids[2].clone()],
+            vec![ids[2].clone(), ids[0].clone(), "x".into()],
+            vec![ids[2].clone(), "x".into()],
+        ] {
+            assert_eq!(reorder_ai_providers(&c, &bad).unwrap_err().to_string(), msg);
+        }
+    }
+
+    #[test]
+    fn enabled_configs_skip_disabled_providers_and_keep_order() {
+        let c = db();
+        let a = create_ai_provider(&c, input("A", None)).unwrap();
+        create_ai_provider(&c, input("B", None)).unwrap();
+        let off = set_ai_provider_enabled(&c, &a.id, false).unwrap();
+        assert_eq!((off.enabled, off.position), (false, 0));
+        assert_eq!(enabled_provider_configs(&c).unwrap().iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["B"]);
+        assert_eq!(provider_config(&c, &a.id).unwrap().name, "A", "Test ignores the switch");
     }
 }

@@ -410,6 +410,30 @@ pub struct ConfirmResult {
     pub failed: Vec<ConfirmFailure>,
 }
 
+/// One saved AI endpoint for photo import, in the order Drafts tries it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiProvider {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    /// The key itself is never sent to the frontend.
+    pub has_key: bool,
+    pub enabled: bool,
+    pub position: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiProviderInput {
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    /// On update, `None` keeps the saved key and `Some("")` clears it. On create both mean no key.
+    pub api_key: Option<String>,
+}
+
 /// A provider that failed before another one answered.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

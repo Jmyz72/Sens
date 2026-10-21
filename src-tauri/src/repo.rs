@@ -1326,6 +1326,84 @@ pub fn delete_draft(conn: &Connection, id: &str) -> AppResult<()> {
     Ok(())
 }
 
+// ── AI providers ──────────────────────────────────────────────────────────────
+
+pub struct AiProviderRow {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    pub api_key: Option<String>,
+    pub enabled: bool,
+    pub position: i64,
+}
+
+const AI_PROVIDER_COLS: &str = "id, name, base_url, model, api_key, enabled, position";
+
+fn ai_provider_row(r: &Row) -> rusqlite::Result<AiProviderRow> {
+    Ok(AiProviderRow {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        base_url: r.get(2)?,
+        model: r.get(3)?,
+        api_key: r.get(4)?,
+        enabled: r.get::<_, i64>(5)? != 0,
+        position: r.get(6)?,
+    })
+}
+
+pub fn list_ai_providers(conn: &Connection) -> AppResult<Vec<AiProviderRow>> {
+    let mut stmt = conn.prepare(&format!("SELECT {AI_PROVIDER_COLS} FROM ai_providers ORDER BY position, rowid"))?;
+    let rows = stmt.query_map([], ai_provider_row)?.collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn get_ai_provider(conn: &Connection, id: &str) -> AppResult<AiProviderRow> {
+    conn.query_row(&format!("SELECT {AI_PROVIDER_COLS} FROM ai_providers WHERE id = ?1"), [id], ai_provider_row)
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => AppError::NotFound("AI provider not found".into()),
+            other => other.into(),
+        })
+}
+
+pub fn insert_ai_provider(conn: &Connection, row: &AiProviderRow, now: &str) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO ai_providers (id, name, base_url, model, api_key, enabled, position, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+        params![row.id, row.name, row.base_url, row.model, row.api_key, row.enabled as i64, row.position, now],
+    )?;
+    Ok(())
+}
+
+pub fn update_ai_provider(conn: &Connection, row: &AiProviderRow, now: &str) -> AppResult<()> {
+    let n = conn.execute(
+        "UPDATE ai_providers SET name = ?2, base_url = ?3, model = ?4, api_key = ?5, enabled = ?6, position = ?7, updated_at = ?8
+         WHERE id = ?1",
+        params![row.id, row.name, row.base_url, row.model, row.api_key, row.enabled as i64, row.position, now],
+    )?;
+    if n == 0 {
+        return Err(AppError::NotFound("AI provider not found".into()));
+    }
+    Ok(())
+}
+
+pub fn delete_ai_provider(conn: &Connection, id: &str) -> AppResult<()> {
+    let n = conn.execute("DELETE FROM ai_providers WHERE id = ?1", [id])?;
+    if n == 0 {
+        return Err(AppError::NotFound("AI provider not found".into()));
+    }
+    Ok(())
+}
+
+/// Sets each provider's position to its index in `ids`.
+pub fn set_ai_provider_positions(conn: &Connection, ids: &[String], now: &str) -> AppResult<()> {
+    let mut stmt = conn.prepare("UPDATE ai_providers SET position = ?2, updated_at = ?3 WHERE id = ?1")?;
+    for (i, id) in ids.iter().enumerate() {
+        stmt.execute(params![id, i as i64, now])?;
+    }
+    Ok(())
+}
+
 // ── Error mapping helpers ─────────────────────────────────────────────────────
 
 /// Map a SQLite UNIQUE violation to a friendly Conflict.
