@@ -8,8 +8,8 @@ import type {
   AccountBalance,
   AccountSubtype,
   AccountTemplate,
-  AiSettings,
-  AiSettingsInput,
+  AiProvider,
+  AiProviderInput,
   AwaitingReimbursement,
   BudgetWrite,
   Category,
@@ -17,6 +17,7 @@ import type {
   ConfirmResult,
   DashboardSummary,
   DraftFields,
+  ExtractResult,
   GoalWrite,
   ImportDraft,
   Plan,
@@ -111,15 +112,19 @@ export const client = {
   // Photo import
   ocrImage: (bytes: Uint8Array) => dispatchRaw<string>("ocr_image", bytes),
   extractDrafts: (sourceName: string, text: string) =>
-    dispatch<ImportDraft[]>("extract_drafts", { sourceName, text }),
+    dispatch<ExtractResult>("extract_drafts", { sourceName, text }),
   listImportDrafts: () => dispatch<ImportDraft[]>("list_import_drafts"),
   updateImportDraft: (id: string, fields: DraftFields) =>
     dispatch<ImportDraft>("update_import_draft", { id, fields }),
   discardImportDrafts: (ids: string[]) => dispatch<void>("discard_import_drafts", { ids }),
   confirmImportDrafts: (ids: string[]) => dispatch<ConfirmResult>("confirm_import_drafts", { ids }),
-  getAiSettings: () => dispatch<AiSettings>("get_ai_settings"),
-  setAiSettings: (input: AiSettingsInput) => dispatch<AiSettings>("set_ai_settings", { input }),
-  testAiConnection: () => dispatch<void>("test_ai_connection"),
+  listAiProviders: () => dispatch<AiProvider[]>("list_ai_providers"),
+  createAiProvider: (input: AiProviderInput) => dispatch<AiProvider>("create_ai_provider", { input }),
+  updateAiProvider: (id: string, input: AiProviderInput) => dispatch<AiProvider>("update_ai_provider", { id, input }),
+  setAiProviderEnabled: (id: string, enabled: boolean) => dispatch<AiProvider>("set_ai_provider_enabled", { id, enabled }),
+  deleteAiProvider: (id: string) => dispatch<void>("delete_ai_provider", { id }),
+  reorderAiProviders: (ids: string[]) => dispatch<void>("reorder_ai_providers", { ids }),
+  testAiProvider: (id: string) => dispatch<void>("test_ai_provider", { id }),
 
   // Settings
   getSetting: (key: string) => dispatch<string | null>("get_setting", { key }),

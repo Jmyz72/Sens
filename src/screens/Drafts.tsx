@@ -2,7 +2,7 @@
 // them, then confirm. Nothing is saved as a transaction until a draft is confirmed.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Account, AiSettings, Category, DraftFields, ImportDraft } from "../types";
+import type { Account, AiProvider, Category, DraftFields, ImportDraft } from "../types";
 import { useTheme } from "../theme/ThemeProvider";
 import { Btn, Card, Empty, SectionTitle, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
@@ -58,7 +58,7 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
   const { notify } = useToast();
   const [timeEnabled] = useTimeSetting();
   const [drafts, setDrafts] = useState<ImportDraft[] | null>(null);
-  const [ai, setAi] = useState<AiSettings | null>(null);
+  const [providers, setProviders] = useState<AiProvider[] | null>(null);
   const [busy, setBusy] = useState<Busy>("idle");
   const [lostText, setLostText] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -70,7 +70,7 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
 
   useEffect(() => {
     client.listImportDrafts().then(update).catch((e) => notify(messageOf(e, "Could not load drafts"), "error"));
-    client.getAiSettings().then(setAi).catch(() => {});
+    client.listAiProviders().then(setProviders).catch(() => {});
   }, [update, notify]);
 
   const handleFile = useCallback(async (file: File) => {
@@ -82,8 +82,8 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
       notify("That image is larger than 20 MB.", "error");
       return;
     }
-    if (ai && (ai.baseUrl.trim() === "" || ai.model.trim() === "")) {
-      notify("Set an AI base URL and model in Settings → AI import first.", "error");
+    if (providers && !providers.some((p) => p.enabled)) {
+      notify("Add an AI provider in Settings → AI import to use this.", "error");
       return;
     }
     setLostText(null);
@@ -92,20 +92,23 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
       setBusy("reading");
       text = await client.ocrImage(new Uint8Array(await file.arrayBuffer()));
       setBusy("extracting");
-      const created = await client.extractDrafts(file.name || "Pasted image", text);
+      const result = await client.extractDrafts(file.name || "Pasted image", text);
+      const created = result.drafts;
       setDrafts((prev) => {
         const next = [...(prev ?? []), ...created];
         onCountChange(next.length);
         return next;
       });
-      notify(created.length === 0 ? "No transactions found in that image." : `${created.length} draft${created.length === 1 ? "" : "s"} ready to review.`, "info");
+      const found = created.length === 0 ? "No transactions found in that image." : `${created.length} draft${created.length === 1 ? "" : "s"} ready to review.`;
+      const skipped = result.skipped.map((s) => ` ${s.name} failed: ${s.message.replace(/\.+$/, "")}.`).join("");
+      notify(`${found} Read by ${result.provider}.${skipped}`, "info");
     } catch (error) {
       if (text) setLostText(text);
       notify(messageOf(error, "Could not read that image"), "error");
     } finally {
       setBusy("idle");
     }
-  }, [ai, notify, onCountChange]);
+  }, [providers, notify, onCountChange]);
 
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
@@ -165,8 +168,9 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
   };
 
   const ready = (drafts ?? []).filter((d) => d.problems.length === 0);
-  const configured = !!ai && ai.baseUrl !== "" && ai.model !== "";
-  const cloud = !!ai && ai.baseUrl !== "" && !isLocalUrl(ai.baseUrl);
+  const enabled = (providers ?? []).filter((p) => p.enabled);
+  const configured = enabled.length > 0;
+  const cloudNames = enabled.filter((p) => !isLocalUrl(p.baseUrl)).map((p) => p.name);
 
   return (
     <div className="sens-screen" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -195,16 +199,16 @@ export function Drafts({ onCountChange }: { onCountChange: (n: number) => void }
             {busy === "idle" && "or paste a screenshot with Cmd/Ctrl+V"}
           </span>
         </div>
-        {ai && !configured && (
+        {providers && !configured && (
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: t.dim }}>
             <Icon name="info" size={15} color={t.dim} />
-            Set an AI base URL and model in Settings → AI import to use this.
+            Add an AI provider in Settings → AI import to use this.
           </div>
         )}
-        {cloud && (
+        {cloudNames.length > 0 && (
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: t.dim }}>
             <Icon name="info" size={15} color={t.dim} />
-            Text from your photos is sent to {ai?.baseUrl}.
+            Text from your photos is sent to {cloudNames.join(", ")}.
           </div>
         )}
       </Card>

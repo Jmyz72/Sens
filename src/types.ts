@@ -288,15 +288,35 @@ export interface ConfirmResult {
   failed: { id: string; message: string }[];
 }
 
-export interface AiSettings {
+/** One saved AI endpoint for photo import, in the order Drafts tries it. */
+export interface AiProvider {
+  id: string;
+  name: string;
   baseUrl: string;
   model: string;
+  /** The key itself is never returned. */
   hasKey: boolean;
+  enabled: boolean;
+  position: number;
 }
 
-export interface AiSettingsInput {
+export interface AiProviderInput {
+  name: string;
   baseUrl: string;
   model: string;
-  /** null keeps the saved key; "" clears it. */
+  /** On update, null keeps the saved key and "" clears it. On create both mean no key. */
   apiKey: string | null;
+}
+
+/** A provider that failed before another one answered. */
+export interface SkippedProvider {
+  name: string;
+  message: string;
+}
+
+export interface ExtractResult {
+  drafts: ImportDraft[];
+  /** Name of the provider that answered. */
+  provider: string;
+  skipped: SkippedProvider[];
 }

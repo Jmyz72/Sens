@@ -10,7 +10,8 @@ import type {
   AccountSubtype,
   AccountTemplate,
   AccountTypeName,
-  AiSettings,
+  AiProvider,
+  AiProviderInput,
   BudgetWrite,
   Category,
   CategoryBreakdown,
@@ -312,12 +313,58 @@ function normalizeOptional(value: string | null | undefined, pattern: RegExp, me
   return t;
 }
 
-function aiSettings(): AiSettings {
-  return {
-    baseUrl: settings.get("ai_base_url") ?? "",
-    model: settings.get("ai_model") ?? "",
-    hasKey: (settings.get("ai_api_key") ?? "") !== "",
-  };
+// ── AI providers (mirrors the provider section of src-tauri/src/drafts.rs) ──
+
+interface AiProviderRowMock {
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  apiKey: string | null;
+  enabled: boolean;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+const aiProviders: AiProviderRowMock[] = [];
+
+function sortedProviders(): AiProviderRowMock[] {
+  return aiProviders.slice().sort((x, y) => x.position - y.position);
+}
+
+function presentProvider(p: AiProviderRowMock): AiProvider {
+  return { id: p.id, name: p.name, baseUrl: p.baseUrl, model: p.model, hasKey: p.apiKey !== null, enabled: p.enabled, position: p.position };
+}
+
+function findProvider(id: string): AiProviderRowMock {
+  return aiProviders.find((p) => p.id === id) ?? fail("NotFound", "AI provider not found");
+}
+
+function cleanProviderFields(input: AiProviderInput, exceptId: string | null): { name: string; baseUrl: string; model: string } {
+  const name = String(input.name ?? "").trim();
+  if (!name) fail("ValidationError", "Name cannot be empty");
+  const baseUrl = String(input.baseUrl ?? "").trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//.test(baseUrl)) fail("ValidationError", "The base URL must start with http:// or https://");
+  const model = String(input.model ?? "").trim();
+  if (!model) fail("ValidationError", "Model cannot be empty");
+  const wanted = name.toLowerCase();
+  if (aiProviders.some((p) => p.id !== exceptId && p.name.trim().toLowerCase() === wanted)) {
+    fail("ValidationError", "An AI provider with that name already exists.");
+  }
+  return { name, baseUrl, model };
+}
+
+function cleanKey(key: string): string | null {
+  const k = String(key).trim();
+  return k === "" ? null : k;
+}
+
+function renumberProviders(ids: string[]): void {
+  ids.forEach((id, i) => {
+    const p = findProvider(id);
+    p.position = i;
+    p.updatedAt = now();
+  });
 }
 
 /** The last non-database reason a pass could not post a schedule; lists show it as the block reason. */
@@ -1415,9 +1462,8 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       return MOCK_OCR_TEXT as T;
     }
     case "extract_drafts": {
-      if (!settings.get("ai_base_url") || !settings.get("ai_model")) {
-        fail("ai_not_configured", "Set the AI base URL and model in Settings first.");
-      }
+      const answering = sortedProviders().find((p) => p.enabled);
+      if (!answering) fail("ai_not_configured", "Add an AI provider in Settings first.");
       const active = accounts.filter((x) => !x.isArchived);
       const category = categories.find((c) => c.kind === "expense" && !c.isSystem && !c.isArchived && c.parentId == null);
       const needTime = timeEnabled();
@@ -1440,7 +1486,8 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
         drafts.push(row);
         return presentDraft(row);
       });
-      return created as T;
+      // The mock never calls a network, so the first enabled provider always answers.
+      return { drafts: created, provider: answering!.name, skipped: [] } as T;
     }
     case "list_import_drafts":
       return drafts.map(presentDraft) as T;
@@ -1495,24 +1542,52 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       }
       return { confirmed, failed } as T;
     }
-    case "get_ai_settings":
-      return aiSettings() as T;
-    case "set_ai_settings": {
-      const url = String(a.input.baseUrl).trim().replace(/\/+$/, "");
-      if (url && !/^https?:\/\//.test(url)) fail("ValidationError", "The base URL must start with http:// or https://");
-      settings.set("ai_base_url", url);
-      settings.set("ai_model", String(a.input.model).trim());
-      if (a.input.apiKey != null) settings.set("ai_api_key", String(a.input.apiKey).trim());
-      return aiSettings() as T;
+    case "list_ai_providers":
+      return sortedProviders().map(presentProvider) as T;
+    case "create_ai_provider": {
+      const input = a.input as AiProviderInput;
+      const fields = cleanProviderFields(input, null);
+      const row: AiProviderRowMock = {
+        id: uid(), ...fields, apiKey: input.apiKey == null ? null : cleanKey(input.apiKey),
+        enabled: true, position: aiProviders.length, createdAt: now(), updatedAt: now(),
+      };
+      aiProviders.push(row);
+      return presentProvider(row) as T;
     }
-    case "test_ai_connection": {
-      if (!settings.get("ai_base_url") || !settings.get("ai_model")) {
-        fail("ai_not_configured", "Set the AI base URL and model in Settings first.");
-      }
+    case "update_ai_provider": {
+      const row = findProvider(String(a.id));
+      const input = a.input as AiProviderInput;
+      Object.assign(row, cleanProviderFields(input, row.id));
+      if (input.apiKey != null) row.apiKey = cleanKey(input.apiKey);
+      row.updatedAt = now();
+      return presentProvider(row) as T;
+    }
+    case "set_ai_provider_enabled": {
+      const row = findProvider(String(a.id));
+      row.enabled = Boolean(a.enabled);
+      row.updatedAt = now();
+      return presentProvider(row) as T;
+    }
+    case "delete_ai_provider": {
+      const row = findProvider(String(a.id));
+      aiProviders.splice(aiProviders.indexOf(row), 1);
+      renumberProviders(sortedProviders().map((p) => p.id));
       return undefined as T;
     }
+    case "reorder_ai_providers": {
+      const ids = (a.ids as string[]).map(String);
+      const stored = aiProviders.map((p) => p.id).sort();
+      const given = ids.slice().sort();
+      if (stored.length !== given.length || stored.some((id, i) => id !== given[i])) {
+        fail("ValidationError", "The order must list every AI provider exactly once.");
+      }
+      renumberProviders(ids);
+      return undefined as T;
+    }
+    case "test_ai_provider":
+      findProvider(String(a.id));
+      return undefined as T;
     case "get_setting":
-      if (String(a.key).trim() === "ai_api_key") fail("ValidationError", "That setting is write-only.");
       return (settings.get(String(a.key)) ?? null) as T;
     case "set_setting": {
       if (!String(a.key).trim()) fail("ValidationError", "Key cannot be empty");
@@ -1564,6 +1639,7 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       schedules.length = 0;
       occurrences.length = 0;
       drafts.length = 0;
+      aiProviders.length = 0;
       passFailures.clear();
       seedCategories();
       return undefined as T;

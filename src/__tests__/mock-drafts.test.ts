@@ -7,7 +7,7 @@ beforeEach(async () => {
 });
 
 async function configureAi() {
-  await client.setAiSettings({ baseUrl: "http://localhost:11434/v1", model: "llava", apiKey: null });
+  await client.createAiProvider({ name: "Local", baseUrl: "http://localhost:11434/v1", model: "llava", apiKey: null });
 }
 
 describe("mock photo import", () => {
@@ -27,7 +27,7 @@ describe("mock photo import", () => {
   it("creates drafts, edits them, and confirms them into transactions", async () => {
     await client.createAccount("Maybank Savings", "savings", 0, null);
     await configureAi();
-    const created = await client.extractDrafts("receipt.png", "text");
+    const created = (await client.extractDrafts("receipt.png", "text")).drafts;
     expect(created).toHaveLength(1);
     expect(created[0].fields.kind).toBe("expense");
     expect(created[0].problems).toEqual([]);
@@ -44,7 +44,7 @@ describe("mock photo import", () => {
 
   it("keeps a draft with problems and reports it as failed", async () => {
     await configureAi();
-    const created = await client.extractDrafts("receipt.png", "text"); // no accounts yet
+    const created = (await client.extractDrafts("receipt.png", "text")).drafts; // no accounts yet
     expect(created[0].problems).toContain("account");
     const result = await client.confirmImportDrafts([created[0].id]);
     expect(result.confirmed).toBe(0);
@@ -56,14 +56,14 @@ describe("mock photo import", () => {
     await client.createAccount("A", "savings", 0, null);
     await client.createAccount("B", "savings", 0, null);
     await configureAi();
-    const created = await client.extractDrafts("s.png", "text");
+    const created = (await client.extractDrafts("s.png", "text")).drafts;
     expect(created.map((d) => d.fields.kind)).toEqual(["expense", "transfer"]);
     expect(created[1].fields.toAccountId).not.toBe(created[1].fields.accountId);
   });
 
   it("discards drafts", async () => {
     await configureAi();
-    const created = await client.extractDrafts("s.png", "text");
+    const created = (await client.extractDrafts("s.png", "text")).drafts;
     await client.discardImportDrafts([created[0].id]);
     expect(await client.listImportDrafts()).toHaveLength(0);
   });
@@ -72,7 +72,7 @@ describe("mock photo import", () => {
     await client.createAccount("A", "savings", 0, null);
     await client.createAccount("B", "savings", 0, null);
     await configureAi();
-    const created = await client.extractDrafts("s.png", "text");
+    const created = (await client.extractDrafts("s.png", "text")).drafts;
     const t = created[1];
     const same = await client.updateImportDraft(t.id, { ...t.fields, toAccountId: t.fields.accountId });
     expect(same.problems).toContain("to_account");
@@ -81,7 +81,7 @@ describe("mock photo import", () => {
   it("drops a category of the old kind when the kind changes", async () => {
     await client.createAccount("Maybank Savings", "savings", 0, null);
     await configureAi();
-    const [d] = await client.extractDrafts("receipt.png", "text");
+    const [d] = (await client.extractDrafts("receipt.png", "text")).drafts;
     expect(d.fields.categoryId).not.toBeNull();
     const same = await client.updateImportDraft(d.id, { ...d.fields, note: "x" });
     expect(same.fields.categoryId).toBe(d.fields.categoryId);
@@ -94,7 +94,7 @@ describe("mock photo import", () => {
     const savings = await client.createAccount("A", "savings", 0, null);
     const card = await client.createAccount("Card", "credit-card", -20000, null, 1000000);
     await configureAi();
-    const created = await client.extractDrafts("s.png", "text");
+    const created = (await client.extractDrafts("s.png", "text")).drafts;
     const t = created[1];
     expect(t.fields.kind).toBe("transfer");
     const ready = await client.updateImportDraft(t.id, { ...t.fields, accountId: savings.id, toAccountId: card.id });
@@ -111,7 +111,7 @@ describe("mock photo import", () => {
     await client.createAccount("A", "savings", 0, null);
     await client.createAccount("B", "savings", 0, null);
     await configureAi();
-    const created = await client.extractDrafts("s.png", "text");
+    const created = (await client.extractDrafts("s.png", "text")).drafts;
     await client.discardImportDrafts([created[0].id, created[0].id]);
     const left = await client.listImportDrafts();
     expect(left.map((d) => d.id)).toEqual([created[1].id]);
@@ -119,18 +119,16 @@ describe("mock photo import", () => {
     expect(await client.listImportDrafts()).toHaveLength(1);
   });
 
-  it("keeps the API key write-only", async () => {
-    const saved = await client.setAiSettings({ baseUrl: "http://x.test/v1/", model: "m", apiKey: "secret" });
-    expect(saved).toEqual({ baseUrl: "http://x.test/v1", model: "m", hasKey: true });
-    await expect(client.getSetting("ai_api_key")).rejects.toMatchObject({ code: "ValidationError" });
-    const kept = await client.setAiSettings({ baseUrl: "http://x.test/v1", model: "m", apiKey: null });
-    expect(kept.hasKey).toBe(true);
-    const cleared = await client.setAiSettings({ baseUrl: "http://x.test/v1", model: "m", apiKey: "" });
-    expect(cleared.hasKey).toBe(false);
-  });
-
-  it("rejects a base URL without http(s)", async () => {
-    await expect(client.setAiSettings({ baseUrl: "ftp://x", model: "m", apiKey: null })).rejects.toMatchObject({ code: "ValidationError" });
+  it("names the first enabled provider and refuses when all are off", async () => {
+    await client.createAccount("Maybank Savings", "savings", 0, null);
+    const off = await client.createAiProvider({ name: "Off one", baseUrl: "https://a.test/v1", model: "m", apiKey: null });
+    await client.setAiProviderEnabled(off.id, false);
+    await expect(client.extractDrafts("a.png", "t")).rejects.toMatchObject({ code: "ai_not_configured", message: "Add an AI provider in Settings first." });
+    await configureAi();
+    const res = await client.extractDrafts("a.png", "t");
+    expect(res.provider).toBe("Local");
+    expect(res.skipped).toEqual([]);
+    expect(res.drafts).toHaveLength(1);
   });
 
   it("clears drafts on factory reset", async () => {
