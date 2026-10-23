@@ -224,13 +224,24 @@ pub fn delete_transaction(state: State<'_, DbState>, id: String) -> AppResult<()
 
 // ── App Settings ─────────────────────────────────────────────────────────────
 
+/// The generic settings commands must not reach the MCP keys (token hash,
+/// enabled flag, port); the Assistant card commands own them.
+fn reject_mcp_key(key: &str) -> AppResult<()> {
+    if key.trim().starts_with("mcp_") {
+        return Err(crate::error::AppError::Validation("That setting is managed by the Assistant card.".into()));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_setting(state: State<'_, DbState>, key: String) -> AppResult<Option<String>> {
+    reject_mcp_key(&key)?;
     with_conn!(state, c => service::get_setting(&c, &key))
 }
 
 #[tauri::command]
 pub fn set_setting(state: State<'_, DbState>, key: String, value: String) -> AppResult<()> {
+    reject_mcp_key(&key)?;
     with_conn!(state, c => service::set_setting(&c, &key, &value))
 }
 
@@ -446,4 +457,23 @@ pub fn reorder_ai_providers(state: State<'_, DbState>, ids: Vec<String>) -> AppR
 pub async fn test_ai_provider(state: State<'_, DbState>, id: String) -> AppResult<()> {
     let named = with_conn!(state, c => crate::drafts::provider_config(&c, &id))?;
     crate::ai::test_connection(&named.cfg).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reject_mcp_key;
+    use crate::error::AppError;
+
+    #[test]
+    fn generic_settings_commands_reject_mcp_keys() {
+        // get_setting and set_setting both call reject_mcp_key first.
+        for key in ["mcp_token_hash", "mcp_enabled", "mcp_port", " mcp_port"] {
+            match reject_mcp_key(key) {
+                Err(AppError::Validation(m)) => assert_eq!(m, "That setting is managed by the Assistant card."),
+                other => panic!("{key}: expected Validation, got {other:?}"),
+            }
+        }
+        assert!(reject_mcp_key("transaction_time_enabled").is_ok());
+        assert!(reject_mcp_key("theme").is_ok());
+    }
 }

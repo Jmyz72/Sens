@@ -187,6 +187,7 @@ pub fn reset_to_defaults(conn: &Connection) -> AppResult<()> {
         // reimbursement_allocations.expense_id is ON DELETE RESTRICT, so the links
         // must go before the transactions they reference.
         conn.execute("DELETE FROM import_drafts", [])?;
+        conn.execute("DELETE FROM mcp_audit_log", [])?;
         conn.execute("DELETE FROM ai_providers", [])?;
         conn.execute("DELETE FROM schedule_occurrences", [])?;
         conn.execute("DELETE FROM schedules", [])?;
@@ -683,6 +684,10 @@ mod migration_tests {
             [],
         ).unwrap();
 
+        // Reset also wipes tables added by later migrations (e.g. mcp_audit_log).
+        for m in &MIGRATIONS[17..] {
+            apply(m.1);
+        }
         super::reset_to_defaults(&conn).unwrap();
         let left: i64 = conn.query_row("SELECT COUNT(*) FROM ai_providers", [], |r| r.get(0)).unwrap();
         assert_eq!(left, 0, "factory reset removes AI providers");

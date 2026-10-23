@@ -175,8 +175,9 @@ impl McpHandle {
         {
             let conn = db.lock().map_err(|_| AppError::Database("Database lock poisoned".into()))?;
             service::set_setting(&conn, KEY_TOKEN_HASH, &hash)?;
+            // Swap while the DB lock is held so stored and live cannot diverge.
+            self.set_live_hash(&hash);
         }
-        self.set_live_hash(&hash);
         Ok(token)
     }
 
@@ -185,8 +186,9 @@ impl McpHandle {
         {
             let conn = db.lock().map_err(|_| AppError::Database("Database lock poisoned".into()))?;
             service::reset_app(&conn)?;
+            // Cleared inside the lock so the old token cannot outlive the wipe.
+            self.set_live_hash("");
         }
-        self.set_live_hash("");
         Ok(self.apply_with(db, on_write))
     }
 
@@ -360,12 +362,35 @@ mod tests {
         handle.rotate_token(&db).unwrap();
         let port = free_port();
         assert!(handle.set_enabled_with(&db, noop(), true, Some(port)).unwrap().running);
+        audit::record(&db.lock().unwrap(), Some("a@b.c"), "create_expense", &serde_json::json!({"x": 1}), &Ok(())).unwrap();
+        let count = |db: &Arc<Mutex<Connection>>| -> i64 {
+            db.lock().unwrap().query_row("SELECT COUNT(*) FROM mcp_audit_log", [], |r| r.get(0)).unwrap()
+        };
+        assert_eq!(count(&db), 1);
         let st = handle.reset_with(&db, noop()).unwrap();
         assert!(!st.running);
         assert!(!st.enabled);
         assert!(!st.has_token);
         assert!(handle.token_hash.read().unwrap().is_empty());
         assert!(wait_until_closed(port));
+        assert_eq!(count(&db), 0, "reset must clear the audit log");
+    }
+
+    #[test]
+    fn concurrent_rotations_leave_live_equal_stored() {
+        let db = db();
+        let handle = Arc::new(McpHandle::new(&db));
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let (h, d) = (handle.clone(), db.clone());
+                std::thread::spawn(move || h.rotate_token(&d).unwrap())
+            })
+            .collect();
+        let tokens: Vec<String> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+        let stored = setting(&db, KEY_TOKEN_HASH).unwrap();
+        assert_eq!(*handle.token_hash.read().unwrap(), stored);
+        let winners = tokens.iter().filter(|t| auth::verify(t, &stored)).count();
+        assert_eq!(winners, 1, "exactly one token verifies");
     }
 
     #[tokio::test]
