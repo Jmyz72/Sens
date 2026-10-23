@@ -5,10 +5,14 @@
 //! The token and request headers are never logged.
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use axum::middleware::from_fn_with_state;
+use axum::extract::Request;
+use axum::http::{header, StatusCode};
+use axum::middleware::{from_fn, from_fn_with_state, Next};
+use axum::response::{IntoResponse, Response};
 use axum::Router;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
@@ -66,8 +70,8 @@ fn start_failed(e: std::io::Error) -> AppError {
 /// current tokio runtime if there is one, otherwise on Tauri's runtime.
 #[allow(dead_code)] // called by the app lifecycle in Task 8 (see RunningServer)
 pub fn start(cfg: ServerConfig) -> AppResult<RunningServer> {
-    let std_listener = std::net::TcpListener::bind(("127.0.0.1", cfg.port))
-        .map_err(|_| AppError::Conflict(format!("Port {} is in use", cfg.port)))?;
+    let std_listener =
+        std::net::TcpListener::bind(("127.0.0.1", cfg.port)).map_err(|e| bind_error(cfg.port, e))?;
     std_listener.set_nonblocking(true).map_err(start_failed)?;
     let port = std_listener.local_addr().map_err(start_failed)?.port();
 
@@ -76,7 +80,12 @@ pub fn start(cfg: ServerConfig) -> AppResult<RunningServer> {
         db: cfg.db,
         on_write: cfg.on_write,
         limiter: RateLimiter::new(WRITE_LIMIT, WRITE_WINDOW),
-        write_tools: defs.iter().filter(|d| d.writes).map(|d| d.name).collect(),
+        write_tools: defs
+            .iter()
+            .filter(|d| d.writes)
+            .map(|d| d.name)
+            .chain(test_write_tools())
+            .collect(),
         tools: defs
             .iter()
             .map(|d| {
@@ -89,9 +98,12 @@ pub fn start(cfg: ServerConfig) -> AppResult<RunningServer> {
             .collect(),
     });
 
-    // Host validation is off: Tailscale Serve forwards the tailnet hostname as
-    // `Host`. DNS rebinding is already covered by the loopback-peer check plus
-    // the required bearer token in `require_token`.
+    // rmcp's own Host allow-list is off because it only knows loopback names,
+    // and Tailscale Serve forwards the tailnet hostname as `Host`.
+    // `require_allowed_host` replaces it. The loopback-peer check in
+    // `require_token` is NOT a DNS-rebinding defense: rebinding requests and
+    // all Tailscale Serve traffic arrive from loopback. The bearer token is the
+    // real control; the Host layer is defense in depth.
     let http_config = StreamableHttpServerConfig::default().disable_allowed_hosts();
     let sessions_ct = http_config.cancellation_token.clone();
     let factory_shared = shared.clone();
@@ -100,8 +112,11 @@ pub fn start(cfg: ServerConfig) -> AppResult<RunningServer> {
         Arc::new(LocalSessionManager::default()),
         http_config,
     );
+    // The last layer added runs first: auth, then Host, then rmcp. So an
+    // unauthenticated caller only ever sees 401.
     let app = Router::new()
         .nest_service("/mcp", mcp)
+        .layer(from_fn(require_allowed_host))
         .layer(from_fn_with_state(AuthState { token_hash: cfg.token_hash }, require_token));
 
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
@@ -161,21 +176,97 @@ impl Shared {
             .db
             .lock()
             .map_err(|_| AppError::Database("Database lock poisoned".into()))?;
-        if !writes {
-            return tools::call(&conn, name, args);
-        }
-        let result = tools::call(&conn, name, args.clone());
-        let outcome = match &result {
-            Ok(_) => Ok(()),
-            Err(e) => Err(copy_error(e)),
+        let audit_args = writes.then(|| args.clone());
+        let (result, panicked) = match catch_unwind(AssertUnwindSafe(|| dispatch(&conn, name, args))) {
+            Ok(r) => (r, false),
+            Err(_) => (Err(AppError::Database("Internal error while running the tool".into())), true),
         };
-        audit_call(&conn, user, name, &args, &outcome);
+        if let Some(args) = audit_args {
+            let outcome = match &result {
+                Ok(_) => Ok(()),
+                Err(e) => Err(copy_error(e)),
+            };
+            audit_call(&conn, user, name, &args, &outcome);
+        }
+        // Dropping the guard rolls back any transaction the tool left open.
         drop(conn);
-        if result.is_ok() {
+        if panicked {
+            // Never leave the desktop UI's shared connection poisoned.
+            self.db.clear_poison();
+        }
+        if writes && result.is_ok() {
             (self.on_write)();
         }
         result
     }
+}
+
+/// Runs one tool. Tests add a tool that panics, to exercise panic safety.
+fn dispatch(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
+    #[cfg(test)]
+    if name == TEST_PANIC_TOOL {
+        panic!("test tool panicked");
+    }
+    tools::call(conn, name, args)
+}
+
+/// Test-only tool that panics; registered as a write so its audit path is covered.
+#[cfg(test)]
+const TEST_PANIC_TOOL: &str = "__test_panic";
+
+fn test_write_tools() -> impl Iterator<Item = &'static str> {
+    #[cfg(test)]
+    return std::iter::once(TEST_PANIC_TOOL);
+    #[cfg(not(test))]
+    std::iter::empty()
+}
+
+/// `AddrInUse` is the user-fixable conflict; anything else is reported as-is.
+fn bind_error(port: u16, e: std::io::Error) -> AppError {
+    if e.kind() == std::io::ErrorKind::AddrInUse {
+        AppError::Conflict(format!("Port {port} is in use"))
+    } else {
+        AppError::Database(format!("Could not listen on 127.0.0.1:{port}: {e}"))
+    }
+}
+
+/// True for `localhost`, `127.0.0.1`, `[::1]` or a `*.ts.net` name, each with
+/// an optional numeric `:port`, case-insensitive.
+fn host_allowed(host: Option<&str>) -> bool {
+    let Some(host) = host else { return false };
+    let host = host.to_ascii_lowercase();
+    if let Some(rest) = host.strip_prefix('[') {
+        // Bracketed IPv6: only [::1], then nothing or `:port`.
+        let Some((inner, after)) = rest.split_once(']') else { return false };
+        return inner == "::1"
+            && (after.is_empty() || after.strip_prefix(':').is_some_and(valid_port));
+    }
+    let (name, port) = match host.split_once(':') {
+        Some((n, p)) => (n, Some(p)),
+        None => (host.as_str(), None),
+    };
+    if !port.is_none_or(valid_port) {
+        return false;
+    }
+    match name {
+        "localhost" | "127.0.0.1" => true,
+        n => n
+            .strip_suffix(".ts.net")
+            .is_some_and(|label| !label.is_empty() && !label.starts_with('.') && !label.ends_with('.')),
+    }
+}
+
+fn valid_port(p: &str) -> bool {
+    !p.is_empty() && p.len() <= 5 && p.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Empty-body 403 unless the `Host` header passes `host_allowed`.
+async fn require_allowed_host(req: Request, next: Next) -> Response {
+    let host = req.headers().get(header::HOST).and_then(|v| v.to_str().ok());
+    if !host_allowed(host) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    next.run(req).await
 }
 
 fn audit_call(conn: &Connection, user: &str, tool: &str, args: &Value, outcome: &AppResult<()>) {
@@ -467,6 +558,127 @@ mod tests {
         .err()
         .expect("second bind must fail");
         assert!(matches!(&err, AppError::Conflict(m) if *m == format!("Port {port} is in use")), "{err:?}");
+        h.server.stop();
+    }
+
+    #[test]
+    fn host_allowed_cases() {
+        for ok in [
+            "localhost", "localhost:8123", "LOCALHOST", "127.0.0.1", "127.0.0.1:80", "[::1]",
+            "[::1]:8123", "mac.tail1234.ts.net", "MAC.TAIL1234.TS.NET", "mac.tail1234.ts.net:443",
+        ] {
+            assert!(host_allowed(Some(ok)), "{ok}");
+        }
+        for bad in [
+            "evil.example", "ts.net.evil.example", "nots.net", ".ts.net", "ts.net", "",
+            "localhost:abc", "localhost:", "[::1]x", "[::2]", "::1", "127.0.0.2", "evil.example:443",
+        ] {
+            assert!(!host_allowed(Some(bad)), "{bad}");
+        }
+        assert!(!host_allowed(None));
+    }
+
+    /// POSTs an `initialize` with a valid token and the given Host; returns the status.
+    async fn initialize_with_host(port: u16, host: &str) -> u16 {
+        let body = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-03-26", "capabilities": {},
+            "clientInfo": {"name": "t", "version": "1"}}});
+        reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/mcp"))
+            .bearer_auth(TOKEN)
+            .header(reqwest::header::HOST, host)
+            .header(reqwest::header::ACCEPT, "application/json, text/event-stream")
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16()
+    }
+
+    #[tokio::test]
+    async fn host_header_allowlist() {
+        let h = harness();
+        let port = h.server.port;
+        for ok in [
+            format!("localhost:{port}"),
+            "127.0.0.1".to_string(),
+            format!("[::1]:{port}"),
+            "mac.tail1234.ts.net".to_string(),
+            "MAC.TAIL1234.TS.NET".to_string(),
+        ] {
+            assert_eq!(initialize_with_host(port, &ok).await, 200, "{ok}");
+        }
+        for bad in ["evil.example", "ts.net.evil.example", "nots.net"] {
+            assert_eq!(initialize_with_host(port, bad).await, 403, "{bad}");
+        }
+
+        // Missing Host (HTTP/1.0 lets a client omit it), valid token: 403, empty body.
+        let raw = tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Write};
+            let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let req = format!(
+                "POST /mcp HTTP/1.0\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}"
+            );
+            s.write_all(req.as_bytes()).unwrap();
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+            out
+        })
+        .await
+        .unwrap();
+        assert!(raw.starts_with("HTTP/1.0 403") || raw.starts_with("HTTP/1.1 403"), "{raw}");
+        assert!(raw.ends_with("\r\n\r\n"), "403 must have an empty body: {raw}");
+
+        // Auth runs first: a bad Host without a token learns only 401.
+        let r = reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/mcp"))
+            .header(reqwest::header::HOST, "evil.example")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status().as_u16(), 401);
+        h.server.stop();
+    }
+
+    #[test]
+    fn bind_error_mapping() {
+        use std::io::{Error, ErrorKind};
+        let e = bind_error(8123, Error::from(ErrorKind::AddrInUse));
+        assert!(matches!(&e, AppError::Conflict(m) if m == "Port 8123 is in use"), "{e:?}");
+        let e = bind_error(80, Error::new(ErrorKind::PermissionDenied, "permission denied"));
+        assert!(
+            matches!(&e, AppError::Database(m) if m == "Could not listen on 127.0.0.1:80: permission denied"),
+            "{e:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn panicking_tool_does_not_poison_the_connection() {
+        let h = harness();
+        let c = client(h.server.port).await;
+        let (err, v) = call(&c, TEST_PANIC_TOOL, json!({})).await;
+        assert!(err);
+        assert_eq!(v["code"], "DatabaseError");
+        assert_eq!(v["message"], "Internal error while running the tool");
+        assert!(!h.db.is_poisoned());
+
+        // Audited as a failed write, no on_write.
+        let rows = audit_rows(&h.db);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tool, TEST_PANIC_TOOL);
+        assert!(!rows[0].ok);
+        assert_eq!(rows[0].error_code.as_deref(), Some("DatabaseError"));
+        assert_eq!(h.writes.load(Ordering::SeqCst), 0);
+
+        // The shared connection still works for the server and the desktop UI.
+        let (err, v) = call(&c, "create_expense", expense(100)).await;
+        assert!(!err, "{v}");
+        assert_eq!(h.writes.load(Ordering::SeqCst), 1);
+        assert!(service::get_account_balances(&h.db.lock().unwrap()).is_ok());
+
+        c.cancel().await.unwrap();
         h.server.stop();
     }
 
