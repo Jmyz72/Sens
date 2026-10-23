@@ -1045,6 +1045,95 @@ mod tests {
         assert!(crate::service::set_category_parent(&c, &sys_id, None).is_err(), "reparent must be blocked");
     }
 
+    /// Name is updated first, then subtype. A failure of the later statement
+    /// must not leave the rename committed.
+    #[test]
+    fn update_account_rolls_back_when_a_later_field_write_fails() {
+        let c = crate::db::open_in_memory().unwrap();
+        let acc = service::create_account(&c, "Maybank", "cash", 1_000, None, None, None, None).unwrap();
+        c.execute_batch(
+            "CREATE TRIGGER fail_subtype BEFORE UPDATE OF subtype ON accounts
+             BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+        )
+        .unwrap();
+        let err = service::update_account(&c, crate::models::UpdateAccountInput {
+            id: acc.id.clone(),
+            name: Some("Renamed".into()),
+            subtype: Some("ewallet".into()),
+            opening_balance_cents: None,
+            credit_limit_cents: None,
+            value_categories: None,
+        });
+        assert!(err.is_err(), "subtype write must fail");
+        let after = service::get_account(&c, &acc.id).unwrap();
+        assert_eq!(after.name, "Maybank", "name stuck after the subtype write failed");
+        assert_eq!(after.subtype, "cash");
+        assert_eq!(after.updated_at, acc.updated_at);
+    }
+
+    /// Name is updated first, then emoji. A failure of the later statement
+    /// must not leave the rename committed.
+    #[test]
+    fn update_category_rolls_back_when_a_later_field_write_fails() {
+        let c = crate::db::open_in_memory().unwrap();
+        let cat = service::create_category(&c, "Lunch", "expense", "x", None, None).unwrap();
+        c.execute_batch(
+            "CREATE TRIGGER fail_emoji BEFORE UPDATE OF emoji ON categories
+             BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+        )
+        .unwrap();
+        let err = service::update_category(&c, crate::models::UpdateCategoryInput {
+            id: cat.id.clone(),
+            name: Some("Dinner".into()),
+            emoji: Some("y".into()),
+            color: None,
+            sort_order: None,
+        });
+        assert!(err.is_err(), "emoji write must fail");
+        let after = crate::repo::get_category(&c, &cat.id).unwrap();
+        assert_eq!(after.name, "Lunch", "name stuck after the emoji write failed");
+        assert_eq!(after.emoji, "x");
+        assert_eq!(after.updated_at, cat.updated_at);
+    }
+
+    /// Archiving a parent writes the parent, then its children. A failure of
+    /// the child write must not leave the parent archived.
+    #[test]
+    fn archive_category_rolls_back_when_the_child_write_fails() {
+        let c = crate::db::open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food Z", "expense", "🍔", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee Z", "expense", "☕", None, Some(&food.id)).unwrap();
+        c.execute_batch(
+            "CREATE TRIGGER fail_child BEFORE UPDATE OF is_archived ON categories
+             WHEN NEW.parent_id IS NOT NULL
+             BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+        )
+        .unwrap();
+        assert!(service::archive_category(&c, &food.id).is_err());
+        let food_after = crate::repo::get_category(&c, &food.id).unwrap();
+        let coffee_after = crate::repo::get_category(&c, &coffee.id).unwrap();
+        assert!(!food_after.is_archived, "parent stayed archived");
+        assert!(!coffee_after.is_archived);
+        assert_eq!(food_after.updated_at, food.updated_at);
+    }
+
+    #[test]
+    fn restore_category_rolls_back_when_the_child_write_fails() {
+        let c = crate::db::open_in_memory().unwrap();
+        let food = service::create_category(&c, "Food Y", "expense", "🍔", None, None).unwrap();
+        let coffee = service::create_category(&c, "Coffee Y", "expense", "☕", None, Some(&food.id)).unwrap();
+        service::archive_category(&c, &food.id).unwrap();
+        c.execute_batch(
+            "CREATE TRIGGER fail_child_restore BEFORE UPDATE OF is_archived ON categories
+             WHEN NEW.parent_id IS NOT NULL
+             BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+        )
+        .unwrap();
+        assert!(service::restore_category(&c, &food.id).is_err());
+        assert!(crate::repo::get_category(&c, &food.id).unwrap().is_archived, "parent was restored");
+        assert!(crate::repo::get_category(&c, &coffee.id).unwrap().is_archived, "child was restored");
+    }
+
     #[test]
     fn account_with_unknown_subtype_still_lists() {
         // An account whose subtype isn't in the taxonomy (e.g. a future rename or

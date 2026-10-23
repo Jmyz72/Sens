@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Assistant account catalog.** The assistant can list every provider template (`list_account_templates`: key, name, group, and suggested subtype) and every account subtype (`list_account_subtypes`: key, label, type, and own/owe). Creating an account uses those keys. 39 tools in total.
 
+### Fixed
+- A category rename, archive, or restore that failed partway through could leave the earlier part saved: the new name, or the parent archived while its subcategories were not. Those writes now commit together, so a failure leaves the categories untouched. `update_account` already rejects a bad edit — including an unknown field such as `templateKey` — before it writes anything, and a rejected update leaves the account unchanged.
+
 ## [0.12.0] — 2026-10-23
 
 ### Added

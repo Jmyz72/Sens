@@ -3,7 +3,7 @@
 Sens is built one **phase** at a time. **One phase = one release.** This file is the index; specs and plans hold the detail.
 
 > **Last shipped:** `v0.11.0` (Update Net Worth, recurring schedules & Upcoming, photo import Drafts)
-> **Unreleased:** AI import provider fallback; MCP assistant (39 tools over Tailscale, including account template and subtype catalogs)
+> **Unreleased:** AI import provider fallback; MCP assistant (39 tools over Tailscale, including account template and subtype catalogs); failed category edits no longer keep a partial change
 > **Next up:** Advanced search, filter & tags
 > **Later:** the climb to `v1.0.0`
 
