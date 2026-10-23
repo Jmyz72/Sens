@@ -1,6 +1,4 @@
 //! MCP write-call audit log and rate limiter.
-// Later MCP tasks consume these items; until then they are unused.
-#![allow(dead_code)]
 
 use crate::error::AppResult;
 use crate::models::McpAuditEntry;
@@ -30,6 +28,7 @@ pub fn record(
 }
 
 /// Newest first.
+#[allow(dead_code)] // the recent-activity Tauri command arrives in Task 8
 pub fn list(conn: &Connection, limit: i64) -> AppResult<Vec<McpAuditEntry>> {
     repo::list_mcp_audit(conn, limit)
 }

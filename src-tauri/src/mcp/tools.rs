@@ -13,8 +13,6 @@ use crate::models::{Allocation, SplitInput, TransactionFilters, UpdateTransactio
 use crate::{schedules, service};
 
 /// One entry in the tool registry.
-// Fields are consumed by the server layer in later tasks.
-#[allow(dead_code)]
 pub struct ToolDef {
     pub name: &'static str,
     pub description: &'static str,
@@ -384,8 +382,6 @@ fn create_move(conn: &Connection, name: &str, payment: bool, args: Value) -> App
 // ── Dispatch ────────────────────────────────────────────────────────────────
 
 /// Run a tool by name. Unknown name is `NotFound`; bad args are `Validation`.
-// Called by the server layer in later tasks.
-#[allow(dead_code)]
 pub fn call(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
     let result = match name {
         "get_financial_overview" => {

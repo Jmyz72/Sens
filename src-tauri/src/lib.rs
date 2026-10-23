@@ -15,12 +15,12 @@ mod repo;
 mod schedules;
 mod service;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 /// Shared SQLite connection. Single-user desktop app, so one guarded
-/// connection is sufficient.
-pub struct DbState(pub Mutex<rusqlite::Connection>);
+/// connection is sufficient. `Arc` so the embedded MCP server can share it.
+pub struct DbState(pub Arc<Mutex<rusqlite::Connection>>);
 
 /// Current timestamp as an ISO 8601 string (backend is the source of truth).
 pub fn now() -> String {
@@ -42,7 +42,7 @@ pub fn run() {
             let dir = app.path().app_data_dir().expect("no app data dir");
             std::fs::create_dir_all(&dir).expect("could not create app data dir");
             let conn = db::open(&dir.join("sens.db")).expect("could not open database");
-            app.manage(DbState(Mutex::new(conn)));
+            app.manage(DbState(Arc::new(Mutex::new(conn))));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

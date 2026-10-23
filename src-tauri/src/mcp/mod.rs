@@ -2,5 +2,6 @@
 pub mod audit;
 pub mod auth;
 pub mod resolve;
+pub mod server;
 pub mod tools;
 pub mod tools_manage;

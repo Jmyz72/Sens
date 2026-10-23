@@ -32,6 +32,8 @@ rmcp = { version = "3.7", features = ["server", "transport-streamable-http-serve
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+# MCP client for the server's end-to-end tests.
+rmcp = { version = "3.7", features = ["client", "transport-streamable-http-client-reqwest"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-process = "2.3.1"

@@ -3,7 +3,6 @@
 //! Fails closed everywhere: a missing/empty configured hash, a poisoned lock,
 //! a non-loopback peer, or any malformed header yields an empty-body 401.
 //! The token and request headers are never logged.
-#![allow(dead_code)] // consumed by the server mount in Task 7
 
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
@@ -30,6 +29,7 @@ fn to_hex(bytes: &[u8]) -> String {
 }
 
 /// 32 random bytes as 64 lowercase hex chars.
+#[allow(dead_code)] // the token generate/rotate Tauri command arrives in Task 8
 pub fn generate_token() -> String {
     let mut buf = [0u8; 32];
     rand::rng().fill_bytes(&mut buf);
