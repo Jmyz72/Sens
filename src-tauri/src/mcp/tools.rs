@@ -117,7 +117,33 @@ pub fn definitions() -> Vec<ToolDef> {
 fn parse_args<T: DeserializeOwned>(name: &str, args: Value) -> AppResult<T> {
     let args = if args.is_null() { json!({}) } else { args };
     serde_json::from_value(args)
-        .map_err(|e| AppError::Validation(format!("Invalid arguments for {name}: {e}")))
+        .map_err(|e| AppError::Validation(format!("Invalid arguments for {name}: {}", plain_words(&e.to_string()))))
+}
+
+/// Swap Rust type names in a serde message for plain words.
+fn plain_words(msg: &str) -> String {
+    let mut out = String::new();
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut String| {
+        out.push_str(match word.as_str() {
+            "i64" | "u64" | "i32" | "u32" | "usize" => "an integer",
+            "f64" | "f32" => "a number",
+            "bool" => "a true/false value",
+            "String" => "text",
+            w => w,
+        });
+        word.clear();
+    };
+    for ch in msg.chars() {
+        if ch.is_alphanumeric() || ch == '_' {
+            word.push(ch);
+        } else {
+            flush(&mut word, &mut out);
+            out.push(ch);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
 }
 
 fn valid_month(m: &str) -> AppResult<String> {
@@ -215,7 +241,19 @@ pub fn call(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
                 category_id,
                 kind: a.kind,
                 from_date: a.from_date.as_deref().map(resolve::parse_date).transpose()?,
-                to_date: a.to_date.as_deref().map(resolve::parse_date).transpose()?,
+                // The repo filter is exclusive; the tool contract is inclusive.
+                to_date: a
+                    .to_date
+                    .as_deref()
+                    .map(|d| {
+                        let d = resolve::parse_date(d)?;
+                        let next = chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d")
+                            .ok()
+                            .and_then(|x| x.checked_add_signed(chrono::Duration::days(1)))
+                            .ok_or_else(|| AppError::Validation(format!("Invalid date \"{d}\"")))?;
+                        Ok::<String, AppError>(next.format("%Y-%m-%d").to_string())
+                    })
+                    .transpose()?,
                 limit: a.limit,
                 offset: a.offset,
             };
@@ -341,5 +379,51 @@ mod tests {
         assert!(matches!(call(&c, "list_accounts", json!({"bogus": 1})), Err(AppError::Validation(_))));
         assert!(matches!(call(&c, "get_plan", json!({"month": "2026-13"})), Err(AppError::Validation(_))));
         assert!(matches!(call(&c, "list_transactions", json!({"fromDate": "x"})), Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn list_transactions_to_date_is_inclusive() {
+        let c = open_in_memory().unwrap();
+        let a = service::create_account(&c, "Maybank", "cash", 0, None, None, None, None).unwrap().id;
+        let cat = service::create_category(&c, "Lunch Runs", "expense", "x", None, None).unwrap().id;
+        for d in ["2026-10-30", "2026-10-31"] {
+            service::create_expense(&c, &a, Some(&cat), 100, None, d, Some("00:00"), false, None).unwrap();
+        }
+        let n = |args: Value| call(&c, "list_transactions", args).unwrap().as_array().unwrap().len();
+        assert_eq!(n(json!({"kind": "expense", "toDate": "2026-10-31"})), 2);
+        assert_eq!(n(json!({"kind": "expense", "toDate": "2026-10-30"})), 1);
+        let from = call(&c, "list_transactions", json!({"kind": "expense", "fromDate": "2026-10-31"})).unwrap();
+        let rows = from.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["transactionDate"], "2026-10-31");
+    }
+
+    #[test]
+    fn bad_arg_messages_are_plain_language() {
+        let c = open_in_memory().unwrap();
+        let msg = |r: AppResult<Value>| match r {
+            Err(AppError::Validation(m)) => m,
+            other => panic!("expected Validation, got {other:?}"),
+        };
+        let m = msg(call(&c, "list_accounts", json!({"bogus": 1})));
+        assert!(m.contains("bogus") && m.contains("list_accounts"), "{m}");
+        let m = msg(call(&c, "list_transactions", json!({"limit": "ten"})));
+        assert!(m.contains("integer"), "{m}");
+        for bad in ["i64", "u64", "usize"] {
+            assert!(!m.contains(bad), "{m}");
+        }
+    }
+
+    #[test]
+    fn all_read_tools_run_on_empty_db() {
+        let c = open_in_memory().unwrap();
+        for d in definitions() {
+            let args = if matches!(d.name, "get_dashboard_summary" | "get_plan") {
+                json!({"month": "2026-10"})
+            } else {
+                json!({})
+            };
+            call(&c, d.name, args).unwrap_or_else(|e| panic!("{}: {e:?}", d.name));
+        }
     }
 }
