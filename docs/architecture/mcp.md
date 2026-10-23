@@ -1,7 +1,7 @@
 # MCP assistant (agent access over Tailscale)
 
 An opt-in MCP server embedded in the desktop app. An AI agent you trust (for example one on your cloud
-machine) can read your ledger and manage it through 37 tools, meant to be reached over your own tailnet through Tailscale Serve.
+machine) can read your ledger and manage it through 39 tools, meant to be reached over your own tailnet through Tailscale Serve.
 Read this before adding or changing an agent tool, the auth layers, or the audit log.
 
 Spec: `docs/superpowers/specs/2026-10-23-sens-mcp-assistant-design.md`.
@@ -49,12 +49,16 @@ start error. `apply` starts or stops the server to match the settings and is ide
 
 ## Tools
 
-37 tools, defined in `tools.rs` (reads, transactions) and `tools_manage.rs` (budgets, goals, schedules,
+39 tools, defined in `tools.rs` (reads, transactions) and `tools_manage.rs` (budgets, goals, schedules,
 accounts, categories). Each is a read or a write; the write flag drives the audit log and rate limit.
 
-- **Read (10):** `get_financial_overview`, `list_accounts`, `get_account_balances`, `list_categories`,
-  `list_transactions` (`toDate` is inclusive), `get_dashboard_summary`, `get_plan`, `list_schedules`,
-  `list_upcoming`, `get_awaiting_reimbursement`.
+- **Read (12):** `get_financial_overview`, `list_accounts`, `list_account_templates`, `list_account_subtypes`,
+  `get_account_balances`, `list_categories`, `list_transactions` (`toDate` is inclusive),
+  `get_dashboard_summary`, `get_plan`, `list_schedules`, `list_upcoming`, `get_awaiting_reimbursement`.
+  `list_account_templates` returns `key`, `name`, `groupName` and `defaultSubtype` for every
+  `account_templates` row (`service::list_account_templates`). `list_account_subtypes` returns `key`,
+  `label`, `type` and `group` from `service::list_account_subtypes` (the same command as the app).
+  `create_account` takes those keys as `templateKey` and `subtype`.
 - **Transactions (8 writes):** `create_income`, `create_expense`, `create_transfer`, `create_payment`,
   `create_reimbursement`, `update_transaction`, `delete_transaction`, `set_expected_reimbursement`.
 - **Budgets and goals (4 writes):** `set_budgets`, `create_goal`, `update_goal`, `delete_goal`.

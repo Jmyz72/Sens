@@ -27,7 +27,7 @@ Read this before changing category rules, defaults, or the category picker.
   - `idx_categories_top_kind_name` on `(kind, name) WHERE parent_id IS NULL`
   - `idx_categories_sub_parent_name` on `(parent_id, name) WHERE parent_id IS NOT NULL`
 - Transactions may reference a **parent or a subcategory** (no data migration was needed).
-- Archiving a top-level category **cascades** archive/restore to its children (`set_children_archived`).
+- Archiving a top-level category **cascades** archive/restore to its children (`set_children_archived`). The parent write and the child write commit together; a failure leaves both unchanged. A category field edit (`update_category`) commits its separate column updates the same way.
 - The Dashboard spending breakdown **rolls subcategory spend up into the parent**
   (`GROUP BY COALESCE(parent_id, id)`, self-joined to label with the parent).
 

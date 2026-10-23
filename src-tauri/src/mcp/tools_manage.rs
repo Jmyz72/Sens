@@ -233,11 +233,12 @@ struct SkipOccurrenceArgs {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateAccountArgs {
     name: String,
-    /// Account subtype, e.g. "cash", "savings", "credit-card".
+    /// Account subtype key from list_account_subtypes, e.g. "cash", "savings", "credit-card".
     subtype: String,
     /// Integer cents (default 0).
     #[schemars(with = "Option<i64>")]
     opening_balance_cents: Option<Value>,
+    /// Provider template key from list_account_templates. Omit for a custom account.
     template_key: Option<String>,
     /// Positive integer cents (credit cards).
     #[schemars(with = "Option<i64>")]
@@ -345,7 +346,7 @@ pub fn definitions() -> Vec<ToolDef> {
         wtool!("delete_schedule", "Delete a recurring schedule by id.", ScheduleIdArgs),
         wtool!("post_occurrence", "Post a due occurrence of a tap-mode schedule as a real transaction. amountCents is integer cents; date is YYYY-MM-DD.", PostOccurrenceArgs),
         wtool!("skip_occurrence", "Skip a due occurrence of a schedule so it no longer shows as upcoming.", SkipOccurrenceArgs),
-        wtool!("create_account", "Create an account. Amounts are integer cents.", CreateAccountArgs),
+        wtool!("create_account", "Create an account. subtype is a key from list_account_subtypes; templateKey is an optional key from list_account_templates. Amounts are integer cents.", CreateAccountArgs),
         wtool!("update_account", "Rename or retype an account, or change its opening balance or credit limit (integer cents). id accepts an id or exact name.", UpdateAccountArgs),
         wtool!("archive_account", "Archive an account. id accepts an id or exact name.", IdArgs),
         wtool!("restore_account", "Restore an archived account. id accepts an id or exact name.", IdArgs),
@@ -648,11 +649,11 @@ fn run(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tools::{call, definitions};
+    use super::super::tools::{call, definitions, local_now};
     use crate::db::open_in_memory;
     use crate::error::{AppError, AppResult};
     use crate::models::TransactionFilters;
-    use crate::service;
+    use crate::{schedules, service};
     use rusqlite::Connection;
     use serde_json::{json, Value};
 
@@ -840,6 +841,114 @@ mod tests {
         let a = call(&c, "archive_category", json!({"id": "espresso bar"})).unwrap();
         assert_eq!(a["isArchived"], true);
         assert_eq!(call(&c, "restore_category", json!({"id": "Espresso Bar"})).unwrap()["isArchived"], false);
+    }
+
+    fn maybank(c: &Connection) -> crate::models::Account {
+        service::list_accounts(c, false).unwrap().into_iter().find(|a| a.name == "Maybank").unwrap()
+    }
+
+    /// A rejected update must not keep any field it was asked to change.
+    fn assert_account_unchanged(c: &Connection, before: &crate::models::Account) {
+        let after = service::get_account(c, &before.id).unwrap();
+        assert_eq!(after.name, before.name, "name changed despite the error");
+        assert_eq!(after.subtype, before.subtype, "subtype changed despite the error");
+        assert_eq!(after.template_key, before.template_key);
+        assert_eq!(after.credit_limit_cents, before.credit_limit_cents);
+        assert_eq!(after.opening_balance_cents, before.opening_balance_cents);
+        assert_eq!(after.updated_at, before.updated_at, "updated_at changed despite the error");
+    }
+
+    #[test]
+    fn rejected_update_account_leaves_the_account_unchanged() {
+        let c = setup();
+        let before = maybank(&c);
+        // Unknown fields are rejected before any write. templateKey is not an
+        // update_account field (create_account only).
+        let msg = validation(call(&c, "update_account", json!({
+            "id": before.id,
+            "name": "Renamed",
+            "subtype": "ewallet",
+            "templateKey": "mae"
+        })));
+        assert!(msg.to_lowercase().contains("templatekey"), "{msg}");
+        assert_account_unchanged(&c, &before);
+
+        let msg = validation(call(&c, "update_account", json!({
+            "id": before.id, "name": "  ", "subtype": "ewallet"
+        })));
+        assert!(msg.contains("cannot be empty"), "{msg}");
+        assert_account_unchanged(&c, &before);
+
+        let msg = validation(call(&c, "update_account", json!({
+            "id": before.id, "name": "Renamed", "subtype": "not-a-subtype"
+        })));
+        assert!(msg.contains("Invalid subtype"), "{msg}");
+        assert_account_unchanged(&c, &before);
+
+        let msg = validation(call(&c, "update_account", json!({
+            "id": before.id, "name": "Renamed", "subtype": "credit-card"
+        })));
+        assert!(msg.contains("Credit limit is required"), "{msg}");
+        assert_account_unchanged(&c, &before);
+
+        call(&c, "create_goal", json!({"name": "Trip", "accountId": "Maybank", "targetCents": 500_000})).unwrap();
+        let msg = match call(&c, "update_account", json!({
+            "id": before.id, "name": "Renamed", "subtype": "credit-card", "creditLimitCents": 100_000
+        })) {
+            Err(AppError::Conflict(m)) => m,
+            other => panic!("expected Conflict, got {other:?}"),
+        };
+        assert!(msg.contains("Delete this account's goal"), "{msg}");
+        assert_account_unchanged(&c, &before);
+    }
+
+    #[test]
+    fn rejected_updates_of_other_tools_leave_their_rows_unchanged() {
+        let c = setup();
+        let expense = call(&c, "create_expense", json!({
+            "accountId": "Maybank", "categoryId": "lunch runs", "amountCents": 800,
+            "date": "2026-10-23", "time": "12:00", "description": "Lunch"
+        })).unwrap();
+        let tx_id = expense["id"].as_str().unwrap();
+        let msg = validation(call(&c, "update_transaction", json!({
+            "id": tx_id, "description": "Changed", "templateKey": "mae"
+        })));
+        assert!(msg.to_lowercase().contains("templatekey"), "{msg}");
+        let stored = service::get_transaction(&c, tx_id).unwrap();
+        assert_eq!(stored.description.as_deref(), Some("Lunch"));
+        assert_eq!(stored.amount_cents, 800);
+
+        let goal = call(&c, "create_goal", json!({"name": "Trip", "accountId": "Maybank", "targetCents": 500_000})).unwrap();
+        let goal_id = goal["id"].as_str().unwrap();
+        let msg = validation(call(&c, "update_goal", json!({"id": goal_id, "name": "Changed", "nope": 1})));
+        assert!(msg.to_lowercase().contains("nope"), "{msg}");
+        assert_eq!(service::get_goal(&c, goal_id).unwrap().name, "Trip");
+
+        let schedule = call(&c, "create_schedule", daily_tap(&days_ago(1))).unwrap();
+        let schedule_id = schedule["id"].as_str().unwrap();
+        let msg = validation(call(&c, "update_schedule", json!({
+            "id": schedule_id, "description": "Changed", "nope": true
+        })));
+        assert!(msg.to_lowercase().contains("nope"), "{msg}");
+        assert_eq!(
+            schedules::get_schedule(&c, schedule_id, local_now()).unwrap().description.as_deref(),
+            Some("Coffee")
+        );
+
+        let cat = call(&c, "create_category", json!({"name": "Cafe", "kind": "expense", "emoji": "x"})).unwrap();
+        let cat_id = cat["id"].as_str().unwrap();
+        let msg = validation(call(&c, "update_category", json!({"id": cat_id, "name": "Changed", "nope": "y"})));
+        assert!(msg.to_lowercase().contains("nope"), "{msg}");
+        let stored = crate::repo::get_category(&c, cat_id).unwrap();
+        assert_eq!(stored.name, "Cafe");
+        assert_eq!(stored.emoji, "x");
+
+        let before = service::list_transactions(&c, TransactionFilters::default()).unwrap().len();
+        let msg = validation(call(&c, "update_net_worth", json!({
+            "accountId": "Maybank", "balanceCents": 1, "nope": "mae"
+        })));
+        assert!(msg.to_lowercase().contains("nope"), "{msg}");
+        assert_eq!(service::list_transactions(&c, TransactionFilters::default()).unwrap().len(), before);
     }
 
     #[test]

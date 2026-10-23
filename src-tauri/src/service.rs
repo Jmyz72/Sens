@@ -498,41 +498,88 @@ pub fn update_category(conn: &Connection, input: UpdateCategoryInput) -> AppResu
         Some(n) => Some(require_nonempty("Category name", n)?),
         None => None,
     };
-    repo::update_category_fields(
-        conn,
-        &input.id,
-        name.as_deref(),
-        input.emoji.as_deref(),
-        input.color.as_deref(),
-        input.sort_order,
-        &now(),
-    )
+    // Each field is its own UPDATE. A savepoint commits them together, including
+    // when the caller already holds a transaction (a nested BEGIN would fail).
+    atomically(conn, |conn| {
+        repo::update_category_fields(
+            conn,
+            &input.id,
+            name.as_deref(),
+            input.emoji.as_deref(),
+            input.color.as_deref(),
+            input.sort_order,
+            &now(),
+        )
+    })
 }
 
 pub fn archive_category(conn: &Connection, id: &str) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
     ensure_not_system(conn, id)?;
     let now = now();
-    let updated = repo::set_category_archived(conn, id, true, &now)?;
-    if cat.parent_id.is_none() {
-        repo::set_children_archived(conn, id, true, &now)?;
-    }
-    Ok(updated)
+    atomically(conn, |conn| {
+        let updated = repo::set_category_archived(conn, id, true, &now)?;
+        if cat.parent_id.is_none() {
+            repo::set_children_archived(conn, id, true, &now)?;
+        }
+        Ok(updated)
+    })
 }
 
 pub fn restore_category(conn: &Connection, id: &str) -> AppResult<Category> {
     let cat = repo::get_category(conn, id)?;
     ensure_not_system(conn, id)?;
     let now = now();
-    let updated = repo::set_category_archived(conn, id, false, &now)?;
-    if cat.parent_id.is_none() {
-        // v1 simplification: restoring a top-level category un-archives ALL of its
-        // children, including any that were archived independently before the parent
-        // was. We do not track *why* a child was archived (see the subcategories spec's
-        // "Scope Trims"). Acceptable until per-child restore is needed.
-        repo::set_children_archived(conn, id, false, &now)?;
+    atomically(conn, |conn| {
+        let updated = repo::set_category_archived(conn, id, false, &now)?;
+        if cat.parent_id.is_none() {
+            // v1 simplification: restoring a top-level category un-archives ALL of its
+            // children, including any that were archived independently before the parent
+            // was. We do not track *why* a child was archived (see the subcategories spec's
+            // "Scope Trims"). Acceptable until per-child restore is needed.
+            repo::set_children_archived(conn, id, false, &now)?;
+        }
+        Ok(updated)
+    })
+}
+
+/// Commit `body`'s writes together, or undo all of them. A savepoint (not
+/// `BEGIN`) so this still works inside `set_categories_archived`'s transaction.
+fn atomically<T>(conn: &Connection, body: impl FnOnce(&Connection) -> AppResult<T>) -> AppResult<T> {
+    let save = Save::begin(conn)?;
+    let value = body(conn)?;
+    save.commit()?;
+    Ok(value)
+}
+
+/// Rolls back unless `commit` ran. Same savepoint name is safe to reuse after
+/// release; a nested call hides the outer one until this one is released.
+struct Save<'a> {
+    conn: &'a Connection,
+    done: bool,
+}
+
+impl<'a> Save<'a> {
+    fn begin(conn: &'a Connection) -> AppResult<Self> {
+        conn.execute_batch("SAVEPOINT sens_atomic")?;
+        Ok(Self { conn, done: false })
     }
-    Ok(updated)
+
+    fn commit(mut self) -> AppResult<()> {
+        self.conn.execute_batch("RELEASE sens_atomic")?;
+        self.done = true;
+        Ok(())
+    }
+}
+
+impl Drop for Save<'_> {
+    fn drop(&mut self) {
+        if self.done {
+            return;
+        }
+        let _ = self.conn.execute_batch("ROLLBACK TO sens_atomic");
+        let _ = self.conn.execute_batch("RELEASE sens_atomic");
+    }
 }
 
 pub fn delete_category(conn: &Connection, id: &str) -> AppResult<()> {

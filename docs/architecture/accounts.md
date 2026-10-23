@@ -37,7 +37,9 @@ Each account stores **one classifier: `subtype`**. Everything else is derived.
 
 - **Create:** `create_account(name, subtype, openingBalanceCents, templateKey?)`.
   - It replaced the old `create_account_from_template` / `create_custom_account`.
-- **Read taxonomy:** `list_account_subtypes`.
+- **Read taxonomy:** `list_account_subtypes`. The assistant's `list_account_subtypes` tool calls
+  that same service function; `list_account_templates` calls `service::list_account_templates`.
+  See [mcp.md](mcp.md).
 
 ## Providers are branding only
 
