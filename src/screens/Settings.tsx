@@ -331,22 +331,27 @@ function AssistantCard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = async () => {
+  const [confirmRotate, setConfirmRotate] = useState(false);
+
+  // Status + audit; `resyncPort` also resets the port field to the saved port.
+  const refresh = async (resyncPort = false) => {
     const [s, a] = await Promise.all([client.getMcpStatus(), client.listMcpAudit(50)]);
     setStatus(s);
     setAudit(a);
+    if (resyncPort) setPortText(String(s.port));
   };
 
   useEffect(() => {
     let alive = true;
-    client.getMcpStatus().then((s) => {
-      if (alive) { setStatus(s); setPortText(String(s.port)); }
-    }).catch(() => {});
-    client.listMcpAudit(50).then((a) => { if (alive) setAudit(a); }).catch(() => {});
-    const off = onDataChanged(() => {
-      client.listMcpAudit(50).then((a) => { if (alive) setAudit(a); }).catch(() => {});
-    });
-    return () => { alive = false; off(); };
+    const load = (resyncPort: boolean) => {
+      refresh(resyncPort && alive).catch(() => {});
+    };
+    load(true);
+    const onChange = () => load(false);
+    const off = onDataChanged(onChange);
+    window.addEventListener("focus", onChange);
+    return () => { alive = false; off(); window.removeEventListener("focus", onChange); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const act = async (body: () => Promise<void>, fallback: string) => {
@@ -357,7 +362,7 @@ function AssistantCard() {
     } catch (e) {
       setError(errorMessage(e, fallback));
     } finally {
-      await refresh().catch(() => {});
+      await refresh(true).catch(() => {});
       notifyMcpStatusChanged();
       setBusy(false);
     }
@@ -369,14 +374,27 @@ function AssistantCard() {
   const savedPort = status?.port ?? 8765;
   const portDirty = status !== null && portText.trim() !== String(savedPort);
 
-  const applyPort = (nextEnabled: boolean) => {
-    if (!portValid) { setError("Port must be a whole number between 1 and 65535."); return; }
-    void act(async () => { await client.setMcpEnabled(nextEnabled, parsedPort); }, "Could not update the assistant");
+  // Off never sends a port; on uses the saved port, never unsaved field text.
+  const toggle = (next: boolean) => {
+    if (busy) return;
+    void act(async () => {
+      if (next) await client.setMcpEnabled(true, savedPort);
+      else await client.setMcpEnabled(false);
+    }, "Could not update the assistant");
   };
 
-  const rotate = () => {
-    if (status?.hasToken && !window.confirm("Rotate the token? The connected agent will be signed out until you give it the new one.")) return;
+  const applyPort = () => {
+    if (!portValid) { setError("Port must be a whole number between 1 and 65535."); return; }
+    void act(async () => { await client.setMcpEnabled(enabled, parsedPort); }, "Could not update the assistant");
+  };
+
+  const doRotate = () => {
+    setConfirmRotate(false);
     void act(async () => { setToken(await client.rotateMcpToken()); }, "Could not generate a token");
+  };
+  const rotate = () => {
+    if (status?.hasToken) setConfirmRotate(true);
+    else doRotate();
   };
 
   const running = status?.running ?? false;
@@ -396,7 +414,7 @@ function AssistantCard() {
       <SettingRow
         label="Enable assistant server"
         hint="Runs a local server on 127.0.0.1 that your agent reaches through Tailscale."
-        right={<Toggle on={enabled} label="Enable assistant server" onChange={(v) => { if (!busy) applyPort(v); }} />}
+        right={<Toggle on={enabled} label="Enable assistant server" onChange={toggle} />}
       />
       <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: statusColor, paddingBottom: 10 }}>
         <Icon name={statusIcon} size={15} color={statusColor} />
@@ -415,7 +433,7 @@ function AssistantCard() {
           style={{ ...inputStyle(t), width: 110 }}
         />
         {portDirty && (
-          <Btn variant="outline" size="sm" disabled={busy} onClick={() => applyPort(enabled)}>Apply port</Btn>
+          <Btn variant="outline" size="sm" disabled={busy} onClick={applyPort}>Apply port</Btn>
         )}
       </div>
 
@@ -456,6 +474,23 @@ function AssistantCard() {
           <Icon name="alertCircle" size={15} color={t.negative} />
           <span>{error}</span>
         </div>
+      )}
+
+      {confirmRotate && (
+        <Modal onClose={() => setConfirmRotate(false)} width={400}>
+          <div style={{ padding: "16px 20px", borderBottom: `0.5px solid ${t.divider}`, fontSize: 15, fontWeight: 700 }}>
+            Rotate the assistant token?
+          </div>
+          <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ fontSize: 12.5, color: t.dim, lineHeight: 1.5 }}>
+              Rotating signs the connected agent out until you give it the new token. The old token stops working immediately.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Btn variant="ghost" onClick={() => setConfirmRotate(false)}>Cancel</Btn>
+              <Btn onClick={doRotate}>Rotate token</Btn>
+            </div>
+          </div>
+        </Modal>
       )}
 
       <div style={{ fontSize: 13.5, fontWeight: 500, color: t.text, marginBottom: 6 }}>Recent agent activity</div>

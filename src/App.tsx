@@ -25,6 +25,7 @@ import { AddTransaction } from "./modals/AddTransaction";
 import { AwayNotice } from "./components/AwayNotice";
 import { useScheduleEngine } from "./lib/useScheduleEngine";
 import { onDataChanged } from "./lib/dataChanged";
+import { debounce } from "./lib/debounce";
 
 const SIDEBAR_KEY = "sens.sidebar";
 
@@ -86,7 +87,12 @@ export default function App() {
 
   // Agent (MCP) writes happen outside the UI; reloading bumps `version`, which
   // makes Transactions, Dashboard, Accounts, Plan and Drafts refetch.
-  useEffect(() => onDataChanged(() => { void reload(); }), [reload]);
+  // Debounced here (250 ms trailing) so a burst of agent writes causes one reload.
+  useEffect(() => {
+    const run = debounce(() => { void reload(); }, 250);
+    const off = onDataChanged(run);
+    return () => { off(); run.cancel(); };
+  }, [reload]);
 
   const schedules = useScheduleEngine(version, reload);
 
