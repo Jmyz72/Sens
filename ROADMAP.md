@@ -3,7 +3,7 @@
 Sens is built one **phase** at a time. **One phase = one release.** This file is the index; specs and plans hold the detail.
 
 > **Last shipped:** `v0.11.0` (Update Net Worth, recurring schedules & Upcoming, photo import Drafts)
-> **Unreleased:** AI import provider fallback; MCP assistant (agent access over Tailscale)
+> **Unreleased:** AI import provider fallback; MCP assistant (39 tools over Tailscale, including account template and subtype catalogs)
 > **Next up:** Advanced search, filter & tags
 > **Later:** the climb to `v1.0.0`
 
@@ -99,7 +99,7 @@ Spec files above live in `docs/superpowers/specs/`.
 
 | Status | What landed | Spec |
 |---|---|---|
-| 🟡 unreleased | **MCP assistant:** an opt-in MCP server embedded in the app, meant to be reached over your own tailnet through Tailscale Serve (37 tools, token auth, audit log, rate limit, live refresh). | `2026-10-23-sens-mcp-assistant-design.md` · [architecture](docs/architecture/mcp.md) |
+| 🟡 unreleased | **MCP assistant:** an opt-in MCP server embedded in the app, meant to be reached over your own tailnet through Tailscale Serve (39 tools, including account template and subtype catalogs, token auth, audit log, rate limit, live refresh). | `2026-10-23-sens-mcp-assistant-design.md` · [architecture](docs/architecture/mcp.md) |
 
 ## Planned — the climb to 1.0
 

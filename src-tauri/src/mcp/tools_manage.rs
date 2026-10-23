@@ -233,11 +233,12 @@ struct SkipOccurrenceArgs {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateAccountArgs {
     name: String,
-    /// Account subtype, e.g. "cash", "savings", "credit-card".
+    /// Account subtype key from list_account_subtypes, e.g. "cash", "savings", "credit-card".
     subtype: String,
     /// Integer cents (default 0).
     #[schemars(with = "Option<i64>")]
     opening_balance_cents: Option<Value>,
+    /// Provider template key from list_account_templates. Omit for a custom account.
     template_key: Option<String>,
     /// Positive integer cents (credit cards).
     #[schemars(with = "Option<i64>")]
@@ -345,7 +346,7 @@ pub fn definitions() -> Vec<ToolDef> {
         wtool!("delete_schedule", "Delete a recurring schedule by id.", ScheduleIdArgs),
         wtool!("post_occurrence", "Post a due occurrence of a tap-mode schedule as a real transaction. amountCents is integer cents; date is YYYY-MM-DD.", PostOccurrenceArgs),
         wtool!("skip_occurrence", "Skip a due occurrence of a schedule so it no longer shows as upcoming.", SkipOccurrenceArgs),
-        wtool!("create_account", "Create an account. Amounts are integer cents.", CreateAccountArgs),
+        wtool!("create_account", "Create an account. subtype is a key from list_account_subtypes; templateKey is an optional key from list_account_templates. Amounts are integer cents.", CreateAccountArgs),
         wtool!("update_account", "Rename or retype an account, or change its opening balance or credit limit (integer cents). id accepts an id or exact name.", UpdateAccountArgs),
         wtool!("archive_account", "Archive an account. id accepts an id or exact name.", IdArgs),
         wtool!("restore_account", "Restore an archived account. id accepts an id or exact name.", IdArgs),

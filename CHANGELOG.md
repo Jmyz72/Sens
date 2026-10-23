@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-10-23
+
+### Added
+- **Assistant account catalog.** The assistant can list every provider template (`list_account_templates`: key, name, group, and suggested subtype) and every account subtype (`list_account_subtypes`: key, label, type, and own/owe). Creating an account uses those keys. 39 tools in total.
+
 ## [0.12.0] — 2026-10-23
 
 ### Added
@@ -463,7 +468,8 @@ Design: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.m
   TypeScript + Vite, integer-MYR-cents money, dark/light theming, and the
   Tauri/in-memory-mock dispatch seam for browser-only dev.
 
-[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.10.0

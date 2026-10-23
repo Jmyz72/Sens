@@ -236,6 +236,8 @@ macro_rules! wtool {
 static TOOLS: &[ToolDef] = &[
     tool!("get_financial_overview", "One-call snapshot for a month: net worth, account balances, income/expense totals, upcoming scheduled items, the monthly plan and amounts awaiting reimbursement. Money fields carry a Formatted sibling (RM 12.34).", OverviewArgs),
     tool!("list_accounts", "List accounts with signed balances in integer cents (liabilities are negative).", ListAccountsArgs),
+    tool!("list_account_templates", "List every provider account template. Each row has key (pass as templateKey to create_account), name, groupName and defaultSubtype.", NoArgs),
+    tool!("list_account_subtypes", "List every account subtype. Each row has key (pass as subtype to create_account), label, type and group (own or owe).", NoArgs),
     tool!("get_account_balances", "Current balance of every active account, in integer cents.", NoArgs),
     tool!("list_categories", "List categories, optionally filtered by kind (income or expense).", ListCategoriesArgs),
     tool!("list_transactions", "List transactions, newest first. accountId and categoryId accept an id or an exact name. limit defaults to 200 and is capped at 1000; page with offset.", ListTransactionsArgs),
@@ -463,6 +465,32 @@ fn update_transaction(conn: &Connection, name: &str, args: Value) -> AppResult<V
     to_json(service::update_transaction(conn, input)?)
 }
 
+/// Compact template rows: the fields `create_account`'s `templateKey` needs.
+fn catalog_templates(conn: &Connection) -> AppResult<Value> {
+    let rows = service::list_account_templates(conn)?.into_iter().map(|t| {
+        json!({
+            "key": t.key,
+            "name": t.name,
+            "groupName": t.group_name,
+            "defaultSubtype": t.default_subtype,
+        })
+    }).collect();
+    Ok(Value::Array(rows))
+}
+
+/// Compact subtype rows from `service::list_account_subtypes` (the same command the app uses).
+fn catalog_subtypes(conn: &Connection) -> AppResult<Value> {
+    let rows = service::list_account_subtypes(conn)?.into_iter().map(|s| {
+        json!({
+            "key": s.key,
+            "label": s.label,
+            "type": s.type_,
+            "group": s.group,
+        })
+    }).collect();
+    Ok(Value::Array(rows))
+}
+
 // ── Dispatch ────────────────────────────────────────────────────────────────
 
 /// Run a tool by name. Unknown name is `NotFound`; bad args are `Validation`.
@@ -488,6 +516,14 @@ pub fn call(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
         "list_accounts" => {
             let a: ListAccountsArgs = parse_args(name, args)?;
             to_json(service::list_accounts(conn, a.include_archived.unwrap_or(false))?)?
+        }
+        "list_account_templates" => {
+            let _: NoArgs = parse_args(name, args)?;
+            catalog_templates(conn)?
+        }
+        "list_account_subtypes" => {
+            let _: NoArgs = parse_args(name, args)?;
+            catalog_subtypes(conn)?
         }
         "get_account_balances" => {
             let _: NoArgs = parse_args(name, args)?;
@@ -929,5 +965,52 @@ mod tests {
         for d in defs.iter().filter(|d| d.name.starts_with("create_") || d.name.starts_with("update_") || d.name.starts_with("delete_")) {
             assert!(d.writes, "{}", d.name);
         }
+    }
+
+    #[test]
+    fn list_account_catalog_tools_are_reads_with_compact_rows() {
+        let defs = definitions();
+        assert_eq!(defs.len(), 39, "tool count");
+        for name in ["list_account_templates", "list_account_subtypes"] {
+            let d = defs.iter().find(|d| d.name == name).unwrap_or_else(|| panic!("missing {name}"));
+            assert!(!d.writes, "{name}");
+            assert!(!d.description.is_empty());
+            let schema = (d.schema)();
+            assert_eq!(schema["type"], "object", "{name}");
+            let required = schema.get("required").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+            assert_eq!(required, 0, "{name} takes no arguments: {schema}");
+        }
+
+        let c = open_in_memory().unwrap();
+        let table_count = |sql: &str| c.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
+
+        let templates = service::list_account_templates(&c).unwrap();
+        let got = call(&c, "list_account_templates", json!({})).unwrap();
+        let rows = got.as_array().expect("templates array");
+        assert_eq!(rows.len() as i64, table_count("SELECT COUNT(*) FROM account_templates"));
+        assert_eq!(rows.len(), templates.len());
+        for (row, t) in rows.iter().zip(&templates) {
+            assert_eq!(row, &json!({"key": t.key, "name": t.name, "groupName": t.group_name, "defaultSubtype": t.default_subtype}));
+        }
+        let maybank = rows.iter().find(|r| r["key"] == "maybank").unwrap();
+        assert_eq!(maybank["name"], "Maybank");
+        assert_eq!(maybank["groupName"], "Banks");
+        assert_eq!(maybank["defaultSubtype"], "savings");
+
+        let subtypes = service::list_account_subtypes(&c).unwrap();
+        let got = call(&c, "list_account_subtypes", json!({})).unwrap();
+        let rows = got.as_array().expect("subtypes array");
+        assert_eq!(rows.len() as i64, table_count("SELECT COUNT(*) FROM account_subtypes"));
+        assert_eq!(rows.len(), subtypes.len());
+        for (row, s) in rows.iter().zip(&subtypes) {
+            assert_eq!(row, &json!({"key": s.key, "label": s.label, "type": s.type_, "group": s.group}));
+        }
+        let card = rows.iter().find(|r| r["key"] == "credit-card").unwrap();
+        assert_eq!((card["label"].as_str(), card["type"].as_str(), card["group"].as_str()), (Some("Credit card"), Some("credit"), Some("owe")));
+        let cash = rows.iter().find(|r| r["key"] == "cash").unwrap();
+        assert_eq!((cash["type"].as_str(), cash["group"].as_str()), (Some("fund"), Some("own")));
+
+        assert!(matches!(call(&c, "list_account_templates", json!({"bogus": 1})), Err(AppError::Validation(_))));
+        assert!(matches!(call(&c, "list_account_subtypes", json!({"bogus": 1})), Err(AppError::Validation(_))));
     }
 }

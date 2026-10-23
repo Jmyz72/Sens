@@ -48,7 +48,7 @@ Rust-only; the mock has no equivalent and never emits `data-changed`.
 **Read**
 
 - `get_financial_overview`: net worth, current-month summary, upcoming bills, budget status, in one call.
-- `list_accounts`, `get_account_balances`, `list_categories`
+- `list_accounts`, `list_account_templates`, `list_account_subtypes`, `get_account_balances`, `list_categories`
 - `list_transactions` (filters), `get_dashboard_summary(month)`, `get_plan(month)`
 - `list_schedules`, `list_upcoming`, `get_awaiting_reimbursement`
 
@@ -135,7 +135,8 @@ Deviations from this spec:
 - **Factory reset** also clears the audit table, stops the server and clears the token.
 - The generic `get_setting` / `set_setting` commands **reject `mcp_` keys**.
 - Tools are split across `tools.rs` and `tools_manage.rs`.
-- **37 tools**, not ~30.
+- **39 tools**, not ~30. `list_account_templates` and `list_account_subtypes` are read-only catalogs
+  for `create_account`'s `templateKey` and `subtype`.
 - The audit list's "link to the affected transaction" became the **affected id plus a one-line args
   summary** (no deep-link route exists). `args_json` stores `{"args", "affectedId"}`, capped at 8 KB.
 - **Audit bounds:** only the first rate-limited call per window is audited, and the log keeps the newest
