@@ -362,7 +362,7 @@ mod tests {
         handle.rotate_token(&db).unwrap();
         let port = free_port();
         assert!(handle.set_enabled_with(&db, noop(), true, Some(port)).unwrap().running);
-        audit::record(&db.lock().unwrap(), Some("a@b.c"), "create_expense", &serde_json::json!({"x": 1}), &Ok(())).unwrap();
+        audit::record(&db.lock().unwrap(), Some("a@b.c"), "create_expense", &serde_json::json!({"x": 1}), None, &Ok(())).unwrap();
         let count = |db: &Arc<Mutex<Connection>>| -> i64 {
             db.lock().unwrap().query_row("SELECT COUNT(*) FROM mcp_audit_log", [], |r| r.get(0)).unwrap()
         };

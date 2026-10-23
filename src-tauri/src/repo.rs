@@ -1437,6 +1437,16 @@ pub fn insert_mcp_audit(conn: &Connection, e: &McpAuditEntry) -> AppResult<()> {
     Ok(())
 }
 
+/// Keep only the newest `keep` rows (same order as `list_mcp_audit`).
+pub fn trim_mcp_audit(conn: &Connection, keep: i64) -> AppResult<()> {
+    conn.execute(
+        "DELETE FROM mcp_audit_log WHERE rowid NOT IN
+           (SELECT rowid FROM mcp_audit_log ORDER BY at DESC, rowid DESC LIMIT ?1)",
+        [keep],
+    )?;
+    Ok(())
+}
+
 /// Newest first; `rowid` breaks ties for entries written in the same instant.
 pub fn list_mcp_audit(conn: &Connection, limit: i64) -> AppResult<Vec<McpAuditEntry>> {
     let mut stmt = conn.prepare(

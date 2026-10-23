@@ -25,7 +25,7 @@ use rmcp::{ErrorData, RoleServer, ServerHandler};
 use rusqlite::Connection;
 use serde_json::{Map, Value};
 
-use super::audit::{self, RateLimiter};
+use super::audit::{self, Limit, RateLimiter};
 use super::auth::{require_token, AuthState, CallerIdentity};
 use super::tools;
 use crate::error::{AppError, AppResult};
@@ -159,41 +159,66 @@ impl Shared {
     /// Runs one tool call (blocking). Writes are rate limited and audited.
     fn run(&self, name: &str, args: Value, user: &str) -> AppResult<Value> {
         let writes = self.write_tools.contains(name);
-        if writes && !self.limiter.check(Instant::now()) {
-            let message =
-                format!("Too many write calls: at most {WRITE_LIMIT} per minute. Try again shortly.");
-            if let Ok(conn) = self.db.lock() {
-                audit_call(&conn, user, name, &args, &Err(AppError::RateLimited(message.clone())));
+        if writes {
+            if let Limit::Blocked { first } = self.limiter.check(Instant::now()) {
+                let message =
+                    format!("Too many write calls: at most {WRITE_LIMIT} per minute. Try again shortly.");
+                // Only the first blocked call of a window is audited, so a
+                // client hammering the limit neither grows the log nor keeps
+                // taking the DB lock.
+                if first {
+                    if let Ok(conn) = self.db.lock() {
+                        let affected = affected_id(name, &args, None);
+                        let outcome = Err(AppError::RateLimited(message.clone()));
+                        audit_call(&conn, user, name, &args, affected.as_deref(), &outcome);
+                    }
+                }
+                return Err(AppError::RateLimited(message));
             }
-            return Err(AppError::RateLimited(message));
         }
         let conn = self
             .db
             .lock()
             .map_err(|_| AppError::Database("Database lock poisoned".into()))?;
         let audit_args = writes.then(|| args.clone());
-        let (result, panicked) = match catch_unwind(AssertUnwindSafe(|| dispatch(&conn, name, args))) {
-            Ok(r) => (r, false),
-            Err(_) => (Err(AppError::Database("Internal error while running the tool".into())), true),
+        let result = match catch_unwind(AssertUnwindSafe(|| dispatch(&conn, name, args))) {
+            Ok(r) => r,
+            Err(_) => Err(AppError::Database("Internal error while running the tool".into())),
         };
         if let Some(args) = audit_args {
             let outcome = match &result {
                 Ok(_) => Ok(()),
                 Err(e) => Err(copy_error(e)),
             };
-            audit_call(&conn, user, name, &args, &outcome);
+            let affected = affected_id(name, &args, result.as_ref().ok());
+            audit_call(&conn, user, name, &args, affected.as_deref(), &outcome);
         }
-        // Dropping the guard rolls back any transaction the tool left open.
+        // A tool panic cannot poison the connection mutex: the guard lives
+        // outside `catch_unwind`, so it is dropped here, after the unwind has
+        // been caught, never while the thread is panicking. Any transaction the
+        // tool had open was rolled back when its guard dropped during the unwind.
         drop(conn);
-        if panicked {
-            // Never leave the desktop UI's shared connection poisoned.
-            self.db.clear_poison();
-        }
         if writes && result.is_ok() {
             (self.on_write)();
         }
         result
     }
+}
+
+/// The row a write touched, for the audit log: the result's top-level `id`;
+/// otherwise, for tools that address an existing row, the id the caller sent
+/// (`id`, `expenseId`, `scheduleId` or `accountId`, as given, possibly a name).
+fn affected_id(tool: &str, args: &Value, result: Option<&Value>) -> Option<String> {
+    if let Some(id) = result.and_then(|r| r.get("id")).and_then(Value::as_str) {
+        return Some(id.to_string());
+    }
+    if tool.starts_with("create_") {
+        return None;
+    }
+    ["id", "expenseId", "scheduleId", "accountId"]
+        .iter()
+        .find_map(|k| args.get(*k).and_then(Value::as_str))
+        .map(str::to_string)
 }
 
 /// Runs one tool. Tests add a tool that panics, to exercise panic safety.
@@ -264,10 +289,17 @@ async fn require_allowed_host(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
-fn audit_call(conn: &Connection, user: &str, tool: &str, args: &Value, outcome: &AppResult<()>) {
+fn audit_call(
+    conn: &Connection,
+    user: &str,
+    tool: &str,
+    args: &Value,
+    affected_id: Option<&str>,
+    outcome: &AppResult<()>,
+) {
     // The write already happened, so an audit failure must not turn it into an
     // error (the client would retry and duplicate it). Log the code only.
-    if let Err(e) = audit::record(conn, Some(user), tool, args, outcome) {
+    if let Err(e) = audit::record(conn, Some(user), tool, args, affected_id, outcome) {
         eprintln!("mcp audit write failed: {}", e.code());
     }
 }
@@ -457,6 +489,9 @@ mod tests {
         assert_eq!(rows[0].tool, "create_expense");
         assert_eq!(rows[0].tailscale_user.as_deref(), Some("tagged device"));
         assert!(rows[0].ok);
+        let stored: Value = serde_json::from_str(&rows[0].args_json).unwrap();
+        assert_eq!(stored["affectedId"], tx["id"]);
+        assert_eq!(stored["args"], expense(800));
         assert_eq!(h.writes.load(Ordering::SeqCst), 1);
 
         // A failing write is a tool error with the AppError JSON, audited, no on_write.
@@ -509,6 +544,7 @@ mod tests {
         h.server.stop();
     }
 
+    /// Only the first blocked call of the window gets an audit row.
     #[tokio::test]
     async fn e2e_61st_write_in_a_minute_is_rate_limited_and_audited() {
         let h = harness();
@@ -521,6 +557,12 @@ mod tests {
         assert!(err);
         assert_eq!(v["code"], "rate_limited");
         assert!(v["message"].is_string());
+        // Further blocked calls in the same window are refused but not audited.
+        for _ in 0..2 {
+            let (err, v) = call(&c, "create_expense", expense(100)).await;
+            assert!(err);
+            assert_eq!(v["code"], "rate_limited");
+        }
 
         // Reads are not rate limited.
         let (err, bal) = call(&c, "get_account_balances", json!({})).await;
@@ -554,6 +596,19 @@ mod tests {
         .expect("second bind must fail");
         assert!(matches!(&err, AppError::Conflict(m) if *m == format!("Port {port} is in use")), "{err:?}");
         h.server.stop();
+    }
+
+    #[test]
+    fn affected_id_cases() {
+        let ok = json!({"id": "tx-1", "amountCents": 5});
+        assert_eq!(affected_id("create_expense", &json!({"accountId": "a"}), Some(&ok)).as_deref(), Some("tx-1"));
+        // A failed create has no affected row, even though its args name an account.
+        assert_eq!(affected_id("create_expense", &json!({"accountId": "a"}), None), None);
+        assert_eq!(affected_id("delete_transaction", &json!({"id": "tx-2"}), None).as_deref(), Some("tx-2"));
+        assert_eq!(affected_id("set_expected_reimbursement", &json!({"expenseId": "e"}), None).as_deref(), Some("e"));
+        assert_eq!(affected_id("skip_occurrence", &json!({"scheduleId": "s"}), Some(&json!({"skipped": true}))).as_deref(), Some("s"));
+        assert_eq!(affected_id("set_account_balance", &json!({"accountId": "acc"}), Some(&json!({"balanceCents": 1}))).as_deref(), Some("acc"));
+        assert_eq!(affected_id("set_budgets", &json!({"items": []}), Some(&json!({"month": "2026-10"}))), None);
     }
 
     #[test]
