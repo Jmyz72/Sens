@@ -334,6 +334,8 @@ export interface McpAuditEntry {
   at: string;
   tailscaleUser: string | null;
   tool: string;
+  /** `{"args": <tool args>, "affectedId": <string|null>}`, capped at 8 KB;
+   *  a cut value ends with "...[truncated]" and is not valid JSON. */
   argsJson: string;
   ok: boolean;
   errorCode: string | null;

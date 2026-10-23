@@ -11,6 +11,7 @@ import { useAppData } from "../store";
 import { useToast } from "../components/Toast";
 import type { AiProvider, McpAuditEntry, McpStatus } from "../types";
 import { notifyMcpStatusChanged, onDataChanged } from "../lib/dataChanged";
+import { summarizeAudit } from "../lib/mcpAudit";
 import { formatLastChecked, updatePanelCopy, type useUpdater } from "../lib/updater";
 
 // ─── Segmented control (reusable 2-option) ───────────────────────────────────
@@ -61,22 +62,24 @@ function SegmentedControl<T extends string>({
 
 // ─── Toggle ──────────────────────────────────────────────────────────────────
 
-function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
+function Toggle({ on, onChange, label, disabled }: { on: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean }) {
   const t = useTheme();
   return (
     <button
       role="switch"
       aria-checked={on}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!on)}
       style={{
+        opacity: disabled ? 0.5 : 1,
         width: 42,
         height: 24,
         borderRadius: 12,
         border: "none",
         background: on ? t.accent : t.panel3,
         position: "relative",
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         flexShrink: 0,
         transition: "background .15s",
         boxShadow: on ? `0 1px 6px ${hexA(t.accent, 0.3)}` : "none",
@@ -321,6 +324,31 @@ function CopyBox({ text, label }: { text: string; label: string }) {
   );
 }
 
+// Short affected id; the full id is in the tooltip and is copied on click.
+function AffectedId({ id, short }: { id: string; short: string }) {
+  const t = useTheme();
+  const { notify } = useToast();
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(id);
+      notify("Copied the id.", "info");
+    } catch {
+      notify("Could not copy. Select the id and copy it manually.", "error");
+    }
+  };
+  return (
+    <button
+      type="button"
+      title={`${id} (click to copy)`}
+      aria-label={`Copy id ${id}`}
+      onClick={() => void copy()}
+      style={{ fontFamily: t.mono, fontSize: 11.5, color: t.dim, background: "none", border: `0.5px solid ${t.border}`, borderRadius: 5, padding: "1px 6px", cursor: "pointer", flexShrink: 0, userSelect: "text" }}
+    >
+      {short}
+    </button>
+  );
+}
+
 function AssistantCard() {
   const t = useTheme();
   const [status, setStatus] = useState<McpStatus | null>(null);
@@ -375,8 +403,9 @@ function AssistantCard() {
   const portDirty = status !== null && portText.trim() !== String(savedPort);
 
   // Off never sends a port; on uses the saved port, never unsaved field text.
+  // Disabled until status loads, so a default port can't overwrite a saved one.
   const toggle = (next: boolean) => {
-    if (busy) return;
+    if (busy || status === null) return;
     void act(async () => {
       if (next) await client.setMcpEnabled(true, savedPort);
       else await client.setMcpEnabled(false);
@@ -408,13 +437,13 @@ function AssistantCard() {
 
   return (
     <Card>
-      <SectionTitle sub="Let an AI agent you trust read and edit your finances over MCP, through your own Tailscale tailnet. Nothing is exposed to the public internet.">
+      <SectionTitle sub="Let an AI agent you trust read and edit your finances over MCP. The server is meant to be reached only over your own Tailscale tailnet; who can reach it depends on your Tailscale access rules.">
         Assistant (MCP)
       </SectionTitle>
       <SettingRow
         label="Enable assistant server"
         hint="Runs a local server on 127.0.0.1 that your agent reaches through Tailscale."
-        right={<Toggle on={enabled} label="Enable assistant server" onChange={toggle} />}
+        right={<Toggle on={enabled} label="Enable assistant server" onChange={toggle} disabled={status === null || busy} />}
       />
       <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: statusColor, paddingBottom: 10 }}>
         <Icon name={statusIcon} size={15} color={statusColor} />
@@ -498,17 +527,28 @@ function AssistantCard() {
         <div style={{ fontSize: 12.5, color: t.dim }}>No agent activity yet.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 260, overflowY: "auto" }}>
-          {audit.map((r) => (
-            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, padding: "5px 8px", borderRadius: 7, background: t.panel2 }}>
-              <span style={{ color: t.faint, width: 150, flexShrink: 0 }}>{new Date(r.at).toLocaleString()}</span>
-              <span style={{ fontFamily: t.mono, color: t.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.tool}</span>
-              <span style={{ color: t.dim, flexShrink: 0 }}>{r.tailscaleUser ?? "tagged device"}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, width: 70, color: r.ok ? t.income : t.negative }}>
-                <Icon name={r.ok ? "check" : "close"} size={13} color={r.ok ? t.income : t.negative} />
-                {r.ok ? "OK" : "Failed"}
-              </span>
-            </div>
-          ))}
+          {audit.map((r) => {
+            const { summary, affectedId, affectedShort } = summarizeAudit(r);
+            return (
+              <div key={r.id} style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 12, padding: "5px 8px", borderRadius: 7, background: t.panel2 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ color: t.faint, width: 150, flexShrink: 0 }}>{new Date(r.at).toLocaleString()}</span>
+                  <span style={{ fontFamily: t.mono, color: t.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.tool}</span>
+                  <span style={{ color: t.dim, flexShrink: 0 }}>{r.tailscaleUser ?? "tagged device"}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, width: 70, color: r.ok ? t.income : t.negative }}>
+                    <Icon name={r.ok ? "check" : "close"} size={13} color={r.ok ? t.income : t.negative} />
+                    {r.ok ? "OK" : "Failed"}
+                  </span>
+                </div>
+                {(summary || affectedShort) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.dim, minWidth: 0 }}>
+                    <span title={summary} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</span>
+                    {affectedId && affectedShort && <AffectedId id={affectedId} short={affectedShort} />}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </Card>
