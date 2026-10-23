@@ -17,6 +17,7 @@
 - Auth: `Authorization: Bearer <token>`, SHA-256 hash stored, constant-time compare, loopback peer required, else `401`.
 - Never exposed: `reset_app`, `get_setting`/`set_setting`, AI-provider commands, photo import (`ocr_image`, `extract_drafts`, draft commands).
 - Audit: migration **018**, table `mcp_audit_log(id, at, tailscale_user, tool, args_json, ok, error_code)`, one row per write tool call, none for reads. Rate limit 60 write calls per minute, error code `rate_limited`.
+- Audit identity: `tailscale_user` is the `Tailscale-User-Login` header value when present, otherwise the literal `"tagged device"` (the Grokbot client is a `tag:grokbot` device, which carries no user header). The token is required and never optional.
 - Errors are `AppError {code, message}`; the token and request headers never appear in logs or errors.
 - The backend generates UUIDs and timestamps; tools never accept them for creation.
 - New Tauri commands (`get_mcp_status`, `set_mcp_enabled`, `rotate_mcp_token`, `list_mcp_audit`) are mirrored as stubs in `src/client/mock.ts`.

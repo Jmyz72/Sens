@@ -77,7 +77,11 @@ a third-party AI.
 - **Per request, before MCP parsing:** require `Authorization: Bearer <token>`; compare the SHA-256
   hash in constant time against the stored hash; require a loopback peer. Failure returns `401`.
 - The `Tailscale-User-Login` header that Serve injects is recorded as the caller identity. It is
-  informational, not a gate, because a local process could forge it; the token is the gate.
+  informational, not a gate, because a local process could forge it; the token is the gate. Tagged
+  devices (the Grokbot client is `tag:grokbot`) send no user header, so those rows record
+  `"tagged device"`. The token is always required.
+- The tailnet ACL is the outer lock and is the user's to configure: a grant from the client's tag to
+  this one machine and port 443 only, never the default allow-all.
 - Only the token's SHA-256 hash is stored (settings row). The token is shown once at generation.
   Neither the token nor request headers appear in logs or errors.
 - **Audit:** migration **018** (append-only) adds `mcp_audit_log(id, at, tailscale_user, tool,
