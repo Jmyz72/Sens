@@ -24,6 +24,7 @@ import { Drafts } from "./screens/Drafts";
 import { AddTransaction } from "./modals/AddTransaction";
 import { AwayNotice } from "./components/AwayNotice";
 import { useScheduleEngine } from "./lib/useScheduleEngine";
+import { onDataChanged } from "./lib/dataChanged";
 
 const SIDEBAR_KEY = "sens.sidebar";
 
@@ -82,6 +83,10 @@ export default function App() {
   }, [notify]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // Agent (MCP) writes happen outside the UI; reloading bumps `version`, which
+  // makes Transactions, Dashboard, Accounts, Plan and Drafts refetch.
+  useEffect(() => onDataChanged(() => { void reload(); }), [reload]);
 
   const schedules = useScheduleEngine(version, reload);
 

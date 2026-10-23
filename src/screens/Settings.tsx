@@ -9,7 +9,8 @@ import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { useAppData } from "../store";
 import { useToast } from "../components/Toast";
-import type { AiProvider } from "../types";
+import type { AiProvider, McpAuditEntry, McpStatus } from "../types";
+import { notifyMcpStatusChanged, onDataChanged } from "../lib/dataChanged";
 import { formatLastChecked, updatePanelCopy, type useUpdater } from "../lib/updater";
 
 // ─── Segmented control (reusable 2-option) ───────────────────────────────────
@@ -292,6 +293,190 @@ function AiProviderForm({ editing, onSaved, onCancel }: {
         <Btn variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Btn>
       </div>
     </div>
+  );
+}
+
+function CopyBox({ text, label }: { text: string; label: string }) {
+  const t = useTheme();
+  const { notify } = useToast();
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      notify("Copied.", "info");
+    } catch {
+      notify("Could not copy. Select the text and copy it manually.", "error");
+    }
+  };
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+      <input
+        readOnly
+        aria-label={label}
+        value={text}
+        onFocus={(e) => e.currentTarget.select()}
+        style={{ ...inputStyle(t), flex: 1, fontFamily: t.mono, fontSize: 12 }}
+      />
+      <Btn variant="outline" icon="copy" onClick={() => void copy()}>Copy</Btn>
+    </div>
+  );
+}
+
+function AssistantCard() {
+  const t = useTheme();
+  const [status, setStatus] = useState<McpStatus | null>(null);
+  const [portText, setPortText] = useState("8765");
+  const [audit, setAudit] = useState<McpAuditEntry[]>([]);
+  // The plaintext token lives only in this state; it is never persisted.
+  const [token, setToken] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = async () => {
+    const [s, a] = await Promise.all([client.getMcpStatus(), client.listMcpAudit(50)]);
+    setStatus(s);
+    setAudit(a);
+  };
+
+  useEffect(() => {
+    let alive = true;
+    client.getMcpStatus().then((s) => {
+      if (alive) { setStatus(s); setPortText(String(s.port)); }
+    }).catch(() => {});
+    client.listMcpAudit(50).then((a) => { if (alive) setAudit(a); }).catch(() => {});
+    const off = onDataChanged(() => {
+      client.listMcpAudit(50).then((a) => { if (alive) setAudit(a); }).catch(() => {});
+    });
+    return () => { alive = false; off(); };
+  }, []);
+
+  const act = async (body: () => Promise<void>, fallback: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await body();
+    } catch (e) {
+      setError(errorMessage(e, fallback));
+    } finally {
+      await refresh().catch(() => {});
+      notifyMcpStatusChanged();
+      setBusy(false);
+    }
+  };
+
+  const parsedPort = Number(portText);
+  const portValid = Number.isInteger(parsedPort) && parsedPort >= 1 && parsedPort <= 65535;
+  const enabled = status?.enabled ?? false;
+  const savedPort = status?.port ?? 8765;
+  const portDirty = status !== null && portText.trim() !== String(savedPort);
+
+  const applyPort = (nextEnabled: boolean) => {
+    if (!portValid) { setError("Port must be a whole number between 1 and 65535."); return; }
+    void act(async () => { await client.setMcpEnabled(nextEnabled, parsedPort); }, "Could not update the assistant");
+  };
+
+  const rotate = () => {
+    if (status?.hasToken && !window.confirm("Rotate the token? The connected agent will be signed out until you give it the new one.")) return;
+    void act(async () => { setToken(await client.rotateMcpToken()); }, "Could not generate a token");
+  };
+
+  const running = status?.running ?? false;
+  const statusIcon = running ? "check" : status?.error ? "alertCircle" : "info";
+  const statusColor = running ? t.income : status?.error ? t.negative : t.dim;
+  const statusText = running
+    ? `Running on 127.0.0.1:${status?.port}`
+    : status?.error
+      ? `Not running: ${status.error}`
+      : "Stopped";
+
+  return (
+    <Card>
+      <SectionTitle sub="Let an AI agent you trust read and edit your finances over MCP, through your own Tailscale tailnet. Nothing is exposed to the public internet.">
+        Assistant (MCP)
+      </SectionTitle>
+      <SettingRow
+        label="Enable assistant server"
+        hint="Runs a local server on 127.0.0.1 that your agent reaches through Tailscale."
+        right={<Toggle on={enabled} label="Enable assistant server" onChange={(v) => { if (!busy) applyPort(v); }} />}
+      />
+      <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: statusColor, paddingBottom: 10 }}>
+        <Icon name={statusIcon} size={15} color={statusColor} />
+        <span>{statusText}</span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0 12px" }}>
+        <label htmlFor="mcp-port" style={{ fontSize: 13.5, fontWeight: 500, color: t.text }}>Port</label>
+        <input
+          id="mcp-port"
+          type="number"
+          min={1}
+          max={65535}
+          value={portText}
+          onChange={(e) => setPortText(e.target.value)}
+          style={{ ...inputStyle(t), width: 110 }}
+        />
+        {portDirty && (
+          <Btn variant="outline" size="sm" disabled={busy} onClick={() => applyPort(enabled)}>Apply port</Btn>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 12 }}>
+        <div>
+          <Btn variant="outline" icon="restore" disabled={busy} onClick={rotate}>Generate / rotate token</Btn>
+        </div>
+        {token && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: 10, borderRadius: 9, border: `0.5px solid ${t.border}`, background: t.panel2 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 600, color: t.text }}>
+              <Icon name="alertCircle" size={15} color={t.dim} />
+              Copy this token now. It will not be shown again.
+            </div>
+            <CopyBox text={token} label="Assistant token" />
+            <div style={{ fontSize: 12, color: t.faint }}>
+              Rotating the token signs out the connected agent. Give it the new token as <span style={{ fontFamily: t.mono }}>Authorization: Bearer &lt;token&gt;</span>.
+            </div>
+            <div>
+              <Btn variant="ghost" size="sm" onClick={() => setToken(null)}>I have copied it</Btn>
+            </div>
+          </div>
+        )}
+        {!token && status && !status.hasToken && (
+          <div style={{ fontSize: 12, color: t.faint }}>No token yet. Generate one before enabling the server.</div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingBottom: 12 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 500, color: t.text }}>Expose it on your tailnet</div>
+        <CopyBox text={`tailscale serve --bg --https=443 http://127.0.0.1:${savedPort}`} label="Tailscale serve command" />
+        <div style={{ fontSize: 12, color: t.faint }}>
+          Your agent connects to <span style={{ fontFamily: t.mono }}>https://&lt;your-machine&gt;.&lt;your-tailnet&gt;.ts.net/mcp</span> and must send <span style={{ fontFamily: t.mono }}>Authorization: Bearer &lt;token&gt;</span>.
+        </div>
+      </div>
+
+      {error && (
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: t.negative, paddingBottom: 10 }}>
+          <Icon name="alertCircle" size={15} color={t.negative} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div style={{ fontSize: 13.5, fontWeight: 500, color: t.text, marginBottom: 6 }}>Recent agent activity</div>
+      {audit.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: t.dim }}>No agent activity yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 260, overflowY: "auto" }}>
+          {audit.map((r) => (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, padding: "5px 8px", borderRadius: 7, background: t.panel2 }}>
+              <span style={{ color: t.faint, width: 150, flexShrink: 0 }}>{new Date(r.at).toLocaleString()}</span>
+              <span style={{ fontFamily: t.mono, color: t.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.tool}</span>
+              <span style={{ color: t.dim, flexShrink: 0 }}>{r.tailscaleUser ?? "tagged device"}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, width: 70, color: r.ok ? t.income : t.negative }}>
+                <Icon name={r.ok ? "check" : "close"} size={13} color={r.ok ? t.income : t.negative} />
+                {r.ok ? "OK" : "Failed"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -590,6 +775,8 @@ export function Settings({ updater }: { updater: ReturnType<typeof useUpdater> }
       </Card>
 
       <AiImportCard />
+
+      <AssistantCard />
 
       {/* About */}
       <Card>

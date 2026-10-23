@@ -11,6 +11,8 @@ import { Money } from "./ui";
 import { BrandMark } from "./Brand";
 import { NAV, NAV_SECTIONS, type ScreenId } from "../nav";
 import { fmtMonth } from "../lib/format";
+import { client } from "../client";
+import { MCP_STATUS_CHANGED, onDataChanged } from "../lib/dataChanged";
 
 interface Summary { netWorthCents: number; assetsCents: number; liabilitiesCents: number }
 
@@ -29,6 +31,25 @@ export function Sidebar({
   onToggleTheme: () => void;
 }) {
   const t = useTheme();
+
+  // "Agent active" indicator: refreshed on mount, data-changed, window focus and Settings changes.
+  const [agentActive, setAgentActive] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      client.getMcpStatus().then((s) => { if (alive) setAgentActive(s.running); }).catch(() => {});
+    };
+    load();
+    const off = onDataChanged(load);
+    window.addEventListener("focus", load);
+    window.addEventListener(MCP_STATUS_CHANGED, load);
+    return () => {
+      alive = false;
+      off();
+      window.removeEventListener("focus", load);
+      window.removeEventListener(MCP_STATUS_CHANGED, load);
+    };
+  }, []);
 
   // Clip overflow only during the collapse/expand width animation so content
   // doesn't visibly spill; allow overflow at rest so rail hover tooltips show.
@@ -124,6 +145,14 @@ export function Sidebar({
           </div>
         ))}
       </div>
+
+      {agentActive && (
+        <div className={collapsed ? "sens-tip" : undefined} data-tip={collapsed ? "Agent active" : undefined} title="Agent active"
+          style={{ display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "flex-start", gap: 8, padding: collapsed ? "8px 0" : "8px 18px", fontSize: 12, fontWeight: 600, color: t.income }}>
+          <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", background: t.income, flexShrink: 0 }} />
+          {!collapsed && <span>Agent active</span>}
+        </div>
+      )}
 
       {/* footer */}
       <div style={{ padding: 10, borderTop: `0.5px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "space-between", gap: 8 }}>

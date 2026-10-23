@@ -9,6 +9,8 @@ import type {
   AccountSubtype,
   AccountTemplate,
   AiProvider,
+  McpAuditEntry,
+  McpStatus,
   AiProviderInput,
   AwaitingReimbursement,
   BudgetWrite,
@@ -125,6 +127,13 @@ export const client = {
   deleteAiProvider: (id: string) => dispatch<void>("delete_ai_provider", { id }),
   reorderAiProviders: (ids: string[]) => dispatch<void>("reorder_ai_providers", { ids }),
   testAiProvider: (id: string) => dispatch<void>("test_ai_provider", { id }),
+
+  // MCP assistant
+  getMcpStatus: () => dispatch<McpStatus>("get_mcp_status"),
+  setMcpEnabled: (enabled: boolean, port?: number) => dispatch<McpStatus>("set_mcp_enabled", { enabled, port }),
+  /** Returns the plaintext token. It is shown once and never stored. */
+  rotateMcpToken: () => dispatch<string>("rotate_mcp_token"),
+  listMcpAudit: (limit?: number) => dispatch<McpAuditEntry[]>("list_mcp_audit", { limit }),
 
   // Settings
   getSetting: (key: string) => dispatch<string | null>("get_setting", { key }),

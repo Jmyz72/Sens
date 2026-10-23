@@ -320,3 +320,21 @@ export interface ExtractResult {
   provider: string;
   skipped: SkippedProvider[];
 }
+
+export interface McpStatus {
+  enabled: boolean;
+  port: number;
+  running: boolean;
+  hasToken: boolean;
+  error: string | null;
+}
+
+export interface McpAuditEntry {
+  id: string;
+  at: string;
+  tailscaleUser: string | null;
+  tool: string;
+  argsJson: string;
+  ok: boolean;
+  errorCode: string | null;
+}

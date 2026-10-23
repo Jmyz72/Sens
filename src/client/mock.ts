@@ -18,6 +18,7 @@ import type {
   DashboardSummary,
   DraftFields,
   GoalWrite,
+  McpStatus,
   ImportDraft,
   Plan,
   PlanBudget,
@@ -327,6 +328,13 @@ interface AiProviderRowMock {
   updatedAt: string;
 }
 const aiProviders: AiProviderRowMock[] = [];
+
+const MCP_DEFAULT_PORT = 8765;
+const mcp: { enabled: boolean; port: number; running: boolean; hasToken: boolean } = {
+  enabled: false, port: MCP_DEFAULT_PORT, running: false, hasToken: false,
+};
+const mcpStatus = (): McpStatus => ({ ...mcp, error: null });
+const resetMcp = () => Object.assign(mcp, { enabled: false, port: MCP_DEFAULT_PORT, running: false, hasToken: false });
 
 function sortedProviders(): AiProviderRowMock[] {
   return aiProviders.slice().sort((x, y) => x.position - y.position);
@@ -1587,6 +1595,26 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
     case "test_ai_provider":
       findProvider(String(a.id));
       return undefined as T;
+    case "get_mcp_status":
+      return mcpStatus() as T;
+    case "set_mcp_enabled": {
+      const enabled = Boolean(a.enabled);
+      const port = a.port == null ? mcp.port : Number(a.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) fail("ValidationError", "Port must be between 1 and 65535.");
+      if (enabled && !mcp.hasToken) fail("ValidationError", "Generate a token first.");
+      mcp.port = port;
+      mcp.enabled = enabled;
+      mcp.running = enabled;
+      return mcpStatus() as T;
+    }
+    case "rotate_mcp_token": {
+      const bytes = new Uint8Array(32);
+      crypto.getRandomValues(bytes);
+      mcp.hasToken = true;
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("") as T;
+    }
+    case "list_mcp_audit":
+      return [] as T;
     case "get_setting":
       return (settings.get(String(a.key)) ?? null) as T;
     case "set_setting": {
@@ -1640,6 +1668,7 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
       occurrences.length = 0;
       drafts.length = 0;
       aiProviders.length = 0;
+      resetMcp();
       passFailures.clear();
       seedCategories();
       return undefined as T;
