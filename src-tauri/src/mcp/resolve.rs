@@ -54,6 +54,35 @@ pub fn resolve_category(conn: &Connection, key: &str, kind: Option<&str>) -> App
     resolve_by_name("category", key, &rows)
 }
 
+/// Resolve an archived account (for restore): an id, or a name that matches
+/// an archived account.
+pub fn resolve_archived_account(conn: &Connection, key: &str) -> AppResult<String> {
+    let rows: Vec<_> = service::list_accounts(conn, true)?
+        .into_iter()
+        .map(|a| (a.id, a.name, a.is_archived))
+        .collect();
+    resolve_archived("account", key, rows)
+}
+
+/// Resolve an archived category (for restore): an id, or a name that matches
+/// an archived category.
+pub fn resolve_archived_category(conn: &Connection, key: &str) -> AppResult<String> {
+    let rows: Vec<_> = service::list_categories(conn, None, true)?
+        .into_iter()
+        .map(|c| (c.id, c.name, c.is_archived))
+        .collect();
+    resolve_archived("category", key, rows)
+}
+
+fn resolve_archived(what: &str, key: &str, rows: Vec<(String, String, bool)>) -> AppResult<String> {
+    if let Some((id, _, _)) = rows.iter().find(|(id, _, _)| id == key.trim()) {
+        return Ok(id.clone());
+    }
+    // Only archived rows can match by name; treat them as the active set.
+    let archived: Vec<_> = rows.into_iter().filter(|r| r.2).map(|(i, n, _)| (i, n, false)).collect();
+    resolve_by_name(&format!("archived {what}"), key, &archived)
+}
+
 /// Format integer MYR cents as `RM 1,234.50` (negative: `-RM 12.34`).
 pub fn fmt_myr(cents: i64) -> String {
     let abs = cents.unsigned_abs();
@@ -90,6 +119,14 @@ pub fn cents_arg(v: &Value, field: &str) -> AppResult<i64> {
             "{field} must be a positive integer cents value (e.g. 1250 for RM 12.50), got {v}"
         ))),
     }
+}
+
+/// Any JSON integer amount in cents (zero and negatives allowed, for balances
+/// that may be zero or owed); floats and strings are rejected.
+pub fn integer_cents_arg(v: &Value, field: &str) -> AppResult<i64> {
+    v.as_i64().ok_or_else(|| {
+        AppError::Validation(format!("{field} must be an integer cents value (e.g. 1250 for RM 12.50), got {v}"))
+    })
 }
 
 #[cfg(test)]
@@ -190,5 +227,31 @@ mod tests {
         assert_eq!(fmt_myr(1234), "RM 12.34");
         assert_eq!(fmt_myr(123450), "RM 1,234.50");
         assert_eq!(fmt_myr(-250), "-RM 2.50");
+    }
+
+    #[test]
+    fn integer_cents_allows_zero_and_negative_only_for_integers() {
+        assert_eq!(integer_cents_arg(&json!(0), "x").unwrap(), 0);
+        assert_eq!(integer_cents_arg(&json!(-250), "x").unwrap(), -250);
+        for bad in [json!(1.5), json!("5"), json!(null)] {
+            match integer_cents_arg(&bad, "x") {
+                Err(AppError::Validation(m)) => assert!(m.contains("integer cents"), "{m}"),
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn archived_resolvers_find_only_archived_by_name() {
+        let c = open_in_memory().unwrap();
+        let old = acct(&c, "Old");
+        let live = acct(&c, "Live");
+        service::archive_account(&c, &old).unwrap();
+        assert_eq!(resolve_archived_account(&c, "old").unwrap(), old);
+        assert_eq!(resolve_archived_account(&c, &live).unwrap(), live);
+        assert!(matches!(resolve_archived_account(&c, "live"), Err(AppError::NotFound(_))));
+        let cat = service::create_category(&c, "Snacks", "expense", "x", None, None).unwrap();
+        service::archive_category(&c, &cat.id).unwrap();
+        assert_eq!(resolve_archived_category(&c, "SNACKS").unwrap(), cat.id);
     }
 }

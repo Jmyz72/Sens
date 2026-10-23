@@ -198,7 +198,7 @@ struct ExpectedReimbursementArgs {
 
 // ── Registry ────────────────────────────────────────────────────────────────
 
-fn schema_of<T: JsonSchema>() -> Value {
+pub(super) fn schema_of<T: JsonSchema>() -> Value {
     let mut v = serde_json::to_value(schemars::schema_for!(T)).unwrap_or_else(|_| json!({}));
     if let Some(o) = v.as_object_mut() {
         o.insert("type".into(), json!("object"));
@@ -243,12 +243,13 @@ pub fn definitions() -> Vec<ToolDef> {
     TOOLS
         .iter()
         .map(|t| ToolDef { name: t.name, description: t.description, writes: t.writes, schema: t.schema })
+        .chain(super::tools_manage::definitions())
         .collect()
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-fn parse_args<T: DeserializeOwned>(name: &str, args: Value) -> AppResult<T> {
+pub(super) fn parse_args<T: DeserializeOwned>(name: &str, args: Value) -> AppResult<T> {
     let args = if args.is_null() { json!({}) } else { args };
     serde_json::from_value(args)
         .map_err(|e| AppError::Validation(format!("Invalid arguments for {name}: {}", plain_words(&e.to_string()))))
@@ -292,11 +293,11 @@ fn valid_month(m: &str) -> AppResult<String> {
     }
 }
 
-fn to_json<T: serde::Serialize>(v: T) -> AppResult<Value> {
+pub(super) fn to_json<T: serde::Serialize>(v: T) -> AppResult<Value> {
     serde_json::to_value(v).map_err(|e| AppError::Database(format!("Failed to serialize result: {e}")))
 }
 
-fn local_now() -> chrono::NaiveDateTime {
+pub(super) fn local_now() -> chrono::NaiveDateTime {
     chrono::Local::now().naive_local()
 }
 
@@ -330,7 +331,7 @@ pub fn with_formatted(mut value: Value) -> Value {
 }
 
 /// Validated positive cents from a raw JSON amount.
-fn cents(v: &Value, field: &str) -> AppResult<i64> {
+pub(super) fn cents(v: &Value, field: &str) -> AppResult<i64> {
     resolve::cents_arg(v, field)
 }
 
@@ -510,7 +511,10 @@ pub fn call(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
             let expected = a.expected_cents.filter(|v| !v.is_null()).map(|v| cents(&v, "expectedCents")).transpose()?;
             to_json(service::set_expected_reimbursement(conn, &a.expense_id, expected)?)?
         }
-        other => return Err(AppError::NotFound(format!("Unknown tool \"{other}\""))),
+        other => match super::tools_manage::call(conn, other, args) {
+            Some(r) => r?,
+            None => return Err(AppError::NotFound(format!("Unknown tool \"{other}\""))),
+        },
     };
     Ok(with_formatted(result))
 }
@@ -539,9 +543,10 @@ mod tests {
         let defs = definitions();
         let names: HashSet<_> = defs.iter().map(|d| d.name).collect();
         assert_eq!(names.len(), defs.len());
-        assert_eq!(defs.len(), 18);
         for d in &defs {
-            let is_write = d.name.starts_with("create_") || d.name.starts_with("update_") || d.name.starts_with("delete_") || d.name.starts_with("set_");
+            let is_write = ["create_", "update_", "delete_", "set_", "archive_", "restore_", "post_", "skip_"]
+                .iter()
+                .any(|p| d.name.starts_with(p));
             assert_eq!(d.writes, is_write, "{}", d.name);
             assert!(!d.description.is_empty());
             assert_eq!((d.schema)()["type"], "object", "{}", d.name);
