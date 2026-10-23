@@ -52,6 +52,11 @@ pub fn update_schedule(conn: &Connection, id: &str, input: ScheduleWrite, now: N
     load(conn, id, now)
 }
 
+/// One schedule with its current block reason (`NotFound` when missing).
+pub fn get_schedule(conn: &Connection, id: &str, now: NaiveDateTime) -> AppResult<Schedule> {
+    load(conn, id, now)
+}
+
 pub fn delete_schedule(conn: &Connection, id: &str) -> AppResult<()> {
     clear_failure(id);
     repo::delete_schedule(conn, id)

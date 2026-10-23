@@ -27,16 +27,20 @@ pub enum AppError {
     /// `ai_auth`, `ai_bad_response`, `ai_all_failed`.
     #[error("{1}")]
     Ai(&'static str, String),
+    /// Too many calls in the current window (MCP write tools).
+    #[error("{0}")]
+    RateLimited(String),
 }
 
 impl AppError {
-    fn code(&self) -> &'static str {
+    pub(crate) fn code(&self) -> &'static str {
         match self {
             AppError::Validation(_) => "ValidationError",
             AppError::NotFound(_) => "NotFound",
             AppError::Conflict(_) => "Conflict",
             AppError::Database(_) => "DatabaseError",
             AppError::Ai(code, _) => code,
+            AppError::RateLimited(_) => "rate_limited",
         }
     }
 }

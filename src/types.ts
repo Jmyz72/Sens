@@ -320,3 +320,23 @@ export interface ExtractResult {
   provider: string;
   skipped: SkippedProvider[];
 }
+
+export interface McpStatus {
+  enabled: boolean;
+  port: number;
+  running: boolean;
+  hasToken: boolean;
+  error: string | null;
+}
+
+export interface McpAuditEntry {
+  id: string;
+  at: string;
+  tailscaleUser: string | null;
+  tool: string;
+  /** `{"args": <tool args>, "affectedId": <string|null>}`, capped at 8 KB;
+   *  a cut value ends with "...[truncated]" and is not valid JSON. */
+  argsJson: string;
+  ok: boolean;
+  errorCode: string | null;
+}

@@ -3,6 +3,7 @@
 //! delegate to the service layer.
 
 use crate::error::AppResult;
+use crate::mcp::{self, McpHandle};
 use crate::models::*;
 use crate::schedules;
 use crate::service;
@@ -223,19 +224,60 @@ pub fn delete_transaction(state: State<'_, DbState>, id: String) -> AppResult<()
 
 // ── App Settings ─────────────────────────────────────────────────────────────
 
+/// The generic settings commands must not reach the MCP keys (token hash,
+/// enabled flag, port); the Assistant card commands own them.
+fn reject_mcp_key(key: &str) -> AppResult<()> {
+    if key.trim().starts_with("mcp_") {
+        return Err(crate::error::AppError::Validation("That setting is managed by the Assistant card.".into()));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_setting(state: State<'_, DbState>, key: String) -> AppResult<Option<String>> {
+    reject_mcp_key(&key)?;
     with_conn!(state, c => service::get_setting(&c, &key))
 }
 
 #[tauri::command]
 pub fn set_setting(state: State<'_, DbState>, key: String, value: String) -> AppResult<()> {
+    reject_mcp_key(&key)?;
     with_conn!(state, c => service::set_setting(&c, &key, &value))
 }
 
 #[tauri::command]
-pub fn reset_app(state: State<'_, DbState>) -> AppResult<()> {
-    with_conn!(state, c => service::reset_app(&c))
+pub fn reset_app(app: tauri::AppHandle, mcp: State<'_, McpHandle>) -> AppResult<()> {
+    // Also drops the MCP token and stops the server (settings are wiped).
+    mcp.reset(&app).map(|_| ())
+}
+
+// ── MCP assistant ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_mcp_status(app: tauri::AppHandle, mcp: State<'_, McpHandle>) -> McpStatus {
+    mcp.get_status(&app)
+}
+
+#[tauri::command]
+pub fn set_mcp_enabled(
+    app: tauri::AppHandle,
+    mcp: State<'_, McpHandle>,
+    enabled: bool,
+    port: Option<u16>,
+) -> AppResult<McpStatus> {
+    mcp.set_enabled(&app, enabled, port)
+}
+
+/// Returns the plaintext token once; only its hash is stored.
+#[tauri::command]
+pub fn rotate_mcp_token(app: tauri::AppHandle, mcp: State<'_, McpHandle>) -> AppResult<String> {
+    mcp.rotate(&app)
+}
+
+#[tauri::command]
+pub fn list_mcp_audit(state: State<'_, DbState>, limit: Option<i64>) -> AppResult<Vec<McpAuditEntry>> {
+    let limit = limit.unwrap_or(50).clamp(1, 200);
+    with_conn!(state, c => mcp::audit::list(&c, limit))
 }
 
 // ── Schedules ────────────────────────────────────────────────────────────────
@@ -415,4 +457,23 @@ pub fn reorder_ai_providers(state: State<'_, DbState>, ids: Vec<String>) -> AppR
 pub async fn test_ai_provider(state: State<'_, DbState>, id: String) -> AppResult<()> {
     let named = with_conn!(state, c => crate::drafts::provider_config(&c, &id))?;
     crate::ai::test_connection(&named.cfg).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reject_mcp_key;
+    use crate::error::AppError;
+
+    #[test]
+    fn generic_settings_commands_reject_mcp_keys() {
+        // get_setting and set_setting both call reject_mcp_key first.
+        for key in ["mcp_token_hash", "mcp_enabled", "mcp_port", " mcp_port"] {
+            match reject_mcp_key(key) {
+                Err(AppError::Validation(m)) => assert_eq!(m, "That setting is managed by the Assistant card."),
+                other => panic!("{key}: expected Validation, got {other:?}"),
+            }
+        }
+        assert!(reject_mcp_key("transaction_time_enabled").is_ok());
+        assert!(reject_mcp_key("theme").is_ok());
+    }
 }

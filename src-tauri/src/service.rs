@@ -970,6 +970,11 @@ pub fn list_transactions(conn: &Connection, filters: TransactionFilters) -> AppR
     repo::list_transactions(conn, &filters)
 }
 
+/// One transaction with its splits, allocations and reimbursed total.
+pub fn get_transaction(conn: &Connection, id: &str) -> AppResult<Transaction> {
+    repo::get_transaction(conn, id)
+}
+
 pub fn update_transaction(conn: &Connection, input: UpdateTransactionInput) -> AppResult<Transaction> {
     let existing = repo::get_transaction(conn, &input.id)?;
     // Adjustments are not editable through the normal form and kind cannot be
@@ -1446,6 +1451,11 @@ pub fn update_goal(conn: &Connection, input: GoalWrite) -> AppResult<PlanGoal> {
     let account = repo::get_account(conn, &input.account_id)?;
     let row = repo::get_goal(conn, &id)?;
     Ok(plan_goal(&account, &row))
+}
+
+/// The stored goal row (`NotFound` when missing).
+pub fn get_goal(conn: &Connection, id: &str) -> AppResult<repo::GoalRow> {
+    repo::get_goal(conn, id)
 }
 
 pub fn delete_goal(conn: &Connection, id: &str) -> AppResult<()> {

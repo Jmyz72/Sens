@@ -2,6 +2,7 @@
 
 Layering conventions, errors, migrations, seeding, factory reset, and how the browser mock stays in sync.
 Read this before adding a command, a migration, or changing seed data.
+The agent (MCP) server has its own topic: [`mcp.md`](mcp.md).
 
 **Key files:** `src-tauri/src/{commands,service,repo}.rs` · `src-tauri/src/db/{migrations,seed,mod}.rs` ·
 `src-tauri/src/{drafts,ai,ocr}.rs` · `src/client/{index,invoke,mock}.ts` · `src/generated/seed-catalog.json`
@@ -92,6 +93,12 @@ The UI never touches SQL.
 | 014 | Adds `gain_category_id` and `loss_category_id` on `accounts` | Optional categories for Update Net Worth |
 | 015 | Creates `schedules` and `schedule_occurrences` | Recurring templates and posted or skipped dates. New tables, not a rebuild of `transactions` |
 | 016 | Creates `import_drafts` (`id`, `source_name`, `payload` JSON, `created_at`, `updated_at`) | Photo-import drafts awaiting review. Not transactions: no postings, no balance effect, no foreign keys |
+| 017 | Creates `ai_providers` and deletes the old `ai_base_url` / `ai_model` / `ai_api_key` settings | Ordered AI provider list (see Photo import) |
+| 018 | Creates `mcp_audit_log` and `idx_mcp_audit_log_at` | One row per agent write call. New table; cleared by factory reset. See [`mcp.md`](mcp.md) |
+
+MCP commands (stubbed in `mock.ts`; the server is Rust-only): `get_mcp_status`, `set_mcp_enabled`,
+`rotate_mcp_token`, `list_mcp_audit`. `get_setting` / `set_setting` reject keys starting with `mcp_`.
+Details in [`mcp.md`](mcp.md).
 
 Plan commands (mirrored in `mock.ts`): `get_plan`, `set_budgets`, `create_goal`, `update_goal`, `delete_goal`.
 
@@ -206,7 +213,8 @@ crypto provider once per process; `objc2`, `objc2-foundation`, `objc2-vision` on
 
 The `reset_app` command (`service::reset_app` → `db::reset_to_defaults`):
 
-- Wipes `import_drafts`, `schedule_occurrences` and `schedules` first, then `savings_goals` and `category_budgets`, `reimbursement_allocations` (its `expense_id` FK is `RESTRICT`), `postings`, `transactions`, `categories`, `accounts`, and `app_settings` in **one transaction**.
+- Wipes `import_drafts`, `mcp_audit_log`, `schedule_occurrences` and `schedules` first, then `savings_goals` and `category_budgets`, `reimbursement_allocations` (its `expense_id` FK is `RESTRICT`), `postings`, `transactions`, `categories`, `accounts`, and `app_settings` in **one transaction**.
 - Re-runs the idempotent seed, re-setting the `seeded` flag and all `defaults_v*_seeded` flags.
+- The Tauri command goes through `McpHandle::reset_with`, which also stops the agent server and clears the live token (the `mcp_*` settings go with `app_settings`).
 - Mirrored by `resetApp()` in `mock.ts`.
 - Exposed in Settings → Danger zone (type `RESET` to confirm).

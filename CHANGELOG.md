@@ -8,12 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Assistant (MCP).** Settings → Assistant can let an AI agent you trust read and manage your finances (37 tools: transactions, budgets, goals, schedules, accounts, categories). It is off by default, listens only on this computer, and is meant to be reached over your own Tailscale tailnet through Tailscale Serve (keep the Tailscale access grant narrow), with a token that is shown once and stored only as a hash. Every change the agent makes is listed in the card's audit log with a short summary of what was sent and the id of the affected item; the log keeps the latest 10,000 entries. The agent is limited to 60 writes a minute, its edits change only the fields it sends, and its changes appear in the app right away. Sens must be open for the agent to reach it. See `docs/architecture/mcp.md`.
 - **Several AI providers for photo import.** Settings → AI import keeps a list of providers in the order you choose (drag, or the arrow buttons). Drafts tries them in turn and moves to the next one when a call fails, then says which provider read the photo and which were skipped. Each provider can be switched off without deleting it. Your earlier AI settings are not carried over; add the provider again.
 
 ### Fixed
 - Drafts: Confirm waits for any field edit still being saved, so an amount changed just before clicking Confirm is no longer posted with its old value.
 
 ### Changed
+- Factory reset also clears the assistant's audit log, turns the assistant off and removes its token.
 - Docs: `ROADMAP.md` records `v0.11.0` as shipped (Update Net Worth, Recurring & reminders, photo import) and moves those phases out of Planned.
 - CI: the release workflow passes `includeUpdaterJson` (the old `uploadUpdaterJson` input did not exist and raised a warning), and workflows pin `ubuntu-24.04` instead of `ubuntu-latest` ahead of the Ubuntu 26 migration.
 

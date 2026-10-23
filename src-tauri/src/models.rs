@@ -450,3 +450,27 @@ pub struct ExtractResult {
     pub provider: String,
     pub skipped: Vec<SkippedProvider>,
 }
+
+/// Embedded MCP server state for the Settings screen.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpStatus {
+    pub enabled: bool,
+    pub port: u16,
+    pub running: bool,
+    pub has_token: bool,
+    pub error: Option<String>,
+}
+
+/// One MCP write-tool call recorded in the audit log.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpAuditEntry {
+    pub id: String,
+    pub at: String,
+    pub tailscale_user: Option<String>,
+    pub tool: String,
+    pub args_json: String,
+    pub ok: bool,
+    pub error_code: Option<String>,
+}

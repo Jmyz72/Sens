@@ -3,6 +3,7 @@
 Sens is built one **phase** at a time. **One phase = one release.** This file is the index; specs and plans hold the detail.
 
 > **Last shipped:** `v0.11.0` (Update Net Worth, recurring schedules & Upcoming, photo import Drafts)
+> **Unreleased:** AI import provider fallback; MCP assistant (agent access over Tailscale)
 > **Next up:** Advanced search, filter & tags
 > **Later:** the climb to `v1.0.0`
 
@@ -93,6 +94,12 @@ Per-release detail lives in [`CHANGELOG.md`](./CHANGELOG.md).
 | 🟢 `v0.11.0` | **Update Net Worth:** set what a fixed deposit, investment, unit trust, or crypto account is worth now; the difference books as income/expense. **Recurring & reminders:** daily/weekly/monthly/yearly schedules, auto-post or tap-to-post, Upcoming list, away notice. **Photo import:** Drafts screen (OS OCR + user-configured OpenAI-compatible AI, review before save). "Record transaction times" now defaults on. | `2026-10-14-update-net-worth-design.md` · `2026-10-15-recurring-and-reminders-design.md` · `2026-10-17-photo-transaction-import-design.md` |
 
 Spec files above live in `docs/superpowers/specs/`.
+
+### 🟡 Unreleased (next release)
+
+| Status | What landed | Spec |
+|---|---|---|
+| 🟡 unreleased | **MCP assistant:** an opt-in MCP server embedded in the app, meant to be reached over your own tailnet through Tailscale Serve (37 tools, token auth, audit log, rate limit, live refresh). | `2026-10-23-sens-mcp-assistant-design.md` · [architecture](docs/architecture/mcp.md) |
 
 ## Planned — the climb to 1.0
 
@@ -233,6 +240,18 @@ Spec: _TBD_
 Spec: _TBD_
 
 ## Later / unscheduled
+
+### MCP assistant: later ideas
+
+The assistant itself is done but unreleased (see the *Unreleased* section above).
+
+- [ ] Propose-and-approve mode (agent drafts, you confirm)
+- [ ] Headless mode that keeps running with the window closed
+- [ ] Per-tool permissions (for example read-only)
+- [ ] Verify against live Tailscale Serve and a real third-party connector
+- [ ] Stop in-flight tool calls from finishing after a factory reset or token rotation
+- [ ] Limit concurrent read calls
+- [ ] Deep link from an audit row to the affected item (today: affected id and args summary)
 
 ### Fixed-deposit maturity
 

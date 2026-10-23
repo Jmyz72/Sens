@@ -7,6 +7,7 @@ mod commands;
 mod db;
 mod drafts;
 pub mod error;
+mod mcp;
 mod models;
 mod ocr;
 mod recurrence;
@@ -14,12 +15,12 @@ mod repo;
 mod schedules;
 mod service;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 /// Shared SQLite connection. Single-user desktop app, so one guarded
-/// connection is sufficient.
-pub struct DbState(pub Mutex<rusqlite::Connection>);
+/// connection is sufficient. `Arc` so the embedded MCP server can share it.
+pub struct DbState(pub Arc<Mutex<rusqlite::Connection>>);
 
 /// Current timestamp as an ISO 8601 string (backend is the source of truth).
 pub fn now() -> String {
@@ -41,7 +42,13 @@ pub fn run() {
             let dir = app.path().app_data_dir().expect("no app data dir");
             std::fs::create_dir_all(&dir).expect("could not create app data dir");
             let conn = db::open(&dir.join("sens.db")).expect("could not open database");
-            app.manage(DbState(Mutex::new(conn)));
+            app.manage(DbState(Arc::new(Mutex::new(conn))));
+            let db = app.state::<DbState>().0.clone();
+            let handle = mcp::McpHandle::new(&db);
+            app.manage(handle);
+            // Restore an enabled server after a restart; a bind failure is
+            // reported through the status, not fatal.
+            app.state::<mcp::McpHandle>().apply(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -85,6 +92,10 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::reset_app,
+            commands::get_mcp_status,
+            commands::set_mcp_enabled,
+            commands::rotate_mcp_token,
+            commands::list_mcp_audit,
             commands::create_schedule,
             commands::update_schedule,
             commands::delete_schedule,
