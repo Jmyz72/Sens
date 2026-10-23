@@ -3,6 +3,7 @@
 Sens is built one **phase** at a time. **One phase = one release.** This file is the index; specs and plans hold the detail.
 
 > **Last shipped:** `v0.11.0` (Update Net Worth, recurring schedules & Upcoming, photo import Drafts)
+> **Unreleased:** AI import provider fallback; MCP assistant (agent access over Tailscale)
 > **Next up:** Advanced search, filter & tags
 > **Later:** the climb to `v1.0.0`
 
@@ -233,6 +234,17 @@ Spec: _TBD_
 Spec: _TBD_
 
 ## Later / unscheduled
+
+### MCP assistant (AI CFO)
+
+Shipped unreleased: an opt-in MCP server embedded in the app, reached over Tailscale (37 tools, token
+auth, audit log, rate limit, live refresh). Spec: [`2026-10-23-sens-mcp-assistant-design.md`](docs/superpowers/specs/2026-10-23-sens-mcp-assistant-design.md) · [architecture](docs/architecture/mcp.md).
+
+- [x] Embedded MCP server, Settings → Assistant card, audit log (unreleased)
+- [ ] Propose-and-approve mode (agent drafts, you confirm)
+- [ ] Headless mode that keeps running with the window closed
+- [ ] Per-tool permissions (for example read-only)
+- [ ] Verify against live Tailscale Serve and a real third-party connector
 
 ### Fixed-deposit maturity
 

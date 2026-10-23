@@ -1,7 +1,7 @@
 # MCP assistant ("AI CFO") over Tailscale — design
 
 **Date:** 2026-10-23
-**Status:** Draft, awaiting review
+**Status:** Implemented (unreleased). Plan: docs/superpowers/plans/2026-10-23-sens-mcp-assistant.md
 **Builds on:** `2026-05-30-sens-desktop-finance-tracker-design.md` (service/repo layering),
 `2026-10-21-ai-provider-fallback-design.md` (settings-card and secrets conventions).
 
@@ -123,3 +123,16 @@ undo, a headless mode that runs with the window closed, and a chat front-end.
   and-approve mode if this proves risky.
 - **App must be open.** The CFO is offline when Sens is closed. Accepted for v1.
 - **`rmcp` API churn.** Pin the version; the tool layer is thin so a swap is contained.
+
+## As built
+
+Deviations from this spec:
+
+- A **Host allow-list** layer (`require_allowed_host`: localhost, 127.0.0.1, [::1], `*.ts.net`) was added;
+  rmcp's own allow-list is disabled because Tailscale Serve forwards the tailnet hostname.
+- New `AppError::RateLimited` (code `rate_limited`) for the 60-writes-a-minute limit.
+- **Panic safety:** a panicking tool becomes a `DatabaseError` and does not poison the shared connection.
+- **Factory reset** also clears the audit table, stops the server and clears the token.
+- The generic `get_setting` / `set_setting` commands **reject `mcp_` keys**.
+- Tools are split across `tools.rs` and `tools_manage.rs`.
+- **37 tools**, not ~30.
