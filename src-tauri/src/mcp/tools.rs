@@ -63,7 +63,9 @@ struct ListTransactionsArgs {
     from_date: Option<String>,
     /// Inclusive end date, YYYY-MM-DD.
     to_date: Option<String>,
+    /// Rows to return: default 200, at most 1000.
     limit: Option<i64>,
+    /// Rows to skip, for paging (default 0).
     offset: Option<i64>,
 }
 
@@ -111,7 +113,7 @@ struct CreateEntryArgs {
     description: Option<String>,
     /// YYYY-MM-DD.
     date: String,
-    /// HH:MM (24h); required unless the app has times turned off. required unless the app has times turned off.
+    /// HH:MM (24h); required unless the app has times turned off.
     time: Option<String>,
     /// Leave out of reports and the plan (default false).
     excluded_from_reporting: Option<bool>,
@@ -153,29 +155,44 @@ struct CreateReimbursementArgs {
     allocations: Vec<AllocationArg>,
 }
 
+/// Patch args: an omitted field keeps the current value. Fields typed
+/// `Option<Option<_>>` (via `patch`) also tell an explicit `null` (clear) apart.
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UpdateTransactionArgs {
     /// Transaction id.
     id: String,
-    /// "income", "expense" or "transfer".
-    kind: String,
+    /// "income", "expense", "transfer" or "payment".
+    kind: Option<String>,
     /// Account id or exact name.
-    account_id: String,
-    /// Destination account id or name (transfers).
-    to_account_id: Option<String>,
+    account_id: Option<String>,
+    /// Destination account id or name (transfers and payments).
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    to_account_id: Option<Option<String>>,
     /// Category id or exact name.
-    category_id: Option<String>,
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    category_id: Option<Option<String>>,
     /// Positive integer cents (1250 = RM 12.50).
-    #[schemars(with = "i64")]
-    amount_cents: Value,
-    description: Option<String>,
+    #[schemars(with = "Option<i64>")]
+    amount_cents: Option<Value>,
+    /// null clears it.
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    description: Option<Option<String>>,
     /// YYYY-MM-DD.
-    transaction_date: String,
-    /// HH:MM (24h); required unless the app has times turned off.
-    transaction_time: Option<String>,
+    transaction_date: Option<String>,
+    /// HH:MM (24h).
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    transaction_time: Option<Option<String>>,
+    /// Leave out of reports and the plan.
     excluded_from_reporting: Option<bool>,
-    splits: Option<Vec<SplitArg>>,
+    /// Omit to keep the current split lines; [] or null removes the split.
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<Vec<SplitArg>>")]
+    splits: Option<Option<Vec<SplitArg>>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -221,7 +238,7 @@ static TOOLS: &[ToolDef] = &[
     tool!("list_accounts", "List accounts with signed balances in integer cents (liabilities are negative).", ListAccountsArgs),
     tool!("get_account_balances", "Current balance of every active account, in integer cents.", NoArgs),
     tool!("list_categories", "List categories, optionally filtered by kind (income or expense).", ListCategoriesArgs),
-    tool!("list_transactions", "List transactions, newest first. accountId and categoryId accept an id or an exact name.", ListTransactionsArgs),
+    tool!("list_transactions", "List transactions, newest first. accountId and categoryId accept an id or an exact name. limit defaults to 200 and is capped at 1000; page with offset.", ListTransactionsArgs),
     tool!("get_dashboard_summary", "Income, expense and net-worth summary for a month (YYYY-MM).", MonthArgs),
     tool!("get_plan", "The monthly plan (budgets and progress) for a month (YYYY-MM).", MonthArgs),
     tool!("list_schedules", "List recurring schedules.", NoArgs),
@@ -232,7 +249,7 @@ static TOOLS: &[ToolDef] = &[
     wtool!("create_transfer", "Move money between two of your accounts (not to a credit card or BNPL; use create_payment). Amounts are integer cents.", CreateMoveArgs),
     wtool!("create_payment", "Pay off a credit card or BNPL account from another account. Amounts are integer cents.", CreateMoveArgs),
     wtool!("create_reimbursement", "Record money received that repays one or more expenses. allocations lists the expenses repaid; amounts are integer cents.", CreateReimbursementArgs),
-    wtool!("update_transaction", "Replace the fields of an existing income, expense or transfer. Send the full set of fields, changing only what you mean to.", UpdateTransactionArgs),
+    wtool!("update_transaction", "Change an existing income, expense, transfer or payment. Patch: send id plus only the fields to change; an omitted field keeps its current value and null clears an optional one (such as description). splits: omit to keep the current split lines; [] or null removes the split and uses categoryId (or the current header category). A split transaction's amountCents can only change together with new splits that add up to it. When changing kind, also send the fields the new kind needs. Reimbursements, adjustments and opening balances can't be edited here.", UpdateTransactionArgs),
     wtool!("delete_transaction", "Permanently delete a transaction by id.", IdArgs),
     wtool!("set_expected_reimbursement", "Mark an expense as expecting a reimbursement of expectedCents (integer cents), or clear it by omitting expectedCents.", ExpectedReimbursementArgs),
 ];
@@ -328,6 +345,21 @@ pub fn with_formatted(mut value: Value) -> Value {
     value
 }
 
+/// `deserialize_with` for patch fields: present (even `null`) becomes `Some`,
+/// so with `#[serde(default)]` an omitted field stays `None`.
+pub(super) fn patch<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
+}
+
+/// Optional positive cents from a raw JSON amount; absent or null is `None`.
+pub(super) fn opt_cents(v: Option<&Value>, field: &str) -> AppResult<Option<i64>> {
+    v.filter(|v| !v.is_null()).map(|v| cents(v, field)).transpose()
+}
+
 /// Validated positive cents from a raw JSON amount.
 pub(super) fn cents(v: &Value, field: &str) -> AppResult<i64> {
     resolve::cents_arg(v, field)
@@ -377,6 +409,58 @@ fn create_move(conn: &Connection, name: &str, payment: bool, args: Value) -> App
         service::create_transfer(conn, &from, &to, amount, desc, &date, time)?
     };
     to_json(t)
+}
+
+/// Patch update: omitted fields keep the stored value, then the full set goes
+/// through `service::update_transaction` so every service rule still runs.
+fn update_transaction(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
+    let a: UpdateTransactionArgs = parse_args(name, args)?;
+    // Raw amount and date checks come before any read or write.
+    let amount = opt_cents(a.amount_cents.as_ref(), "amountCents")?;
+    let date = a.transaction_date.as_deref().map(resolve::parse_date).transpose()?;
+    let cur = service::get_transaction(conn, &a.id)?;
+    let kind = a.kind.unwrap_or_else(|| cur.kind.clone());
+    // Kind-specific fields carry over only while the kind stays the same.
+    let same_kind = kind == cur.kind;
+    let cat_kind = Some(kind.as_str()).filter(|k| matches!(*k, "income" | "expense"));
+    let account_id = match a.account_id {
+        Some(k) => resolve::resolve_account(conn, &k)?,
+        None => cur.account_id.clone(),
+    };
+    let to_account_id = match a.to_account_id {
+        Some(Some(k)) => Some(resolve::resolve_account(conn, &k)?),
+        Some(None) => None,
+        None => cur.to_account_id.clone().filter(|_| same_kind),
+    };
+    let category_id = match a.category_id {
+        Some(Some(k)) => Some(resolve::resolve_category(conn, &k, cat_kind)?),
+        Some(None) => None,
+        None => cur.category_id.clone().filter(|_| same_kind),
+    };
+    let splits = match a.splits {
+        Some(v) => resolve_splits(conn, v, cat_kind)?,
+        None if same_kind && cat_kind.is_some() && !cur.splits.is_empty() => Some(
+            cur.splits
+                .iter()
+                .map(|s| SplitInput { category_id: s.category_id.clone(), amount_cents: s.amount_cents })
+                .collect(),
+        ),
+        None => None,
+    };
+    let input = UpdateTransactionInput {
+        id: a.id,
+        kind,
+        account_id,
+        to_account_id,
+        category_id,
+        amount_cents: amount.unwrap_or(cur.amount_cents),
+        description: a.description.unwrap_or(cur.description),
+        transaction_date: date.unwrap_or(cur.transaction_date),
+        transaction_time: a.transaction_time.unwrap_or(cur.transaction_time),
+        excluded_from_reporting: a.excluded_from_reporting.unwrap_or(cur.excluded_from_reporting),
+        splits,
+    };
+    to_json(service::update_transaction(conn, input)?)
 }
 
 // ── Dispatch ────────────────────────────────────────────────────────────────
@@ -477,26 +561,7 @@ pub fn call(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
                 .collect::<AppResult<Vec<_>>>()?;
             to_json(service::create_reimbursement(conn, &account_id, amount, a.description.as_deref(), &date, a.time.as_deref(), allocations)?)?
         }
-        "update_transaction" => {
-            let a: UpdateTransactionArgs = parse_args(name, args)?;
-            let amount = cents(&a.amount_cents, "amountCents")?;
-            let date = resolve::parse_date(&a.transaction_date)?;
-            let cat_kind = Some(a.kind.as_str()).filter(|k| matches!(*k, "income" | "expense"));
-            let input = UpdateTransactionInput {
-                account_id: resolve::resolve_account(conn, &a.account_id)?,
-                to_account_id: a.to_account_id.as_deref().map(|k| resolve::resolve_account(conn, k)).transpose()?,
-                category_id: a.category_id.as_deref().map(|k| resolve::resolve_category(conn, k, cat_kind)).transpose()?,
-                splits: resolve_splits(conn, a.splits, cat_kind)?,
-                id: a.id,
-                kind: a.kind,
-                amount_cents: amount,
-                description: a.description,
-                transaction_date: date,
-                transaction_time: a.transaction_time,
-                excluded_from_reporting: a.excluded_from_reporting.unwrap_or(false),
-            };
-            to_json(service::update_transaction(conn, input)?)?
-        }
+        "update_transaction" => update_transaction(conn, name, args)?,
         "delete_transaction" => {
             let a: IdArgs = parse_args(name, args)?;
             service::delete_transaction(conn, &a.id)?;
@@ -765,6 +830,92 @@ mod tests {
         assert_eq!(u["description"], "New");
         assert_eq!(u["id"], id);
         assert_eq!(u["accountId"], a.as_str());
+    }
+
+    /// A split expense (200 + 100) that is excluded from reporting.
+    fn split_expense(c: &Connection) -> Value {
+        service::create_category(c, "Groceries Run", "expense", "x", None, None).unwrap();
+        call(c, "create_expense", json!({
+            "accountId": "Maybank", "amountCents": 300, "description": "Old", "date": "2026-10-23", "time": "12:00",
+            "excludedFromReporting": true,
+            "splits": [{"categoryId": "Lunch Runs", "amountCents": 200}, {"categoryId": "Groceries Run", "amountCents": 100}]
+        })).unwrap()
+    }
+
+    #[test]
+    fn update_transaction_keeps_excluded_flag_and_splits_when_omitted() {
+        let (c, a) = seeded();
+        let t = split_expense(&c);
+        let id = t["id"].as_str().unwrap();
+        let u = call(&c, "update_transaction", json!({"id": id, "description": "New"})).unwrap();
+        assert_eq!(u["description"], "New");
+        assert_eq!(u["excludedFromReporting"], true);
+        assert_eq!(u["splits"], t["splits"]);
+        assert_eq!(u["amountCents"], 300);
+        assert_eq!(u["kind"], "expense");
+        assert_eq!(u["accountId"], a.as_str());
+        assert_eq!(u["transactionDate"], "2026-10-23");
+        assert_eq!(u["transactionTime"], "12:00");
+    }
+
+    #[test]
+    fn update_transaction_null_clears_description() {
+        let (c, _) = seeded();
+        let t = call(&c, "create_expense", json!({"accountId": "Maybank", "categoryId": "Lunch Runs", "amountCents": 300, "description": "Old", "date": "2026-10-23", "time": "12:00"})).unwrap();
+        let id = t["id"].as_str().unwrap();
+        // Omitted keeps it.
+        let u = call(&c, "update_transaction", json!({"id": id, "amountCents": 450})).unwrap();
+        assert_eq!(u["description"], "Old");
+        assert_eq!(u["amountCents"], 450);
+        // Explicit null clears it.
+        let u = call(&c, "update_transaction", json!({"id": id, "description": null})).unwrap();
+        assert!(u["description"].is_null(), "{u}");
+        assert_eq!(u["amountCents"], 450);
+    }
+
+    #[test]
+    fn update_transaction_one_field_on_split_keeps_splits_and_total() {
+        let (c, a) = seeded();
+        let t = split_expense(&c);
+        let id = t["id"].as_str().unwrap();
+        let before = count_and_balance(&c, &a);
+        let u = call(&c, "update_transaction", json!({"id": id, "transactionDate": "2026-10-20"})).unwrap();
+        assert_eq!(u["transactionDate"], "2026-10-20");
+        assert_eq!(u["splits"], t["splits"]);
+        assert_eq!(u["amountCents"], 300);
+        // Echoing back the header categoryId (as list_transactions shows it) keeps the split.
+        let u = call(&c, "update_transaction", json!({"id": id, "categoryId": t["categoryId"].clone()})).unwrap();
+        assert_eq!(u["splits"].as_array().unwrap().len(), 2);
+        assert_eq!(count_and_balance(&c, &a), before);
+        // An explicit empty list removes the split and uses categoryId.
+        let u = call(&c, "update_transaction", json!({"id": id, "splits": [], "categoryId": "Lunch Runs"})).unwrap();
+        assert!(u["splits"].as_array().unwrap().is_empty());
+        assert_eq!(u["amountCents"], 300);
+    }
+
+    #[test]
+    fn update_transaction_validates_amount_and_date_before_writing() {
+        let (c, _) = seeded();
+        let t = call(&c, "create_expense", json!({"accountId": "Maybank", "categoryId": "Lunch Runs", "amountCents": 300, "date": "2026-10-23", "time": "12:00"})).unwrap();
+        let id = t["id"].as_str().unwrap();
+        for bad in [json!({"id": id, "amountCents": 1.5}), json!({"id": id, "transactionDate": "23/10/2026"})] {
+            assert!(matches!(call(&c, "update_transaction", bad), Err(AppError::Validation(_))));
+        }
+        let rows = service::list_transactions(&c, TransactionFilters::default()).unwrap();
+        let row = rows.iter().find(|r| r.id == id).unwrap();
+        assert_eq!((row.amount_cents, row.transaction_date.as_str()), (300, "2026-10-23"));
+        assert!(matches!(call(&c, "update_transaction", json!({"id": "nope", "description": "x"})), Err(AppError::NotFound(_))));
+    }
+
+    #[test]
+    fn patch_update_schemas_require_only_id() {
+        let defs = definitions();
+        for n in ["update_transaction", "update_schedule", "update_goal"] {
+            let d = defs.iter().find(|d| d.name == n).unwrap();
+            let schema = (d.schema)();
+            assert_eq!(schema["required"], json!(["id"]), "{n}: {schema}");
+            assert!(d.description.contains("omitted field keeps"), "{n}");
+        }
     }
 
     #[test]

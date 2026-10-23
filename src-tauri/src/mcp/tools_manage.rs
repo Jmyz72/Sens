@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::resolve;
-use super::tools::{cents, local_now, parse_args, schema_of, to_json, ToolDef};
+use super::tools::{cents, local_now, parse_args, patch, schema_of, to_json, ToolDef};
 use crate::error::{AppError, AppResult};
 use crate::models::{BudgetWrite, GoalWrite, ScheduleWrite, UpdateAccountInput, UpdateCategoryInput, ValueCategories};
 use crate::{schedules, service};
@@ -17,6 +17,13 @@ use crate::{schedules, service};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct IdArgs {
     /// Id or exact name.
+    id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct GoalIdArgs {
+    /// Goal id (names are not accepted).
     id: String,
 }
 
@@ -46,7 +53,7 @@ struct SetBudgetsArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct GoalArgs {
-    /// Goal id; required for update_goal, not allowed for create_goal.
+    /// Leave out: a new goal gets its id from the app. Use update_goal to change one.
     id: Option<String>,
     name: String,
     /// Account the goal sits on: id or exact name.
@@ -58,10 +65,28 @@ struct GoalArgs {
     target_date: Option<String>,
 }
 
+/// update_goal patch: omitted keeps the current value, `targetDate: null` clears it.
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UpdateGoalArgs {
+    /// Goal id.
+    id: String,
+    name: Option<String>,
+    /// Account the goal sits on: id or exact name.
+    account_id: Option<String>,
+    /// Positive integer cents.
+    #[schemars(with = "Option<i64>")]
+    target_cents: Option<Value>,
+    /// YYYY-MM-DD; null clears it.
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    target_date: Option<Option<String>>,
+}
+
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ScheduleArgs {
-    /// Schedule id; required for update_schedule, not allowed for create_schedule.
+    /// Leave out: a new schedule gets its id from the app. Use update_schedule to change one.
     id: Option<String>,
     /// "auto" posts by itself, "tap" waits for you to post or skip.
     mode: String,
@@ -107,6 +132,82 @@ struct ScheduleArgs {
     end_count: Option<i64>,
     /// End "on" this date, YYYY-MM-DD.
     end_date: Option<String>,
+}
+
+/// update_schedule patch: omitted keeps the current value; null clears a
+/// nullable field (a list field becomes empty).
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UpdateScheduleArgs {
+    /// Schedule id.
+    id: String,
+    /// "auto" posts by itself, "tap" waits for you to post or skip.
+    mode: Option<String>,
+    /// "income", "expense", "transfer" or "payment".
+    kind: Option<String>,
+    /// Positive integer cents.
+    #[schemars(with = "Option<i64>")]
+    amount_cents: Option<Value>,
+    /// Account id or exact name.
+    account_id: Option<String>,
+    /// Destination account id or name (transfer and payment).
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    to_account_id: Option<Option<String>>,
+    /// Category id or exact name (income and expense).
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    category_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    description: Option<Option<String>>,
+    /// First date, YYYY-MM-DD.
+    start_date: Option<String>,
+    /// HH:MM (24h).
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    time: Option<Option<String>>,
+    /// "daily", "weekly", "monthly" or "yearly".
+    frequency: Option<String>,
+    /// Repeat every N periods.
+    interval: Option<i64>,
+    /// Weekly: "mon".."sun".
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<Vec<String>>")]
+    weekdays: Option<Option<Vec<String>>>,
+    /// Monthly: "each" or "onThe".
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    month_mode: Option<Option<String>>,
+    /// Monthly "each": days of the month.
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<Vec<i64>>")]
+    month_days: Option<Option<Vec<i64>>>,
+    /// Monthly "onThe": first, second, third, fourth, fifth or last.
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    ordinal: Option<Option<String>>,
+    /// Monthly "onThe": "weekday", "weekend" or a day name.
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    ordinal_day: Option<Option<String>>,
+    /// Yearly: months 1-12.
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<Vec<i64>>")]
+    months: Option<Option<Vec<i64>>>,
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<i64>")]
+    day_of_month: Option<Option<i64>>,
+    /// "never", "after" or "on".
+    end_mode: Option<String>,
+    /// End "after" this many occurrences.
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<i64>")]
+    end_count: Option<Option<i64>>,
+    /// End "on" this date, YYYY-MM-DD.
+    #[serde(default, deserialize_with = "patch")]
+    #[schemars(with = "Option<String>")]
+    end_date: Option<Option<String>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -178,7 +279,11 @@ struct SetAccountBalanceArgs {
     /// The real balance in integer cents; zero and negatives (owed) are allowed.
     #[schemars(with = "i64")]
     real_balance_cents: Value,
-    /// Record the difference as income/expense instead of an adjustment (default false).
+    /// false (default): book the difference as a balance adjustment, which stays
+    /// out of income and expense totals. true: book it as income (balance goes
+    /// up) or expense (goes down) under the protected balance-correction
+    /// category. Ignored when the account has no activity besides its opening
+    /// balance: the opening balance is changed instead.
     record_as_income_expense: Option<bool>,
 }
 
@@ -190,9 +295,11 @@ struct UpdateNetWorthArgs {
     /// New value in integer cents; zero allowed.
     #[schemars(with = "i64")]
     balance_cents: Value,
-    /// Gain or loss category id or name.
+    /// Income category (value went up) or expense category (went down), id or
+    /// name. Used only when the account has no saved gain/loss category for
+    /// that direction; then it is required. Protected categories are refused.
     category_id: Option<String>,
-    /// HH:MM (24h).
+    /// HH:MM (24h); required unless the app has times turned off.
     time: Option<String>,
 }
 
@@ -231,23 +338,23 @@ pub fn definitions() -> Vec<ToolDef> {
     vec![
         wtool!("set_budgets", "Set this month's budget for one or more expense categories. Amounts are integer cents; amountCents null clears a budget. Categories accept an id or exact name. Returns the month's plan.", SetBudgetsArgs),
         wtool!("create_goal", "Create a savings goal on an account (cash, e-wallet, savings or current). targetCents is integer cents; targetDate is YYYY-MM-DD.", GoalArgs),
-        wtool!("update_goal", "Change a savings goal; send id plus the full set of fields.", GoalArgs),
-        wtool!("delete_goal", "Delete a savings goal by id.", IdArgs),
-        wtool!("create_schedule", "Create a recurring income, expense, transfer or payment. Amounts are integer cents; dates are YYYY-MM-DD.", ScheduleArgs),
-        wtool!("update_schedule", "Replace a recurring schedule; send id plus the full set of fields.", ScheduleArgs),
+        wtool!("update_goal", "Change a savings goal. Patch: send id plus only the fields to change; an omitted field keeps its current value and targetDate null clears the date. targetCents is integer cents.", UpdateGoalArgs),
+        wtool!("delete_goal", "Delete a savings goal by id (names are not accepted).", GoalIdArgs),
+        wtool!("create_schedule", "Create a recurring income, expense, transfer or payment. Amounts are integer cents; dates are YYYY-MM-DD. Warning: an \"auto\" schedule whose startDate is in the past catches up: the app posts every due date from startDate through today as real transactions on its next schedule pass (when it opens or regains focus). Use \"tap\" or a future startDate unless the user wants those past entries.", ScheduleArgs),
+        wtool!("update_schedule", "Change a recurring schedule. Patch: send id plus only the fields to change; an omitted field keeps its current value and null clears an optional one (such as description or endDate). Changing frequency may need the matching weekdays, monthDays or months. When changing kind, also send the fields the new kind needs.", UpdateScheduleArgs),
         wtool!("delete_schedule", "Delete a recurring schedule by id.", ScheduleIdArgs),
         wtool!("post_occurrence", "Post a due occurrence of a tap-mode schedule as a real transaction. amountCents is integer cents; date is YYYY-MM-DD.", PostOccurrenceArgs),
         wtool!("skip_occurrence", "Skip a due occurrence of a schedule so it no longer shows as upcoming.", SkipOccurrenceArgs),
         wtool!("create_account", "Create an account. Amounts are integer cents.", CreateAccountArgs),
         wtool!("update_account", "Rename or retype an account, or change its opening balance or credit limit (integer cents). id accepts an id or exact name.", UpdateAccountArgs),
-        wtool!("archive_account", "Archive an account by id or exact name.", IdArgs),
-        wtool!("restore_account", "Restore an archived account by id or exact name.", IdArgs),
-        wtool!("set_account_balance", "Reconcile an account to its real balance (integer cents, may be zero or negative). Adds an adjustment for the difference.", SetAccountBalanceArgs),
-        wtool!("update_net_worth", "Record a new value for a fixed deposit, investment, unit trust or crypto account (integer cents).", UpdateNetWorthArgs),
+        wtool!("archive_account", "Archive an account. id accepts an id or exact name.", IdArgs),
+        wtool!("restore_account", "Restore an archived account. id accepts an id or exact name.", IdArgs),
+        wtool!("set_account_balance", "Changes an account's balance: reconciles it to realBalanceCents (integer cents, may be zero or negative for money owed) by booking the difference dated today. Confirm the real figure with the user before calling; never guess it. recordAsIncomeExpense false (default) books a balance adjustment that stays out of income/expense totals; true books it as income or expense under the protected balance-correction category. An account with only its opening balance has that opening balance changed instead.", SetAccountBalanceArgs),
+        wtool!("update_net_worth", "Changes net worth: records a new value (integer cents, zero or more) for a fixed deposit, investment, unit trust or crypto account, booking the change dated today as income (gain) or expense (loss). Confirm the real figure with the user before calling. categoryId is the gain (income) or loss (expense) category, needed only when the account has no saved one for that direction.", UpdateNetWorthArgs),
         wtool!("create_category", "Create a category, or a subcategory when parentId is given (id or exact name).", CreateCategoryArgs),
         wtool!("update_category", "Rename or restyle a category. id accepts an id or exact name.", UpdateCategoryArgs),
-        wtool!("archive_category", "Archive a category (and its subcategories) by id or exact name.", IdArgs),
-        wtool!("restore_category", "Restore an archived category by id or exact name.", IdArgs),
+        wtool!("archive_category", "Archive a category and its subcategories. id accepts an id or exact name.", IdArgs),
+        wtool!("restore_category", "Restore an archived category. id accepts an id or exact name.", IdArgs),
     ]
 }
 
@@ -307,12 +414,88 @@ fn schedule_write(conn: &Connection, a: ScheduleArgs) -> AppResult<ScheduleWrite
     })
 }
 
-fn deleted(id: &str) -> Value {
-    json!({"deleted": true, "id": id})
+/// Patch update: omitted fields keep the stored goal; `service::update_goal`
+/// still validates the merged set.
+fn update_goal(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
+    let a: UpdateGoalArgs = parse_args(name, args)?;
+    let target = opt_cents(a.target_cents, "targetCents")?;
+    let target_date = match a.target_date {
+        Some(Some(d)) => Some(Some(resolve::parse_date(&d)?)),
+        other => other.map(|_| None),
+    };
+    let cur = service::get_goal(conn, &a.id)?;
+    let account_id = match a.account_id {
+        Some(k) => resolve::resolve_account(conn, &k)?,
+        None => cur.account_id,
+    };
+    let write = GoalWrite {
+        id: Some(a.id),
+        name: a.name.unwrap_or(cur.name),
+        account_id,
+        target_cents: target.unwrap_or(cur.target_cents),
+        target_date: target_date.unwrap_or(cur.target_date),
+    };
+    to_json(service::update_goal(conn, write)?)
 }
 
-fn need_id(id: Option<String>, tool: &str) -> AppResult<String> {
-    id.ok_or_else(|| AppError::Validation(format!("{tool} needs the id of the item to change")))
+/// Patch update: omitted fields keep the stored schedule; kind-specific fields
+/// carry over only while the kind stays the same. `schedules::update_schedule`
+/// still validates the merged set.
+fn update_schedule(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
+    let a: UpdateScheduleArgs = parse_args(name, args)?;
+    let amount = opt_cents(a.amount_cents, "amountCents")?;
+    let start_date = a.start_date.as_deref().map(resolve::parse_date).transpose()?;
+    let end_date = match a.end_date {
+        Some(Some(d)) => Some(Some(resolve::parse_date(&d)?)),
+        other => other.map(|_| None),
+    };
+    let now = local_now();
+    let cur = schedules::get_schedule(conn, &a.id, now)?;
+    let kind = a.kind.unwrap_or_else(|| cur.kind.clone());
+    let same_kind = kind == cur.kind;
+    let cat_kind = Some(kind.as_str()).filter(|k| matches!(*k, "income" | "expense"));
+    let account_id = match a.account_id {
+        Some(k) => resolve::resolve_account(conn, &k)?,
+        None => cur.account_id.clone(),
+    };
+    let to_account_id = match a.to_account_id {
+        Some(Some(k)) => Some(resolve::resolve_account(conn, &k)?),
+        Some(None) => None,
+        None => cur.to_account_id.clone().filter(|_| same_kind),
+    };
+    let category_id = match a.category_id {
+        Some(Some(k)) => Some(resolve::resolve_category(conn, &k, cat_kind)?),
+        Some(None) => None,
+        None => cur.category_id.clone().filter(|_| same_kind),
+    };
+    let write = ScheduleWrite {
+        mode: a.mode.unwrap_or(cur.mode),
+        kind,
+        amount_cents: amount.unwrap_or(cur.amount_cents),
+        account_id,
+        to_account_id,
+        category_id,
+        description: a.description.unwrap_or(cur.description),
+        start_date: start_date.unwrap_or(cur.start_date),
+        time: a.time.unwrap_or(cur.time),
+        frequency: a.frequency.unwrap_or(cur.frequency),
+        interval: a.interval.unwrap_or(cur.interval),
+        weekdays: a.weekdays.map(Option::unwrap_or_default).unwrap_or(cur.weekdays),
+        month_mode: a.month_mode.unwrap_or(cur.month_mode),
+        month_days: a.month_days.map(Option::unwrap_or_default).unwrap_or(cur.month_days),
+        ordinal: a.ordinal.unwrap_or(cur.ordinal),
+        ordinal_day: a.ordinal_day.unwrap_or(cur.ordinal_day),
+        months: a.months.map(Option::unwrap_or_default).unwrap_or(cur.months),
+        day_of_month: a.day_of_month.unwrap_or(cur.day_of_month),
+        end_mode: a.end_mode.unwrap_or(cur.end_mode),
+        end_count: a.end_count.unwrap_or(cur.end_count),
+        end_date: end_date.unwrap_or(cur.end_date),
+    };
+    to_json(schedules::update_schedule(conn, &a.id, write, now)?)
+}
+
+fn deleted(id: &str) -> Value {
+    json!({"deleted": true, "id": id})
 }
 
 fn no_id(id: &Option<String>, tool: &str, update: &str) -> AppResult<()> {
@@ -353,13 +536,9 @@ fn run(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
             no_id(&a.id, name, "update_goal")?;
             to_json(service::create_goal(conn, goal_write(conn, a)?)?)
         }
-        "update_goal" => {
-            let a: GoalArgs = parse_args(name, args)?;
-            need_id(a.id.clone(), name)?;
-            to_json(service::update_goal(conn, goal_write(conn, a)?)?)
-        }
+        "update_goal" => update_goal(conn, name, args),
         "delete_goal" => {
-            let a: IdArgs = parse_args(name, args)?;
+            let a: GoalIdArgs = parse_args(name, args)?;
             service::delete_goal(conn, &a.id)?;
             Ok(deleted(&a.id))
         }
@@ -368,11 +547,7 @@ fn run(conn: &Connection, name: &str, args: Value) -> AppResult<Value> {
             no_id(&a.id, name, "update_schedule")?;
             to_json(schedules::create_schedule(conn, schedule_write(conn, a)?, local_now())?)
         }
-        "update_schedule" => {
-            let mut a: ScheduleArgs = parse_args(name, args)?;
-            let id = need_id(a.id.take(), name)?;
-            to_json(schedules::update_schedule(conn, &id, schedule_write(conn, a)?, local_now())?)
-        }
+        "update_schedule" => update_schedule(conn, name, args),
         "delete_schedule" => {
             let a: ScheduleIdArgs = parse_args(name, args)?;
             schedules::delete_schedule(conn, &a.id)?;
@@ -566,6 +741,47 @@ mod tests {
         let sid = s["id"].as_str().unwrap();
         assert_eq!(call(&c, "delete_schedule", json!({"id": sid})).unwrap(), json!({"deleted": true, "id": sid}));
         assert!(call(&c, "list_upcoming", json!({})).unwrap().as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn update_schedule_keeps_end_mode_and_interval_when_omitted() {
+        let c = setup();
+        let mut create = daily_tap(&days_ago(2));
+        create["interval"] = json!(2);
+        create["endMode"] = json!("after");
+        create["endCount"] = json!(5);
+        let s = call(&c, "create_schedule", create).unwrap();
+        let u = call(&c, "update_schedule", json!({"id": s["id"].clone(), "amountCents": 900})).unwrap();
+        assert_eq!(u["amountCents"], 900);
+        assert_eq!(u["interval"], 2);
+        assert_eq!(u["endMode"], "after");
+        assert_eq!(u["endCount"], 5);
+        assert_eq!(u["description"], "Coffee");
+        assert_eq!(u["time"], "00:00");
+        assert_eq!(u["mode"], "tap");
+        assert_eq!(u["categoryId"], s["categoryId"]);
+        // null clears a nullable field.
+        let u = call(&c, "update_schedule", json!({"id": s["id"].clone(), "description": null})).unwrap();
+        assert!(u["description"].is_null(), "{u}");
+        assert_eq!(u["amountCents"], 900);
+        assert!(matches!(call(&c, "update_schedule", json!({"id": "nope", "amountCents": 1})), Err(AppError::NotFound(_))));
+    }
+
+    #[test]
+    fn update_goal_keeps_target_date_when_omitted() {
+        let c = setup();
+        let g = call(&c, "create_goal", json!({"name": "Trip", "accountId": "maybank", "targetCents": 500_000, "targetDate": "2030-12-31"})).unwrap();
+        let id = g["id"].as_str().unwrap().to_string();
+        let u = call(&c, "update_goal", json!({"id": id, "name": "Big Trip"})).unwrap();
+        assert_eq!(u["name"], "Big Trip");
+        assert_eq!(u["targetDate"], "2030-12-31");
+        assert_eq!(u["targetCents"], 500_000);
+        assert_eq!(u["accountId"], g["accountId"]);
+        let u = call(&c, "update_goal", json!({"id": id, "targetDate": null})).unwrap();
+        assert!(u["targetDate"].is_null(), "{u}");
+        assert_eq!(u["name"], "Big Trip");
+        let m = validation(call(&c, "update_goal", json!({"id": id, "targetCents": 1.5})));
+        assert!(m.contains("integer cents"), "{m}");
     }
 
     #[test]
