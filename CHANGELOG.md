@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-10-23
+
 ### Added
 - **Assistant (MCP).** Settings → Assistant can let an AI agent you trust read and manage your finances (37 tools: transactions, budgets, goals, schedules, accounts, categories). It is off by default, listens only on this computer, and is meant to be reached over your own Tailscale tailnet through Tailscale Serve (keep the Tailscale access grant narrow), with a token that is shown once and stored only as a hash. Every change the agent makes is listed in the card's audit log with a short summary of what was sent and the id of the affected item; the log keeps the latest 10,000 entries. The agent is limited to 60 writes a minute, its edits change only the fields it sends, and its changes appear in the app right away. Sens must be open for the agent to reach it. See `docs/architecture/mcp.md`.
 - **Several AI providers for photo import.** Settings → AI import keeps a list of providers in the order you choose (drag, or the arrow buttons). Drafts tries them in turn and moves to the next one when a call fails, then says which provider read the photo and which were skipped. Each provider can be switched off without deleting it. Your earlier AI settings are not carried over; add the provider again.
@@ -461,7 +463,8 @@ Design: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.m
   TypeScript + Vite, integer-MYR-cents money, dark/light theming, and the
   Tauri/in-memory-mock dispatch seam for browser-only dev.
 
-[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.10.0
 [0.9.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.9.1
