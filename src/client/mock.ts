@@ -334,6 +334,10 @@ const mcp: { enabled: boolean; port: number; running: boolean; hasToken: boolean
   enabled: false, port: MCP_DEFAULT_PORT, running: false, hasToken: false,
 };
 const mcpStatus = (): McpStatus => ({ ...mcp, error: null });
+// Mirrors commands.rs `reject_mcp_key`: the Assistant card owns the mcp_ keys.
+const rejectMcpKey = (key: string) => {
+  if (key.trim().startsWith("mcp_")) fail("ValidationError", "That setting is managed by the Assistant card.");
+};
 const resetMcp = () => Object.assign(mcp, { enabled: false, port: MCP_DEFAULT_PORT, running: false, hasToken: false });
 
 function sortedProviders(): AiProviderRowMock[] {
@@ -1616,8 +1620,10 @@ async function mockInvokeInner<T>(command: string, args: Record<string, unknown>
     case "list_mcp_audit":
       return [] as T;
     case "get_setting":
+      rejectMcpKey(String(a.key));
       return (settings.get(String(a.key)) ?? null) as T;
     case "set_setting": {
+      rejectMcpKey(String(a.key));
       if (!String(a.key).trim()) fail("ValidationError", "Key cannot be empty");
       settings.set(String(a.key), String(a.value));
       return undefined as T;

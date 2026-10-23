@@ -424,6 +424,14 @@ describe("get_setting / set_setting round-trip", () => {
       mockInvoke("set_setting", { key: "  ", value: "v" }),
     ).rejects.toMatchObject({ code: "ValidationError" });
   });
+
+  it("rejects the MCP keys like the Rust commands do", async () => {
+    const error = { code: "ValidationError", message: "That setting is managed by the Assistant card." };
+    for (const key of ["mcp_token_hash", "mcp_enabled", "mcp_port", " mcp_port"]) {
+      await expect(mockInvoke("get_setting", { key })).rejects.toMatchObject(error);
+      await expect(mockInvoke("set_setting", { key, value: "1" })).rejects.toMatchObject(error);
+    }
+  });
 });
 
 // ── balance correction as income/expense ──────────────────────────────────────
