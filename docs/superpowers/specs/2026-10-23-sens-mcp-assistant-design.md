@@ -136,3 +136,9 @@ Deviations from this spec:
 - The generic `get_setting` / `set_setting` commands **reject `mcp_` keys**.
 - Tools are split across `tools.rs` and `tools_manage.rs`.
 - **37 tools**, not ~30.
+- The audit list's "link to the affected transaction" became the **affected id plus a one-line args
+  summary** (no deep-link route exists). `args_json` stores `{"args", "affectedId"}`, capped at 8 KB.
+- **Audit bounds:** only the first rate-limited call per window is audited, and the log keeps the newest
+  10,000 rows.
+- `update_transaction`, `update_schedule` and `update_goal` are **patches** (omit to keep, `null` to
+  clear), not full replacements.

@@ -76,6 +76,16 @@ Conventions the tools follow:
   error, never a guess.
 - Errors are the app's `AppError` codes in the tool result. Argument mistakes become `ValidationError`
   with plain-word messages.
+- **`update_transaction`, `update_schedule` and `update_goal` are patches.** The agent sends the id plus
+  only the fields to change: an omitted field keeps its stored value, and an explicit `null` clears a
+  field that is nullable in the model (for example `description`, `endDate`, `targetDate`). The tool
+  loads the current row (`service::get_transaction`, `schedules::get_schedule`, `service::get_goal`),
+  merges, and calls the normal service update, so every service rule still runs. Amounts and dates are
+  checked before anything is read or written. Kind-specific fields (category, destination account,
+  split lines) carry over only while the kind stays the same. For transactions, omitted `splits` keeps
+  the existing split lines, and `[]` or `null` removes the split (then `categoryId`, or the current
+  header category, is used); a split transaction's amount can only change together with new splits.
+  The patch-arg structs use `Option<Option<T>>` with the `patch` deserializer to tell omitted from null.
 
 ## Auth and caller identity
 
@@ -102,17 +112,32 @@ Conventions the tools follow:
 ## Audit log and rate limit
 
 - Migration **018** creates `mcp_audit_log` (`id`, `at`, `tailscale_user`, `tool`, `args_json`, `ok`,
-  `error_code`; index on `at`). There is **one row per write call**, including failed and rate-limited
-  ones, and **none for reads**. Tool args are stored; the token never is.
+  `error_code`; index on `at`). There is **one row per write call**, including failed ones and the first
+  rate-limited call of each window, and **none for reads**. Tool args are stored; the token never is.
+- **`args_json` shape:** `{"args": <the tool args>, "affectedId": <string or null>}`. `affectedId` is the
+  top-level `id` of the tool's result on success; otherwise, for tools that address an existing row
+  (anything not `create_*`), the `id` / `expenseId` / `scheduleId` / `accountId` the caller sent, as
+  given (it can be a name); otherwise null. The whole string is capped at **8 KB**; a cut value ends
+  with `...[truncated]` and is no longer valid JSON (`affectedId` sorts first, so it usually survives).
+  This is a JSON shape inside the existing column, not a migration.
+- **Retention:** after each insert the log is trimmed to the newest **10,000** rows
+  (`repo::trim_mcp_audit`, same order as the list).
+- **List:** `list_mcp_audit` returns newest first; `limit` defaults to 50 and is clamped to 1..=200.
+  The Assistant card shows the time, tool, caller and ok/failed, plus a one-line args summary and the
+  short affected id (full id in the tooltip, copied on click) from `src/lib/mcpAudit.ts`
+  (`summarizeAudit`). There is no deep link to the row.
 - The audit row is written after the write commits. It is **not atomic** with the write: a crash in
   between loses the row. An audit-write failure does not turn a committed write into an error (the client
   would retry and duplicate it).
 - **Rate limit:** 60 write calls per minute, a fixed window shared by all sessions of one running server.
-  The 61st returns `AppError::RateLimited` (code `rate_limited`) and is itself audited. Reads are not
-  limited.
-- **Panic safety:** a panic inside a tool is caught and returned as a `DatabaseError`; any open
-  transaction is rolled back and the shared connection's mutex is un-poisoned so the desktop UI keeps
-  working.
+  The 61st returns `AppError::RateLimited` (code `rate_limited`). Only the **first blocked call of each
+  window** is audited; the limiter counts later blocked calls in memory (reset with the window) and they
+  get no row and never take the DB lock, so a client hammering the limit cannot grow the log. Reads are
+  not limited.
+- **Panic safety:** a panic inside a tool is caught (`catch_unwind`) and returned as a `DatabaseError`.
+  The connection mutex is not poisoned because its guard sits outside `catch_unwind` and is dropped after
+  the unwind has been caught, never while the thread is panicking. Any transaction the tool had open is
+  rolled back when its guard drops during the unwind. The desktop UI keeps working.
 - **Factory reset** (`McpHandle::reset_with`) wipes the data and the audit table, stops the server,
   disables the feature and clears the token.
 
@@ -133,10 +158,10 @@ Tauri commands (stubbed in `mock.ts`; the server itself is Rust-only and never r
 
 | Command | Does |
 |---|---|
-| `get_mcp_status` | `{ enabled, port, running, hasToken, error }` |
+| `get_mcp_status` | `{ enabled, port, running, hasToken, error }`. Enabled with no stored token hash never starts the server: `running` is false and `error` is "No token — generate one in Settings." |
 | `set_mcp_enabled` | Saves enabled (and an optional port), then starts or stops the server. Enabling without a token is a `ValidationError` ("Generate a token first."); port 0 is rejected |
 | `rotate_mcp_token` | Returns a new plaintext token once; the old one stops working at once |
-| `list_mcp_audit` | The audit rows, newest first |
+| `list_mcp_audit` | The audit rows, newest first (`limit` default 50, clamped to 1..=200) |
 
 ## Setup with Tailscale
 
@@ -165,8 +190,9 @@ the `.ts.net` hostname).
 
 - **App must be open.** The server lives inside the desktop app; the agent is offline when Sens is closed.
 - **Full write access, no approval step.** A wrong inference or a leaked token can change the books. The
-  mitigations are tailnet-only reach, the token, the rate limit and the audit log. They reduce the risk;
-  they do not remove it.
+  mitigations are the token, the rate limit, the audit log and limited reach: the server is meant to be
+  reached only over your own tailnet, and who can reach it depends on your Tailscale ACL. They reduce the
+  risk; they do not remove it.
 - **Not verified end to end here.** The tests drive the server over real HTTP on loopback with an rmcp
   client. A live Tailscale Serve setup and a real third-party connector (for example Grokbot) have not
   been verified in this repo. The real Tauri `data-changed` event path is unit-tested only.
