@@ -22,6 +22,8 @@ const KEY_ENABLED: &str = "mcp_enabled";
 const KEY_PORT: &str = "mcp_port";
 const KEY_TOKEN_HASH: &str = "mcp_token_hash";
 const DEFAULT_PORT: u16 = 8765;
+/// Status error when the server is enabled but no token hash is stored.
+const NO_TOKEN: &str = "No token — generate one in Settings.";
 /// `stop()` releases the listener asynchronously, so a restart on the same
 /// port may need a few bind attempts.
 const BIND_RETRY_TOTAL: Duration = Duration::from_secs(1);
@@ -114,6 +116,12 @@ impl McpHandle {
                     s.stop();
                 }
                 self.set_error(None);
+            } else if settings.token_hash.is_empty() {
+                // Enabled without a token (e.g. a hand-edited DB): never serve.
+                if let Some(s) = guard.take() {
+                    s.stop();
+                }
+                self.set_error(Some(NO_TOKEN.into()));
             } else if running_port != Some(settings.port) {
                 let restarting = guard.take().map(|s| s.stop()).is_some();
                 let started = Instant::now();
@@ -294,6 +302,24 @@ mod tests {
         }
         assert_ne!(setting(&db, KEY_ENABLED).as_deref(), Some("1"));
         assert!(!handle.status(&db).running);
+    }
+
+    #[test]
+    fn enabled_with_empty_hash_does_not_start() {
+        let db = db();
+        let port = free_port();
+        {
+            let conn = db.lock().unwrap();
+            service::set_setting(&conn, KEY_ENABLED, "1").unwrap();
+            service::set_setting(&conn, KEY_PORT, &port.to_string()).unwrap();
+        }
+        let handle = McpHandle::new(&db);
+        let st = handle.apply_with(&db, noop());
+        assert!(st.enabled);
+        assert!(!st.running);
+        assert!(!st.has_token);
+        assert_eq!(st.error.as_deref(), Some("No token — generate one in Settings."));
+        assert!(!can_connect(port), "nothing may listen without a token");
     }
 
     #[test]
