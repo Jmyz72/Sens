@@ -8,7 +8,7 @@ Guidance for AI coding agents (Cursor, Claude Code, Codex, …) working in this 
 Sens is a **local-first desktop personal-finance tracker** for Malaysian Ringgit (MYR).
 
 - **Stack:** Tauri v2 (Rust) + React 19 + TypeScript + Vite + SQLite (`rusqlite`, bundled).
-- **Scope:** manual entry plus photo import (on-device OCR, then a user-configured AI endpoint). No sync, no bank connections, no multi-currency. Network traffic is the AI call for photo import, plus the optional MCP assistant: an opt-in, off-by-default listener on 127.0.0.1 that is reachable only through the user's own Tailscale tailnet.
+- **Scope:** manual entry plus photo import (on-device OCR, then a user-configured AI endpoint). No sync, no bank connections, no multi-currency. Network traffic is the AI call for photo import, plus the optional MCP assistant: an opt-in, off-by-default listener that binds 127.0.0.1 only and is meant to be published only to the user's own tailnet via Tailscale Serve.
 - **Authoritative design:** `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.md`.
   Newer features each have a spec in `docs/superpowers/specs/`. **Read the relevant spec before
   changing data-model or business-rule behavior.**

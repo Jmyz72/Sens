@@ -95,6 +95,12 @@ Per-release detail lives in [`CHANGELOG.md`](./CHANGELOG.md).
 
 Spec files above live in `docs/superpowers/specs/`.
 
+### 🟡 Unreleased (next release)
+
+| Status | What landed | Spec |
+|---|---|---|
+| 🟡 unreleased | **MCP assistant:** an opt-in MCP server embedded in the app, meant to be reached over your own tailnet through Tailscale Serve (37 tools, token auth, audit log, rate limit, live refresh). | `2026-10-23-sens-mcp-assistant-design.md` · [architecture](docs/architecture/mcp.md) |
+
 ## Planned — the climb to 1.0
 
 Listed in **priority order.** The version is assigned when a phase ships. Finishing a phase moves it
@@ -235,12 +241,10 @@ Spec: _TBD_
 
 ## Later / unscheduled
 
-### MCP assistant (AI CFO)
+### MCP assistant: later ideas
 
-Shipped unreleased: an opt-in MCP server embedded in the app, reached over Tailscale (37 tools, token
-auth, audit log, rate limit, live refresh). Spec: [`2026-10-23-sens-mcp-assistant-design.md`](docs/superpowers/specs/2026-10-23-sens-mcp-assistant-design.md) · [architecture](docs/architecture/mcp.md).
+The assistant itself is done but unreleased (see the *Unreleased* section above).
 
-- [x] Embedded MCP server, Settings → Assistant card, audit log (unreleased)
 - [ ] Propose-and-approve mode (agent drafts, you confirm)
 - [ ] Headless mode that keeps running with the window closed
 - [ ] Per-tool permissions (for example read-only)

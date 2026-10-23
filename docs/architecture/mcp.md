@@ -1,7 +1,7 @@
 # MCP assistant (agent access over Tailscale)
 
 An opt-in MCP server embedded in the desktop app. An AI agent you trust (for example one on your cloud
-machine) can read your ledger and manage it through 37 tools, reached privately over Tailscale Serve.
+machine) can read your ledger and manage it through 37 tools, meant to be reached over your own tailnet through Tailscale Serve.
 Read this before adding or changing an agent tool, the auth layers, or the audit log.
 
 Spec: `docs/superpowers/specs/2026-10-23-sens-mcp-assistant-design.md`.
@@ -25,7 +25,7 @@ Spec: `docs/superpowers/specs/2026-10-23-sens-mcp-assistant-design.md`.
 ## Architecture and request flow
 
 Off by default. Turn it on in Settings → Assistant. The server binds **`127.0.0.1` only** (default port
-`8765`, setting `mcp_port`) and speaks MCP **Streamable HTTP** at the path `/mcp` (stateful sessions:
+`8765`, setting `mcp_port`) and speaks MCP **Streamable HTTP** at the path `/mcp` (stateful sessions, rmcp's default configuration and not set by Sens code:
 `initialize`, then the `Mcp-Session-Id` header). It is never exposed directly; the user publishes it to
 their tailnet with `tailscale serve`, which forwards to loopback.
 
@@ -91,7 +91,9 @@ Conventions the tools follow:
   rmcp's own allow-list is disabled because it only knows loopback names and Tailscale Serve forwards the
   tailnet hostname. This layer is defense in depth.
 - **Caller identity:** Tailscale Serve adds `Tailscale-User-Login` for user devices; that value is the
-  audit identity (truncated to 256 chars). **Tagged devices** (for example `tag:grokbot`) send no user
+  audit identity (truncated to 256 chars). The server trusts the value verbatim and it is
+  informational only: it is meaningful only if Tailscale Serve is the sole route to the port (a local
+  process holding the token could send any value). The bearer token is the real control. **Tagged devices** (for example `tag:grokbot`) send no user
   header and are audited as the label `tagged device`.
 - **Tailscale ACL (yours to configure):** the outer lock is an ACL grant from the agent's tag to this
   machine on port 443 only, set in the Tailscale admin console. Sens cannot set it. Do not leave the
@@ -138,14 +140,24 @@ Tauri commands (stubbed in `mock.ts`; the server itself is Rust-only and never r
 
 ## Setup with Tailscale
 
-1. In Sens: Settings → Assistant → generate a token (copy it now; it is not shown again), then turn the
+> **Use `tailscale serve`, never `tailscale funnel`.** Funnel would publish a ledger-writing endpoint to
+> the public internet with a bearer token as the only barrier.
+
+Prerequisites: MagicDNS and HTTPS certificates are enabled for the tailnet (needed for `--https=443` and
+the `.ts.net` hostname).
+
+1. **Lock the door first.** In the Tailscale admin console, add a grant that lets only the agent's tag
+   (or device) reach this machine on port 443, and remove or avoid the default allow-all rule. Do this
+   before publishing: until the grant exists, under allow-all any tailnet device that holds or guesses the
+   token can reach the endpoint.
+2. In Sens: Settings → Assistant → generate a token (copy it now; it is not shown again), then turn the
    assistant on.
-2. In a terminal on the same machine, run the command the card shows:
+3. In a terminal on the same machine, run the command the card shows:
    `tailscale serve --bg --https=443 http://127.0.0.1:<port>`
-3. In the Tailscale admin console, add a grant that lets only the agent's tag (or device) reach this
-   machine on port 443. Remove any allow-all rule.
 4. On the agent's machine, register the server:
    `claude mcp add --transport http sens https://<machine>.<tailnet>.ts.net/mcp --header "Authorization: Bearer <token>"`
+   Passing the token with `--header` leaves it in shell history and in the agent's MCP config. If it
+   leaks, rotate the token in Settings; that signs the agent out at once.
 5. Ask the agent for the overview, then log one expense. The row should appear in the app without a
    manual refresh, and in the Assistant card's audit list.
 
