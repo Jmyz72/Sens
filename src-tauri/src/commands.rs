@@ -3,6 +3,7 @@
 //! delegate to the service layer.
 
 use crate::error::AppResult;
+use crate::mcp::{self, McpHandle};
 use crate::models::*;
 use crate::schedules;
 use crate::service;
@@ -234,8 +235,38 @@ pub fn set_setting(state: State<'_, DbState>, key: String, value: String) -> App
 }
 
 #[tauri::command]
-pub fn reset_app(state: State<'_, DbState>) -> AppResult<()> {
-    with_conn!(state, c => service::reset_app(&c))
+pub fn reset_app(app: tauri::AppHandle, mcp: State<'_, McpHandle>) -> AppResult<()> {
+    // Also drops the MCP token and stops the server (settings are wiped).
+    mcp.reset(&app).map(|_| ())
+}
+
+// ── MCP assistant ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_mcp_status(app: tauri::AppHandle, mcp: State<'_, McpHandle>) -> McpStatus {
+    mcp.get_status(&app)
+}
+
+#[tauri::command]
+pub fn set_mcp_enabled(
+    app: tauri::AppHandle,
+    mcp: State<'_, McpHandle>,
+    enabled: bool,
+    port: Option<u16>,
+) -> AppResult<McpStatus> {
+    mcp.set_enabled(&app, enabled, port)
+}
+
+/// Returns the plaintext token once; only its hash is stored.
+#[tauri::command]
+pub fn rotate_mcp_token(app: tauri::AppHandle, mcp: State<'_, McpHandle>) -> AppResult<String> {
+    mcp.rotate(&app)
+}
+
+#[tauri::command]
+pub fn list_mcp_audit(state: State<'_, DbState>, limit: Option<i64>) -> AppResult<Vec<McpAuditEntry>> {
+    let limit = limit.unwrap_or(50).clamp(1, 200);
+    with_conn!(state, c => mcp::audit::list(&c, limit))
 }
 
 // ── Schedules ────────────────────────────────────────────────────────────────

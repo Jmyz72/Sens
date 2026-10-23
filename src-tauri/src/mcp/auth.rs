@@ -29,7 +29,6 @@ fn to_hex(bytes: &[u8]) -> String {
 }
 
 /// 32 random bytes as 64 lowercase hex chars.
-#[allow(dead_code)] // the token generate/rotate Tauri command arrives in Task 8
 pub fn generate_token() -> String {
     let mut buf = [0u8; 32];
     rand::rng().fill_bytes(&mut buf);

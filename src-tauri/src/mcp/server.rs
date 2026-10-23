@@ -48,14 +48,10 @@ pub struct ServerConfig {
 
 /// A started server. `stop` (or dropping it) shuts it down.
 pub struct RunningServer {
-    #[allow(dead_code)] // read by the app lifecycle in Task 8
     pub port: u16,
     shutdown: tokio::sync::oneshot::Sender<()>,
 }
 
-// Narrow allow: the app lifecycle (Task 8) calls `start`/`stop`; until then
-// only tests do, and the non-test build would flag the whole MCP chain.
-#[allow(dead_code)]
 impl RunningServer {
     pub fn stop(self) {
         let _ = self.shutdown.send(());
@@ -68,7 +64,6 @@ fn start_failed(e: std::io::Error) -> AppError {
 
 /// Binds `127.0.0.1:port` (0 = ephemeral) synchronously, then serves on the
 /// current tokio runtime if there is one, otherwise on Tauri's runtime.
-#[allow(dead_code)] // called by the app lifecycle in Task 8 (see RunningServer)
 pub fn start(cfg: ServerConfig) -> AppResult<RunningServer> {
     let std_listener =
         std::net::TcpListener::bind(("127.0.0.1", cfg.port)).map_err(|e| bind_error(cfg.port, e))?;

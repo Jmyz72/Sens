@@ -43,6 +43,12 @@ pub fn run() {
             std::fs::create_dir_all(&dir).expect("could not create app data dir");
             let conn = db::open(&dir.join("sens.db")).expect("could not open database");
             app.manage(DbState(Arc::new(Mutex::new(conn))));
+            let db = app.state::<DbState>().0.clone();
+            let handle = mcp::McpHandle::new(&db);
+            app.manage(handle);
+            // Restore an enabled server after a restart; a bind failure is
+            // reported through the status, not fatal.
+            app.state::<mcp::McpHandle>().apply(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -86,6 +92,10 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::reset_app,
+            commands::get_mcp_status,
+            commands::set_mcp_enabled,
+            commands::rotate_mcp_token,
+            commands::list_mcp_audit,
             commands::create_schedule,
             commands::update_schedule,
             commands::delete_schedule,
