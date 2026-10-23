@@ -8,7 +8,7 @@ pub const MIGRATIONS: &[(i64, &str)] = &[
     (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008),
     (9, MIGRATION_009), (10, MIGRATION_010), (11, MIGRATION_011), (12, MIGRATION_012),
     (13, MIGRATION_013), (14, MIGRATION_014), (15, MIGRATION_015), (16, MIGRATION_016),
-    (17, MIGRATION_017),
+    (17, MIGRATION_017), (18, MIGRATION_018),
 ];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
@@ -541,4 +541,18 @@ CREATE TABLE ai_providers (
     updated_at TEXT NOT NULL
 );
 DELETE FROM app_settings WHERE key IN ('ai_base_url', 'ai_model', 'ai_api_key');
+"#;
+
+// MCP assistant audit log: one row per write tool call made over MCP.
+const MIGRATION_018: &str = r#"
+CREATE TABLE mcp_audit_log (
+    id TEXT PRIMARY KEY,
+    at TEXT NOT NULL,
+    tailscale_user TEXT,
+    tool TEXT NOT NULL,
+    args_json TEXT NOT NULL,
+    ok INTEGER NOT NULL,
+    error_code TEXT
+);
+CREATE INDEX idx_mcp_audit_log_at ON mcp_audit_log(at);
 "#;

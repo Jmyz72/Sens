@@ -1425,3 +1425,34 @@ fn map_check(e: rusqlite::Error) -> AppError {
         e.into()
     }
 }
+
+// ---- MCP audit log ----
+
+pub fn insert_mcp_audit(conn: &Connection, e: &McpAuditEntry) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO mcp_audit_log (id, at, tailscale_user, tool, args_json, ok, error_code)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![e.id, e.at, e.tailscale_user, e.tool, e.args_json, e.ok, e.error_code],
+    )?;
+    Ok(())
+}
+
+/// Newest first; `rowid` breaks ties for entries written in the same instant.
+pub fn list_mcp_audit(conn: &Connection, limit: i64) -> AppResult<Vec<McpAuditEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, at, tailscale_user, tool, args_json, ok, error_code
+         FROM mcp_audit_log ORDER BY at DESC, rowid DESC LIMIT ?1",
+    )?;
+    let rows = stmt.query_map([limit], |r| {
+        Ok(McpAuditEntry {
+            id: r.get(0)?,
+            at: r.get(1)?,
+            tailscale_user: r.get(2)?,
+            tool: r.get(3)?,
+            args_json: r.get(4)?,
+            ok: r.get(5)?,
+            error_code: r.get(6)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}

@@ -7,6 +7,7 @@ mod commands;
 mod db;
 mod drafts;
 pub mod error;
+mod mcp;
 mod models;
 mod ocr;
 mod recurrence;

@@ -30,7 +30,7 @@ pub enum AppError {
 }
 
 impl AppError {
-    fn code(&self) -> &'static str {
+    pub(crate) fn code(&self) -> &'static str {
         match self {
             AppError::Validation(_) => "ValidationError",
             AppError::NotFound(_) => "NotFound",
