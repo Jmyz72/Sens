@@ -231,11 +231,11 @@ Preferences are key/value rows, read and written through `client.getSetting` / `
 Settings also hosts the theme toggle, the About/updater panel, the **AI import** card, and the type-`RESET`
 factory-reset "Danger zone".
 
-**AI import** (`AiImportCard` in `src/screens/Settings.tsx`): preset buttons (Google AI Studio (Gemini),
-Ollama (local), OpenAI) fill the base URL and model; fields for base URL, model and API key (password
-input, left blank to keep the saved key); **Save & test** saves then calls `client.testAiConnection`,
-**Save** saves only, and **Remove key** appears when a key is saved. The card states that the key is stored
-unencrypted in the local database.
+**AI import** (`AiImportCard` in `src/screens/Settings.tsx`): preset buttons (Gemini, Groq, OpenRouter,
+Cerebras, Mistral, Ollama, LM Studio, OpenAI) fill the base URL and a suggested model; fields for base
+URL, model and API key (password input, left blank to keep the saved key); **Save & test** saves then
+calls `client.testAiConnection`, **Save** saves only, and **Remove key** appears when a key is saved.
+The card states that the key is stored unencrypted in the local database.
 
 **Window config:** the main window sets `dragDropEnabled: false` in `tauri.conf.json`.
 This is required so HTML5 drag-to-reorder (Categories) works in the Tauri webview. **Don't remove it.**

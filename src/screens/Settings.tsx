@@ -191,10 +191,16 @@ function ResetModal({ onClose }: { onClose: () => void }) {
 
 // ─── Settings screen ─────────────────────────────────────────────────────────
 
+// Model ids go stale as providers retire them; checked 2026-10-21. Free tiers first, then local, then paid.
 const AI_PRESETS: { label: string; name: string; baseUrl: string; model: string }[] = [
-  { label: "Google AI Studio (Gemini)", name: "Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
-  { label: "Ollama (local)", name: "Ollama", baseUrl: "http://localhost:11434/v1", model: "llama3.1" },
-  { label: "OpenAI", name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  { label: "Gemini · free tier", name: "Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-3.8-flash" },
+  { label: "Groq · free tier", name: "Groq", baseUrl: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-20b" },
+  { label: "OpenRouter · free models", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free" },
+  { label: "Cerebras · free tier", name: "Cerebras", baseUrl: "https://api.cerebras.ai/v1", model: "gpt-oss-120b" },
+  { label: "Mistral · free tier", name: "Mistral", baseUrl: "https://api.mistral.ai/v1", model: "mistral-small-latest" },
+  { label: "Ollama · local", name: "Ollama", baseUrl: "http://localhost:11434/v1", model: "llama3.1" },
+  { label: "LM Studio · local", name: "LM Studio", baseUrl: "http://localhost:1234/v1", model: "" },
+  { label: "OpenAI · paid", name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-5-mini" },
 ];
 
 const errorMessage = (error: unknown, fallback: string) =>
@@ -260,6 +266,9 @@ function AiProviderForm({ editing, onSaved, onCancel }: {
           </Btn>
         ))}
       </div>
+      <div style={{ fontSize: 12, color: t.faint, marginTop: -4, marginBottom: 12 }}>
+        Presets fill in the base URL and a suggested model. Providers rename models often: if Test fails, pick a model from the provider's own list. Free tiers have daily limits and may keep what you send.
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
         <label>
           <div style={{ fontSize: 11, color: t.dim, marginBottom: 4 }}>Name</div>
@@ -271,7 +280,7 @@ function AiProviderForm({ editing, onSaved, onCancel }: {
         </label>
         <label>
           <div style={{ fontSize: 11, color: t.dim, marginBottom: 4 }}>Model</div>
-          <input style={input} value={model} onChange={(e) => setModel(e.target.value)} placeholder="model name" />
+          <input style={input} value={model} onChange={(e) => setModel(e.target.value)} placeholder="model name (as the provider lists it)" />
         </label>
         <label>
           <div style={{ fontSize: 11, color: t.dim, marginBottom: 4 }}>API key {editing?.hasKey ? "(saved)" : "(optional for local)"}</div>
