@@ -1,16 +1,16 @@
 // Settings screen: appearance, dashboard preferences, and about.
 // All colors via theme tokens; segmented control matches AddTransaction kind selector style.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme, useThemeMode } from "../theme/ThemeProvider";
 import { hexA, ThemeMode } from "../theme/tokens";
-import { Btn, Card, SectionTitle, Modal, inputStyle } from "../components/ui";
+import { Btn, Card, Pill, SectionTitle, Modal, inputStyle } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { client } from "../client";
 import { useAppData } from "../store";
 import { useToast } from "../components/Toast";
 import type { AiProvider, McpAuditEntry, McpStatus } from "../types";
-import { notifyMcpStatusChanged, onDataChanged } from "../lib/dataChanged";
+import { notifyMcpStatusChanged, onMcpActivity } from "../lib/dataChanged";
 import { summarizeAudit } from "../lib/mcpAudit";
 import { formatLastChecked, updatePanelCopy, type useUpdater } from "../lib/updater";
 
@@ -363,6 +363,9 @@ function AssistantCard() {
   const [status, setStatus] = useState<McpStatus | null>(null);
   const [portText, setPortText] = useState("8765");
   const [audit, setAudit] = useState<McpAuditEntry[]>([]);
+  // Activity list shows every tool call by default; "Writes only" hides lookups.
+  const [writesOnly, setWritesOnly] = useState(false);
+  const writesOnlyRef = useRef(false);
   // The plaintext token lives only in this state; it is never persisted.
   const [token, setToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -372,7 +375,7 @@ function AssistantCard() {
 
   // Status + audit; `resyncPort` also resets the port field to the saved port.
   const refresh = async (resyncPort = false) => {
-    const [s, a] = await Promise.all([client.getMcpStatus(), client.listMcpAudit(50)]);
+    const [s, a] = await Promise.all([client.getMcpStatus(), client.listMcpAudit(50, writesOnlyRef.current)]);
     setStatus(s);
     setAudit(a);
     if (resyncPort) setPortText(String(s.port));
@@ -385,11 +388,17 @@ function AssistantCard() {
     };
     load(true);
     const onChange = () => load(false);
-    const off = onDataChanged(onChange);
+    const off = onMcpActivity(onChange);
     window.addEventListener("focus", onChange);
     return () => { alive = false; off(); window.removeEventListener("focus", onChange); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const pickFilter = (next: boolean) => {
+    writesOnlyRef.current = next;
+    setWritesOnly(next);
+    refresh().catch(() => {});
+  };
 
   const act = async (body: () => Promise<void>, fallback: string) => {
     setBusy(true);
@@ -531,9 +540,13 @@ function AssistantCard() {
         </Modal>
       )}
 
-      <div style={{ fontSize: 13.5, fontWeight: 500, color: t.text, marginBottom: 6 }}>Recent agent activity</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 500, color: t.text, flex: 1 }}>Recent agent activity</div>
+        <Pill on={!writesOnly} onClick={() => pickFilter(false)}>All</Pill>
+        <Pill on={writesOnly} onClick={() => pickFilter(true)}>Writes only</Pill>
+      </div>
       {audit.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: t.dim }}>No agent activity yet.</div>
+        <div style={{ fontSize: 12.5, color: t.dim }}>{writesOnly ? "No agent changes yet." : "No agent activity yet."}</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 260, overflowY: "auto" }}>
           {audit.map((r) => {
@@ -542,7 +555,10 @@ function AssistantCard() {
               <div key={r.id} style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 12, padding: "5px 8px", borderRadius: 7, background: t.panel2 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ color: t.faint, width: 150, flexShrink: 0 }}>{new Date(r.at).toLocaleString()}</span>
-                  <span style={{ fontFamily: t.mono, color: t.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.tool}</span>
+                  <span style={{ fontFamily: t.mono, color: t.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.tool}
+                    {!r.isWrite && <span style={{ fontFamily: "inherit", color: t.faint, marginLeft: 8, fontSize: 11 }}>read</span>}
+                  </span>
                   <span style={{ color: t.dim, flexShrink: 0 }}>{r.tailscaleUser ?? "tagged device"}</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, width: 70, color: r.ok ? t.income : t.negative }}>
                     <Icon name={r.ok ? "check" : "close"} size={13} color={r.ok ? t.income : t.negative} />

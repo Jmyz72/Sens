@@ -1430,30 +1430,32 @@ fn map_check(e: rusqlite::Error) -> AppError {
 
 pub fn insert_mcp_audit(conn: &Connection, e: &McpAuditEntry) -> AppResult<()> {
     conn.execute(
-        "INSERT INTO mcp_audit_log (id, at, tailscale_user, tool, args_json, ok, error_code)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![e.id, e.at, e.tailscale_user, e.tool, e.args_json, e.ok, e.error_code],
+        "INSERT INTO mcp_audit_log (id, at, tailscale_user, tool, args_json, ok, error_code, is_write)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![e.id, e.at, e.tailscale_user, e.tool, e.args_json, e.ok, e.error_code, e.is_write],
     )?;
     Ok(())
 }
 
-/// Keep only the newest `keep` rows (same order as `list_mcp_audit`).
-pub fn trim_mcp_audit(conn: &Connection, keep: i64) -> AppResult<()> {
+/// Keep only the newest `keep` rows of one kind, reads or writes (same order
+/// as `list_mcp_audit`). The other kind is untouched, so a burst of reads
+/// cannot push writes out of the log.
+pub fn trim_mcp_audit(conn: &Connection, is_write: bool, keep: i64) -> AppResult<()> {
     conn.execute(
-        "DELETE FROM mcp_audit_log WHERE rowid NOT IN
-           (SELECT rowid FROM mcp_audit_log ORDER BY at DESC, rowid DESC LIMIT ?1)",
-        [keep],
+        "DELETE FROM mcp_audit_log WHERE is_write = ?1 AND rowid NOT IN
+           (SELECT rowid FROM mcp_audit_log WHERE is_write = ?1 ORDER BY at DESC, rowid DESC LIMIT ?2)",
+        params![is_write, keep],
     )?;
     Ok(())
 }
 
 /// Newest first; `rowid` breaks ties for entries written in the same instant.
-pub fn list_mcp_audit(conn: &Connection, limit: i64) -> AppResult<Vec<McpAuditEntry>> {
+pub fn list_mcp_audit(conn: &Connection, limit: i64, writes_only: bool) -> AppResult<Vec<McpAuditEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT id, at, tailscale_user, tool, args_json, ok, error_code
-         FROM mcp_audit_log ORDER BY at DESC, rowid DESC LIMIT ?1",
+        "SELECT id, at, tailscale_user, tool, args_json, ok, error_code, is_write
+         FROM mcp_audit_log WHERE (?2 = 0 OR is_write = 1) ORDER BY at DESC, rowid DESC LIMIT ?1",
     )?;
-    let rows = stmt.query_map([limit], |r| {
+    let rows = stmt.query_map(params![limit, writes_only], |r| {
         Ok(McpAuditEntry {
             id: r.get(0)?,
             at: r.get(1)?,
@@ -1462,6 +1464,7 @@ pub fn list_mcp_audit(conn: &Connection, limit: i64) -> AppResult<Vec<McpAuditEn
             args_json: r.get(4)?,
             ok: r.get(5)?,
             error_code: r.get(6)?,
+            is_write: r.get(7)?,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)

@@ -85,8 +85,9 @@ a third-party AI.
 - Only the token's SHA-256 hash is stored (settings row). The token is shown once at generation.
   Neither the token nor request headers appear in logs or errors.
 - **Audit:** migration **018** (append-only) adds `mcp_audit_log(id, at, tailscale_user, tool,
-  args_json, ok, error_code)`. Every write tool records a row; reads are not logged. Settings shows
-  the last 50 entries with a link to the affected transaction. No one-click undo in v1.
+  args_json, ok, error_code)`. Every tool call records a row, reads included (migration **019**
+  adds `is_write`; reads are trimmed to 2,000 rows separately from writes, and an All / Writes only
+  filter hides them). Settings shows the last 50 entries with a link to the affected transaction. No one-click undo in v1.
 - **Rate limit:** 60 write calls per minute; excess returns `rate_limited` and is audited.
 
 ## UI sync

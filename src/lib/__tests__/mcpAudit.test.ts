@@ -11,6 +11,7 @@ const entry = (argsJson: string): McpAuditEntry => ({
   argsJson,
   ok: true,
   errorCode: null,
+  isWrite: true,
 });
 
 describe("summarizeAudit", () => {

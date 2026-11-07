@@ -29,7 +29,7 @@ const NO_TOKEN: &str = "No token — generate one in Settings.";
 const BIND_RETRY_TOTAL: Duration = Duration::from_secs(1);
 const BIND_RETRY_STEP: Duration = Duration::from_millis(50);
 
-type OnWrite = Arc<dyn Fn() + Send + Sync>;
+type OnCall = Arc<dyn Fn(bool) + Send + Sync>;
 
 /// A stored port that is missing, garbage or out of range means the default.
 fn parse_port(raw: Option<&str>) -> u16 {
@@ -100,7 +100,7 @@ impl McpHandle {
     }
 
     /// Starts or stops the server to match the settings. Idempotent.
-    pub fn apply_with(&self, db: &Arc<Mutex<Connection>>, on_write: OnWrite) -> McpStatus {
+    pub fn apply_with(&self, db: &Arc<Mutex<Connection>>, on_call: OnCall) -> McpStatus {
         let settings = match read_settings(db) {
             Ok(s) => s,
             Err(e) => {
@@ -130,7 +130,7 @@ impl McpHandle {
                         port: settings.port,
                         db: db.clone(),
                         token_hash: self.token_hash.clone(),
-                        on_write: on_write.clone(),
+                        on_call: on_call.clone(),
                     };
                     match server::start(cfg) {
                         Ok(s) => {
@@ -155,7 +155,7 @@ impl McpHandle {
     pub fn set_enabled_with(
         &self,
         db: &Arc<Mutex<Connection>>,
-        on_write: OnWrite,
+        on_call: OnCall,
         enabled: bool,
         port: Option<u16>,
     ) -> AppResult<McpStatus> {
@@ -172,7 +172,7 @@ impl McpHandle {
             }
             service::set_setting(&conn, KEY_ENABLED, if enabled { "1" } else { "0" })?;
         }
-        Ok(self.apply_with(db, on_write))
+        Ok(self.apply_with(db, on_call))
     }
 
     /// Generates a token, stores only its hash and swaps the live hash so the
@@ -190,30 +190,33 @@ impl McpHandle {
     }
 
     /// Factory reset: wipe data, drop the live token, stop the server.
-    pub fn reset_with(&self, db: &Arc<Mutex<Connection>>, on_write: OnWrite) -> AppResult<McpStatus> {
+    pub fn reset_with(&self, db: &Arc<Mutex<Connection>>, on_call: OnCall) -> AppResult<McpStatus> {
         {
             let conn = db.lock().map_err(|_| AppError::Database("Database lock poisoned".into()))?;
             service::reset_app(&conn)?;
             // Cleared inside the lock so the old token cannot outlive the wipe.
             self.set_live_hash("");
         }
-        Ok(self.apply_with(db, on_write))
+        Ok(self.apply_with(db, on_call))
     }
 
     // Thin app wrappers: the DB handle and the `data-changed` event.
 
-    fn app_parts(app: &tauri::AppHandle) -> (Arc<Mutex<Connection>>, OnWrite) {
+    fn app_parts(app: &tauri::AppHandle) -> (Arc<Mutex<Connection>>, OnCall) {
         let db = app.state::<crate::DbState>().0.clone();
         let app = app.clone();
-        let on_write: OnWrite = Arc::new(move || {
-            let _ = app.emit("data-changed", ());
+        let on_call: OnCall = Arc::new(move |wrote| {
+            let _ = app.emit("mcp-activity", ());
+            if wrote {
+                let _ = app.emit("data-changed", ());
+            }
         });
-        (db, on_write)
+        (db, on_call)
     }
 
     pub fn apply(&self, app: &tauri::AppHandle) -> McpStatus {
-        let (db, on_write) = Self::app_parts(app);
-        self.apply_with(&db, on_write)
+        let (db, on_call) = Self::app_parts(app);
+        self.apply_with(&db, on_call)
     }
 
     pub fn get_status(&self, app: &tauri::AppHandle) -> McpStatus {
@@ -221,8 +224,8 @@ impl McpHandle {
     }
 
     pub fn set_enabled(&self, app: &tauri::AppHandle, enabled: bool, port: Option<u16>) -> AppResult<McpStatus> {
-        let (db, on_write) = Self::app_parts(app);
-        self.set_enabled_with(&db, on_write, enabled, port)
+        let (db, on_call) = Self::app_parts(app);
+        self.set_enabled_with(&db, on_call, enabled, port)
     }
 
     pub fn rotate(&self, app: &tauri::AppHandle) -> AppResult<String> {
@@ -230,8 +233,8 @@ impl McpHandle {
     }
 
     pub fn reset(&self, app: &tauri::AppHandle) -> AppResult<McpStatus> {
-        let (db, on_write) = Self::app_parts(app);
-        self.reset_with(&db, on_write)
+        let (db, on_call) = Self::app_parts(app);
+        self.reset_with(&db, on_call)
     }
 }
 
@@ -246,8 +249,8 @@ mod tests {
         Arc::new(Mutex::new(open_in_memory().unwrap()))
     }
 
-    fn noop() -> OnWrite {
-        Arc::new(|| {})
+    fn noop() -> OnCall {
+        Arc::new(|_| {})
     }
 
     fn free_port() -> u16 {
@@ -388,7 +391,7 @@ mod tests {
         handle.rotate_token(&db).unwrap();
         let port = free_port();
         assert!(handle.set_enabled_with(&db, noop(), true, Some(port)).unwrap().running);
-        audit::record(&db.lock().unwrap(), Some("a@b.c"), "create_expense", &serde_json::json!({"x": 1}), None, &Ok(())).unwrap();
+        audit::record(&db.lock().unwrap(), Some("a@b.c"), "create_expense", &serde_json::json!({"x": 1}), None, &Ok(()), true).unwrap();
         let count = |db: &Arc<Mutex<Connection>>| -> i64 {
             db.lock().unwrap().query_row("SELECT COUNT(*) FROM mcp_audit_log", [], |r| r.get(0)).unwrap()
         };

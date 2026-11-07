@@ -339,4 +339,6 @@ export interface McpAuditEntry {
   argsJson: string;
   ok: boolean;
   errorCode: string | null;
+  /** False for read tools (lookups); true for tools that change data. */
+  isWrite: boolean;
 }

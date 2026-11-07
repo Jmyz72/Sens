@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.13.0] — 2026-10-23
 
 ### Added
+- **Assistant activity log covers reads.** Settings → Assistant → Recent agent activity now lists every tool call the agent makes, including lookups such as balances and transactions (marked "read"), not only changes. An **All / Writes only** filter hides the lookups. Reads are not rate limited, the log keeps the latest 2,000 reads and 10,000 writes separately so a burst of lookups cannot push changes out, and the list refreshes as calls arrive.
 - **Assistant account catalog.** The assistant can list every provider template (`list_account_templates`: key, name, group, and suggested subtype) and every account subtype (`list_account_subtypes`: key, label, type, and own/owe). Creating an account uses those keys. 39 tools in total.
 
 ### Fixed

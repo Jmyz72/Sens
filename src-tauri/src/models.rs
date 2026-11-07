@@ -462,7 +462,7 @@ pub struct McpStatus {
     pub error: Option<String>,
 }
 
-/// One MCP write-tool call recorded in the audit log.
+/// One MCP tool call (read or write) recorded in the audit log.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpAuditEntry {
@@ -473,4 +473,5 @@ pub struct McpAuditEntry {
     pub args_json: String,
     pub ok: bool,
     pub error_code: Option<String>,
+    pub is_write: bool,
 }

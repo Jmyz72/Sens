@@ -50,7 +50,7 @@ start error. `apply` starts or stops the server to match the settings and is ide
 ## Tools
 
 39 tools, defined in `tools.rs` (reads, transactions) and `tools_manage.rs` (budgets, goals, schedules,
-accounts, categories). Each is a read or a write; the write flag drives the audit log and rate limit.
+accounts, categories). Each is a read or a write; the write flag drives the rate limit and the read/write marker in the audit log.
 
 - **Read (12):** `get_financial_overview`, `list_accounts`, `list_account_templates`, `list_account_subtypes`,
   `get_account_balances`, `list_categories`, `list_transactions` (`toDate` is inclusive),
@@ -116,20 +116,26 @@ Conventions the tools follow:
 ## Audit log and rate limit
 
 - Migration **018** creates `mcp_audit_log` (`id`, `at`, `tailscale_user`, `tool`, `args_json`, `ok`,
-  `error_code`; index on `at`). There is **one row per write call**, including failed ones and the first
-  rate-limited call of each window, and **none for reads**. Tool args are stored; the token never is.
+  `error_code`; index on `at`); migration **019** adds `is_write` (default 1). There is **one row per tool
+  call, read or write**, including failed ones and the first rate-limited write of each window. Reads
+  have `is_write = 0`. Tool args are stored (reads too); the token never is.
 - **`args_json` shape:** `{"args": <the tool args>, "affectedId": <string or null>}`. `affectedId` is the
   top-level `id` of the tool's result on success; otherwise, for tools that address an existing row
   (anything not `create_*`), the `id` / `expenseId` / `scheduleId` / `accountId` the caller sent, as
   given (it can be a name); otherwise null. The whole string is capped at **8 KB**; a cut value ends
   with `...[truncated]` and is no longer valid JSON (`affectedId` sorts first, so it usually survives).
   This is a JSON shape inside the existing column, not a migration.
-- **Retention:** after each insert the log is trimmed to the newest **10,000** rows
-  (`repo::trim_mcp_audit`, same order as the list).
-- **List:** `list_mcp_audit` returns newest first; `limit` defaults to 50 and is clamped to 1..=200.
+- **Retention:** after each insert that kind is trimmed on its own: the newest **10,000** writes and the
+  newest **2,000** reads (`repo::trim_mcp_audit`, same order as the list), so a burst of lookups cannot
+  push writes out of the log.
+- **List:** `list_mcp_audit` returns newest first; `limit` defaults to 50 and is clamped to 1..=200;
+  `writesOnly` (default false) hides reads, filtered in SQL so the limit applies to the filtered rows.
   The Assistant card shows the time, tool, caller and ok/failed, plus a one-line args summary and the
   short affected id (full id in the tooltip, copied on click) from `src/lib/mcpAudit.ts`
-  (`summarizeAudit`). There is no deep link to the row.
+  (`summarizeAudit`). Reads carry a "read" tag, and an **All / Writes only** toggle drives `writesOnly`.
+  There is no deep link to the row.
+- **Events:** the server calls `on_call(wrote)` after every tool call. The app emits `mcp-activity` for
+  every call (the Assistant card refreshes on it) and `data-changed` only when a write succeeded.
 - The audit row is written after the write commits. It is **not atomic** with the write: a crash in
   between loses the row. An audit-write failure does not turn a committed write into an error (the client
   would retry and duplicate it).
@@ -165,7 +171,7 @@ Tauri commands (stubbed in `mock.ts`; the server itself is Rust-only and never r
 | `get_mcp_status` | `{ enabled, port, running, hasToken, error }`. Enabled with no stored token hash never starts the server: `running` is false and `error` is "No token — generate one in Settings." |
 | `set_mcp_enabled` | Saves enabled (and an optional port), then starts or stops the server. Enabling without a token is a `ValidationError` ("Generate a token first."); port 0 is rejected |
 | `rotate_mcp_token` | Returns a new plaintext token once; the old one stops working at once |
-| `list_mcp_audit` | The audit rows, newest first (`limit` default 50, clamped to 1..=200) |
+| `list_mcp_audit` | The audit rows, newest first (`limit` default 50, clamped to 1..=200; `writesOnly` hides reads) |
 
 ## Setup with Tailscale
 
@@ -205,8 +211,8 @@ the `.ts.net` hostname).
 ## Before you change this
 
 - A new tool goes through `service.rs`. Mark it as a write in its definition so it is audited and rate
-  limited, and update the tool count and lists here. The mock only stubs the four commands, so there is
+  limited, and update the tool count and lists here. Reads are audited too (as reads) but not rate limited. The mock only stubs the four commands, so there is
   nothing to mirror there.
 - Never register `reset_app`, settings, AI provider commands or photo import as tools.
 - Keep the middleware order (token, Host, MCP) and the rule that the token is stored only as a hash.
-- Changing the audit table is a new append-only migration after 018.
+- Changing the audit table is a new append-only migration after 019.

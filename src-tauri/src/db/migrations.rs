@@ -8,7 +8,7 @@ pub const MIGRATIONS: &[(i64, &str)] = &[
     (5, MIGRATION_005), (6, MIGRATION_006), (7, MIGRATION_007), (8, MIGRATION_008),
     (9, MIGRATION_009), (10, MIGRATION_010), (11, MIGRATION_011), (12, MIGRATION_012),
     (13, MIGRATION_013), (14, MIGRATION_014), (15, MIGRATION_015), (16, MIGRATION_016),
-    (17, MIGRATION_017), (18, MIGRATION_018),
+    (17, MIGRATION_017), (18, MIGRATION_018), (19, MIGRATION_019),
 ];
 
 // Double-entry posting engine (unreleased; version set at release time). Adds a
@@ -555,4 +555,9 @@ CREATE TABLE mcp_audit_log (
     error_code TEXT
 );
 CREATE INDEX idx_mcp_audit_log_at ON mcp_audit_log(at);
+"#;
+
+// MCP audit log also records read tool calls; `is_write` tells them apart.
+const MIGRATION_019: &str = r#"
+ALTER TABLE mcp_audit_log ADD COLUMN is_write INTEGER NOT NULL DEFAULT 1;
 "#;

@@ -275,9 +275,13 @@ pub fn rotate_mcp_token(app: tauri::AppHandle, mcp: State<'_, McpHandle>) -> App
 }
 
 #[tauri::command]
-pub fn list_mcp_audit(state: State<'_, DbState>, limit: Option<i64>) -> AppResult<Vec<McpAuditEntry>> {
+pub fn list_mcp_audit(
+    state: State<'_, DbState>,
+    limit: Option<i64>,
+    writes_only: Option<bool>,
+) -> AppResult<Vec<McpAuditEntry>> {
     let limit = limit.unwrap_or(50).clamp(1, 200);
-    with_conn!(state, c => mcp::audit::list(&c, limit))
+    with_conn!(state, c => mcp::audit::list(&c, limit, writes_only.unwrap_or(false)))
 }
 
 // ── Schedules ────────────────────────────────────────────────────────────────

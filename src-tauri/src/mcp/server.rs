@@ -43,7 +43,8 @@ pub struct ServerConfig {
     pub port: u16,
     pub db: Arc<Mutex<Connection>>,
     pub token_hash: Arc<RwLock<String>>,
-    pub on_write: Arc<dyn Fn() + Send + Sync>,
+    /// Called after every tool call; the flag is true when a write succeeded.
+    pub on_call: Arc<dyn Fn(bool) + Send + Sync>,
 }
 
 /// A started server. `stop` (or dropping it) shuts it down.
@@ -73,7 +74,7 @@ pub fn start(cfg: ServerConfig) -> AppResult<RunningServer> {
     let defs = tools::definitions();
     let shared = Arc::new(Shared {
         db: cfg.db,
-        on_write: cfg.on_write,
+        on_call: cfg.on_call,
         limiter: RateLimiter::new(WRITE_LIMIT, WRITE_WINDOW),
         write_tools: defs
             .iter()
@@ -149,7 +150,7 @@ pub fn start(cfg: ServerConfig) -> AppResult<RunningServer> {
 /// State shared by every MCP session of one running server.
 struct Shared {
     db: Arc<Mutex<Connection>>,
-    on_write: Arc<dyn Fn() + Send + Sync>,
+    on_call: Arc<dyn Fn(bool) + Send + Sync>,
     limiter: RateLimiter,
     tools: Vec<Tool>,
     write_tools: HashSet<&'static str>,
@@ -170,7 +171,7 @@ impl Shared {
                     if let Ok(conn) = self.db.lock() {
                         let affected = affected_id(name, &args, None);
                         let outcome = Err(AppError::RateLimited(message.clone()));
-                        audit_call(&conn, user, name, &args, affected.as_deref(), &outcome);
+                        audit_call(&conn, user, name, &args, affected.as_deref(), &outcome, true);
                     }
                 }
                 return Err(AppError::RateLimited(message));
@@ -180,27 +181,23 @@ impl Shared {
             .db
             .lock()
             .map_err(|_| AppError::Database("Database lock poisoned".into()))?;
-        let audit_args = writes.then(|| args.clone());
+        let audit_args = args.clone();
         let result = match catch_unwind(AssertUnwindSafe(|| dispatch(&conn, name, args))) {
             Ok(r) => r,
             Err(_) => Err(AppError::Database("Internal error while running the tool".into())),
         };
-        if let Some(args) = audit_args {
-            let outcome = match &result {
-                Ok(_) => Ok(()),
-                Err(e) => Err(copy_error(e)),
-            };
-            let affected = affected_id(name, &args, result.as_ref().ok());
-            audit_call(&conn, user, name, &args, affected.as_deref(), &outcome);
-        }
+        let outcome = match &result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(copy_error(e)),
+        };
+        let affected = affected_id(name, &audit_args, result.as_ref().ok());
+        audit_call(&conn, user, name, &audit_args, affected.as_deref(), &outcome, writes);
         // A tool panic cannot poison the connection mutex: the guard lives
         // outside `catch_unwind`, so it is dropped here, after the unwind has
         // been caught, never while the thread is panicking. Any transaction the
         // tool had open was rolled back when its guard dropped during the unwind.
         drop(conn);
-        if writes && result.is_ok() {
-            (self.on_write)();
-        }
+        (self.on_call)(writes && result.is_ok());
         result
     }
 }
@@ -296,10 +293,11 @@ fn audit_call(
     args: &Value,
     affected_id: Option<&str>,
     outcome: &AppResult<()>,
+    is_write: bool,
 ) {
-    // The write already happened, so an audit failure must not turn it into an
-    // error (the client would retry and duplicate it). Log the code only.
-    if let Err(e) = audit::record(conn, Some(user), tool, args, affected_id, outcome) {
+    // The call already happened, so an audit failure must not turn it into an
+    // error (the client would retry and duplicate a write). Log the code only.
+    if let Err(e) = audit::record(conn, Some(user), tool, args, affected_id, outcome, is_write) {
         eprintln!("mcp audit write failed: {}", e.code());
     }
 }
@@ -414,8 +412,10 @@ mod tests {
             port: 0,
             db: db.clone(),
             token_hash: Arc::new(RwLock::new(auth::hash_token(TOKEN))),
-            on_write: Arc::new(move || {
-                w.fetch_add(1, Ordering::SeqCst);
+            on_call: Arc::new(move |wrote| {
+                if wrote {
+                    w.fetch_add(1, Ordering::SeqCst);
+                }
             }),
         })
         .unwrap();
@@ -456,7 +456,7 @@ mod tests {
     }
 
     fn audit_rows(db: &Arc<Mutex<Connection>>) -> Vec<crate::models::McpAuditEntry> {
-        audit::list(&db.lock().unwrap(), 1000).unwrap()
+        audit::list(&db.lock().unwrap(), 1000, false).unwrap()
     }
 
     #[tokio::test]
@@ -470,11 +470,15 @@ mod tests {
         let ce = tools.iter().find(|t| t.name == "create_expense").unwrap();
         assert_eq!(ce.input_schema.get("type"), Some(&json!("object")));
 
-        // A read writes no audit row and does not fire on_write.
+        // A read is audited as a read and not counted as a write.
         let (err, before) = call(&c, "get_account_balances", json!({})).await;
         assert!(!err);
         assert_eq!(balance(&before, &h.account), 100_000);
-        assert!(audit_rows(&h.db).is_empty());
+        let rows = audit_rows(&h.db);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tool, "get_account_balances");
+        assert!(rows[0].ok);
+        assert!(!rows[0].is_write);
         assert_eq!(h.writes.load(Ordering::SeqCst), 0);
 
         let (err, tx) = call(&c, "create_expense", expense(800)).await;
@@ -484,25 +488,36 @@ mod tests {
         let (_, after) = call(&c, "get_account_balances", json!({})).await;
         assert_eq!(balance(&after, &h.account), 100_000 - 800);
 
+        // Newest first: the second read, then the write, then the first read.
         let rows = audit_rows(&h.db);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].tool, "create_expense");
-        assert_eq!(rows[0].tailscale_user.as_deref(), Some("tagged device"));
-        assert!(rows[0].ok);
-        let stored: Value = serde_json::from_str(&rows[0].args_json).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert!(!rows[0].is_write);
+        assert_eq!(rows[1].tool, "create_expense");
+        assert!(rows[1].is_write);
+        assert_eq!(rows[1].tailscale_user.as_deref(), Some("tagged device"));
+        assert!(rows[1].ok);
+        let stored: Value = serde_json::from_str(&rows[1].args_json).unwrap();
         assert_eq!(stored["affectedId"], tx["id"]);
         assert_eq!(stored["args"], expense(800));
         assert_eq!(h.writes.load(Ordering::SeqCst), 1);
 
-        // A failing write is a tool error with the AppError JSON, audited, no on_write.
+        // A failing write is a tool error with the AppError JSON, audited, no write counted.
         let (err, e) = call(&c, "create_expense", expense(-5)).await;
         assert!(err);
         assert_eq!(e["code"], "ValidationError");
         assert!(e["message"].is_string());
         let rows = audit_rows(&h.db);
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 4);
         assert_eq!(rows.iter().filter(|r| !r.ok).count(), 1);
         assert_eq!(h.writes.load(Ordering::SeqCst), 1);
+
+        // A failing read is audited too.
+        let (err, _) = call(&c, "get_plan", json!({"month": "2026-13"})).await;
+        assert!(err);
+        let rows = audit_rows(&h.db);
+        assert_eq!(rows[0].tool, "get_plan");
+        assert!(!rows[0].is_write);
+        assert!(!rows[0].ok);
 
         c.cancel().await.unwrap();
         h.server.stop();
@@ -570,8 +585,10 @@ mod tests {
         assert_eq!(balance(&bal, &h.account), 100_000 - 60 * 100);
 
         let rows = audit_rows(&h.db);
-        assert_eq!(rows.len(), 61);
-        assert_eq!(rows.iter().filter(|r| r.ok).count(), 60);
+        // 60 writes + 1 blocked write + the read.
+        assert_eq!(rows.len(), 62);
+        assert_eq!(rows.iter().filter(|r| r.is_write && r.ok).count(), 60);
+        assert_eq!(rows.iter().filter(|r| !r.is_write).count(), 1);
         let blocked: Vec<_> = rows.iter().filter(|r| !r.ok).collect();
         assert_eq!(blocked.len(), 1);
         assert_eq!(blocked[0].error_code.as_deref(), Some("rate_limited"));
@@ -590,7 +607,7 @@ mod tests {
             port,
             db: h.db.clone(),
             token_hash: Arc::new(RwLock::new(auth::hash_token(TOKEN))),
-            on_write: Arc::new(|| {}),
+            on_call: Arc::new(|_| {}),
         })
         .err()
         .expect("second bind must fail");
@@ -714,7 +731,7 @@ mod tests {
         assert_eq!(v["message"], "Internal error while running the tool");
         assert!(!h.db.is_poisoned());
 
-        // Audited as a failed write, no on_write.
+        // Audited as a failed write, no write counted.
         let rows = audit_rows(&h.db);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].tool, TEST_PANIC_TOOL);
