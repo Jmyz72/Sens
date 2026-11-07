@@ -251,6 +251,7 @@ The assistant itself is done but unreleased (see the *Unreleased* section above)
 - [ ] Verify against live Tailscale Serve and a real third-party connector
 - [ ] Stop in-flight tool calls from finishing after a factory reset or token rotation
 - [ ] Limit concurrent read calls
+- [x] Log every agent tool call, reads included, with an All / Writes only filter (unreleased)
 - [ ] Deep link from an audit row to the affected item (today: affected id and args summary)
 
 ### Fixed-deposit maturity

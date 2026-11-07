@@ -1,4 +1,4 @@
-//! MCP write-call audit log and rate limiter.
+//! MCP tool-call audit log and write rate limiter.
 
 use crate::error::AppResult;
 use crate::models::McpAuditEntry;
@@ -7,14 +7,16 @@ use rusqlite::Connection;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// Rows kept in the audit log; older rows are trimmed after each insert.
+/// Write rows kept in the audit log; older rows are trimmed after each insert.
 pub const MAX_AUDIT_ROWS: i64 = 10_000;
+/// Read rows kept, trimmed separately so a burst of lookups cannot push writes out.
+pub const MAX_READ_AUDIT_ROWS: i64 = 2_000;
 /// Longest stored `args_json`, in bytes, including the truncation marker.
 pub const MAX_ARGS_BYTES: usize = 8 * 1024;
 /// Appended to a cut `args_json` (which is then no longer valid JSON).
 pub const TRUNCATION_MARKER: &str = "...[truncated]";
 
-/// Record one write tool call and trim the log to `MAX_AUDIT_ROWS`.
+/// Record one tool call and trim that kind (reads or writes) to its cap.
 /// `args_json` stores `{"args": <args>, "affectedId": <id or null>}`, capped
 /// at `MAX_ARGS_BYTES`.
 pub fn record(
@@ -24,6 +26,7 @@ pub fn record(
     args: &serde_json::Value,
     affected_id: Option<&str>,
     outcome: &AppResult<()>,
+    is_write: bool,
 ) -> AppResult<()> {
     let stored = serde_json::json!({"args": args, "affectedId": affected_id}).to_string();
     let entry = McpAuditEntry {
@@ -34,9 +37,10 @@ pub fn record(
         args_json: cap_args(stored),
         ok: outcome.is_ok(),
         error_code: outcome.as_ref().err().map(|e| e.code().to_string()),
+        is_write,
     };
     repo::insert_mcp_audit(conn, &entry)?;
-    repo::trim_mcp_audit(conn, MAX_AUDIT_ROWS)
+    repo::trim_mcp_audit(conn, is_write, if is_write { MAX_AUDIT_ROWS } else { MAX_READ_AUDIT_ROWS })
 }
 
 /// Cut to `MAX_ARGS_BYTES` on a char boundary, ending with the marker.
@@ -52,8 +56,8 @@ fn cap_args(s: String) -> String {
 }
 
 /// Newest first.
-pub fn list(conn: &Connection, limit: i64) -> AppResult<Vec<McpAuditEntry>> {
-    repo::list_mcp_audit(conn, limit)
+pub fn list(conn: &Connection, limit: i64, writes_only: bool) -> AppResult<Vec<McpAuditEntry>> {
+    repo::list_mcp_audit(conn, limit, writes_only)
 }
 
 /// What the limiter decided for one call.
@@ -108,11 +112,11 @@ mod tests {
     #[test]
     fn record_then_list_newest_first() {
         let c = open_in_memory().unwrap();
-        record(&c, Some("me@tailnet"), "add_expense", &json!({"a": 1}), Some("t-1"), &Ok(())).unwrap();
+        record(&c, Some("me@tailnet"), "add_expense", &json!({"a": 1}), Some("t-1"), &Ok(()), true).unwrap();
         std::thread::sleep(Duration::from_millis(5));
         let err: AppResult<()> = Err(AppError::Validation("bad".into()));
-        record(&c, None, "add_income", &json!({"b": 2}), None, &err).unwrap();
-        let rows = list(&c, 10).unwrap();
+        record(&c, None, "add_income", &json!({"b": 2}), None, &err, true).unwrap();
+        let rows = list(&c, 10, false).unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].tool, "add_income");
         assert!(!rows[0].ok);
@@ -132,9 +136,9 @@ mod tests {
     fn list_respects_limit() {
         let c = open_in_memory().unwrap();
         for i in 0..5 {
-            record(&c, None, &format!("t{i}"), &json!({}), None, &Ok(())).unwrap();
+            record(&c, None, &format!("t{i}"), &json!({}), None, &Ok(()), true).unwrap();
         }
-        assert_eq!(list(&c, 3).unwrap().len(), 3);
+        assert_eq!(list(&c, 3, false).unwrap().len(), 3);
     }
 
     #[test]
@@ -142,15 +146,15 @@ mod tests {
         let c = open_in_memory().unwrap();
         // Multi-byte chars make sure the cut lands on a char boundary.
         let big = "é".repeat(20_000);
-        record(&c, None, "create_expense", &json!({"description": big}), None, &Ok(())).unwrap();
-        let stored = &list(&c, 1).unwrap()[0].args_json;
+        record(&c, None, "create_expense", &json!({"description": big}), None, &Ok(()), true).unwrap();
+        let stored = &list(&c, 1, false).unwrap()[0].args_json;
         assert!(stored.len() <= MAX_ARGS_BYTES, "{}", stored.len());
         assert!(stored.len() > MAX_ARGS_BYTES - 16, "{}", stored.len());
         assert!(stored.ends_with(TRUNCATION_MARKER));
         assert!(stored.starts_with(r#"{"affectedId":null,"args":{"description":"é"#), "{}", &stored[..60]);
         // Small args are stored whole.
-        record(&c, None, "create_expense", &json!({"a": 1}), None, &Ok(())).unwrap();
-        assert!(!list(&c, 1).unwrap()[0].args_json.ends_with(TRUNCATION_MARKER));
+        record(&c, None, "create_expense", &json!({"a": 1}), None, &Ok(()), true).unwrap();
+        assert!(!list(&c, 1, false).unwrap()[0].args_json.ends_with(TRUNCATION_MARKER));
     }
 
     #[test]
@@ -167,18 +171,54 @@ mod tests {
                     args_json: "{}".into(),
                     ok: true,
                     error_code: None,
+                    is_write: true,
                 };
                 repo::insert_mcp_audit(&tx, &e).unwrap();
             }
             tx.commit().unwrap();
         }
         assert_eq!(count(&c), MAX_AUDIT_ROWS);
-        record(&c, None, "newest", &json!({}), None, &Ok(())).unwrap();
+        record(&c, None, "newest", &json!({}), None, &Ok(()), true).unwrap();
         assert_eq!(count(&c), MAX_AUDIT_ROWS);
         let gone: i64 = c.query_row("SELECT COUNT(*) FROM mcp_audit_log WHERE id = 'old-0'", [], |r| r.get(0)).unwrap();
         assert_eq!(gone, 0, "the oldest row is trimmed");
-        assert_eq!(list(&c, 1).unwrap()[0].tool, "newest");
+        assert_eq!(list(&c, 1, false).unwrap()[0].tool, "newest");
         assert_eq!(MAX_AUDIT_ROWS, 10_000);
+    }
+
+    #[test]
+    fn reads_are_trimmed_separately_from_writes() {
+        let c = open_in_memory().unwrap();
+        record(&c, None, "create_expense", &json!({}), None, &Ok(()), true).unwrap();
+        {
+            let tx = c.unchecked_transaction().unwrap();
+            for i in 0..MAX_READ_AUDIT_ROWS {
+                let e = McpAuditEntry {
+                    id: format!("read-{i}"),
+                    at: format!("2000-01-01T00:00:00.{i:06}Z"),
+                    tailscale_user: None,
+                    tool: "list_accounts".into(),
+                    args_json: "{}".into(),
+                    ok: true,
+                    error_code: None,
+                    is_write: false,
+                };
+                repo::insert_mcp_audit(&tx, &e).unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        record(&c, None, "list_accounts", &json!({}), None, &Ok(()), false).unwrap();
+        let reads: i64 = c.query_row("SELECT COUNT(*) FROM mcp_audit_log WHERE is_write = 0", [], |r| r.get(0)).unwrap();
+        assert_eq!(reads, MAX_READ_AUDIT_ROWS);
+        let writes: i64 = c.query_row("SELECT COUNT(*) FROM mcp_audit_log WHERE is_write = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(writes, 1, "reads never trim writes");
+        let oldest_read: i64 = c.query_row("SELECT COUNT(*) FROM mcp_audit_log WHERE id = 'read-0'", [], |r| r.get(0)).unwrap();
+        assert_eq!(oldest_read, 0, "the oldest read is trimmed");
+        assert_eq!(MAX_READ_AUDIT_ROWS, 2_000);
+        // Writes-only skips the reads.
+        let only = list(&c, 10, true).unwrap();
+        assert_eq!(only.len(), 1);
+        assert_eq!(only[0].tool, "create_expense");
     }
 
     #[test]

@@ -133,7 +133,8 @@ export const client = {
   setMcpEnabled: (enabled: boolean, port?: number) => dispatch<McpStatus>("set_mcp_enabled", { enabled, port }),
   /** Returns the plaintext token. It is shown once and never stored. */
   rotateMcpToken: () => dispatch<string>("rotate_mcp_token"),
-  listMcpAudit: (limit?: number) => dispatch<McpAuditEntry[]>("list_mcp_audit", { limit }),
+  listMcpAudit: (limit?: number, writesOnly?: boolean) =>
+    dispatch<McpAuditEntry[]>("list_mcp_audit", { limit, writesOnly }),
 
   // Settings
   getSetting: (key: string) => dispatch<string | null>("get_setting", { key }),
