@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-11-07
+
 ### Added
 - **More AI presets.** Settings → AI import has one-click presets for Gemini, Groq, OpenRouter (its free models), Cerebras and Mistral, which have free tiers, plus Ollama and LM Studio on your own computer, and OpenAI. The Gemini preset now uses `gemini-3.8-flash`, because `gemini-2.0-flash` has been shut down.
 
@@ -475,7 +477,8 @@ Design: `docs/superpowers/specs/2026-05-30-sens-desktop-finance-tracker-design.m
   TypeScript + Vite, integer-MYR-cents money, dark/light theming, and the
   Tauri/in-memory-mock dispatch seam for browser-only dev.
 
-[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Jmyz72/Sens/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/Jmyz72/Sens/releases/tag/v0.13.1
 [0.13.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Jmyz72/Sens/releases/tag/v0.11.0
